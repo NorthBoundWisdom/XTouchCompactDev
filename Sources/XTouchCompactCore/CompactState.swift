@@ -9,7 +9,7 @@ public struct CompactState: Sendable {
 
     private var touchedFaders: Set<Int> = []
     private var desiredFader: [Int: UInt8] = [:]
-    private var observedFader: [Int: UInt8] = [:]
+    private var observedFaders: [Int: UInt8] = [:]
     private var lastMotorCommands: [Int: UInt8] = [:]
     // A position report becomes stale as soon as the host commands a motor movement.
     private var observedIsCurrent: Set<Int> = []
@@ -20,23 +20,38 @@ public struct CompactState: Sendable {
     private var lastSentRings: [Int: RingDisplay] = [:]
     private var desiredStyles: [Int: RingStyle] = [:]
     private var lastSentStyles: [Int: RingStyle] = [:]
+    private var pressedButtons: Set<Int> = []
+    private var pushedEncoders: Set<Int> = []
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) {
         self.map = map
         self.lightProtocol = lightProtocol
     }
 
+    /// Last actual TX position report, possibly stale after a motor command. Sending RX
+    /// feedback never updates this observation; no report means nil.
+    public func observedFader(_ index: Int) -> UInt8? { observedFaders[index] }
+    public func isTouched(_ index: Int) -> Bool { touchedFaders.contains(index) }
+    public func isMotorPending(_ index: Int) -> Bool { pendingMotor.contains(index) }
+    public func desiredButton(_ index: Int) -> ButtonLight? { desiredButtons[index] }
+    public func desiredRing(_ index: Int) -> RingDisplay? { desiredRings[index] }
+    public func desiredRingStyle(_ index: Int) -> RingStyle? { desiredStyles[index] }
+    public func isButtonDown(_ index: Int) -> Bool { pressedButtons.contains(index) }
+    public func isEncoderPushed(_ index: Int) -> Bool { pushedEncoders.contains(index) }
+
     /// Always send Program Change on (re)connect; physical A/B presses are not host-visible.
     /// Deliberately do NOT recall motor positions on reconnect until operator opts in.
     public mutating func connect() throws -> [MIDIMessage] {
         lastMotorCommands.removeAll()
         observedIsCurrent.removeAll()
-        observedFader.removeAll()
+        observedFaders.removeAll()
         lastSentButtons.removeAll()
         lastSentRings.removeAll()
         lastSentStyles.removeAll()
         touchedFaders.removeAll()
         pendingMotor.removeAll()
+        pressedButtons.removeAll()
+        pushedEncoders.removeAll()
         var result = [map.selectLayer(layer)]
         result += try restoreNonMotorFeedback()
         return result
@@ -44,6 +59,12 @@ public struct CompactState: Sendable {
 
     @discardableResult
     public mutating func selectLayer(_ layer: CompactLayer) -> MIDIMessage {
+        if self.layer != layer {
+            // A deferred command belongs to the old bank. Releasing a hand after a layer
+            // change must not implicitly recall that bank's target into the new layer.
+            pendingMotor.removeAll()
+            desiredFader.removeAll()
+        }
         self.layer = layer
         // Never suppress layer assertions because physical button presses may change it invisibly.
         return map.selectLayer(layer)
@@ -55,18 +76,22 @@ public struct CompactState: Sendable {
         guard let event = map.decode(message, layer: layer) else { return nil }
         switch event.control {
         case let .fader(i):
-            observedFader[i] = event.value
+            observedFaders[i] = event.value
             observedIsCurrent.insert(i)
         case let .faderTouch(i):
             if event.isPressed == true { touchedFaders.insert(i) }
             else { touchedFaders.remove(i) }
         case let .encoder(i): lastSentRings.removeValue(forKey: i)
         case let .button(i):
+            if event.isPressed == true { pressedButtons.insert(i) }
+            else { pressedButtons.remove(i) }
             if event.isPressed == true && (34...39).contains(i) {
                 // The six right-area transport buttons may redraw *the whole group* locally.
                 for index in 34...39 { lastSentButtons.removeValue(forKey: index) }
             } else if event.isPressed == false { lastSentButtons.removeValue(forKey: i) }
-        case .encoderPush: break
+        case let .encoderPush(i):
+            if event.isPressed == true { pushedEncoders.insert(i) }
+            else { pushedEncoders.remove(i) }
         }
         return event
     }
@@ -77,7 +102,7 @@ public struct CompactState: Sendable {
         guard !touchedFaders.contains(index), pendingMotor.contains(index),
               let desired = desiredFader[index] else { return [] }
         pendingMotor.remove(index)
-        if observedIsCurrent.contains(index), observedFader[index] == desired { return [] }
+        if observedIsCurrent.contains(index), observedFaders[index] == desired { return [] }
         if !observedIsCurrent.contains(index), lastMotorCommands[index] == desired { return [] }
         lastMotorCommands[index] = desired
         observedIsCurrent.remove(index)
@@ -93,7 +118,7 @@ public struct CompactState: Sendable {
             return []
         }
         if observedIsCurrent.contains(index) {
-            guard observedFader[index] != value else { return [] }
+            guard observedFaders[index] != value else { return [] }
         } else {
             guard lastMotorCommands[index] != value else { return [] }
         }

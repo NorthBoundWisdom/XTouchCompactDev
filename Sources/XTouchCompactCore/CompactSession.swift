@@ -28,6 +28,10 @@ public struct CompactSession: Sendable {
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) {
         state = CompactState(map: map, lightProtocol: lightProtocol)
+        // Establish software-owned display intent even while disconnected. These fixed
+        // indices and ring positions are valid by construction; no transport is involved.
+        _ = try! syncVisibleNonMotorFeedback()
+        state.invalidateNonMotorFeedback()
     }
 
     public func bank(_ layer: CompactLayer) -> CompactParameterBank { banks[layer] ?? .init() }
