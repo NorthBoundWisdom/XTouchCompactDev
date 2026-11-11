@@ -10,12 +10,26 @@
         var sent: [MIDIMessage] = []
         var fails = false
         var starts = 0
+        var sendAttempts = 0
+        var actualInputID: Int32? = 1
+        var actualOutputID: Int32? = 1
+        var actualGeneration: UInt64 = 0
         func start() throws {
             starts += 1
         }
 
         func select(inputID _: Int32?, outputID _: Int32?) {}
         func send(_ message: MIDIMessage) throws {
+            sendAttempts += 1
+            if fails {
+                throw CompactMIDIError.outputUnavailable
+            }
+            sent.append(message)
+        }
+
+        func sendPinned(_ message: MIDIMessage, inputID: Int32, outputID: Int32, generation: UInt64) throws {
+            sendAttempts += 1
+            guard actualInputID == inputID, actualOutputID == outputID, actualGeneration == generation else { throw CompactMIDIError.routeChanged }
             if fails {
                 throw CompactMIDIError.outputUnavailable
             }

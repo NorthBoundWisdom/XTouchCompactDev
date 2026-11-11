@@ -264,6 +264,12 @@ public struct CompactSession: Sendable {
         state.invalidateMotorCommandHistory()
     }
 
+    /// Explicit diagnostic LED/ring writes can replace cached feedback without
+    /// changing parameter authority or asserting a physical motor observation.
+    public mutating func invalidateNonMotorFeedback() {
+        state.invalidateNonMotorFeedback()
+    }
+
     private mutating func syncVisibleNonMotorFeedback() throws -> [MIDIMessage] {
         let values = bank(state.layer)
         var result: [MIDIMessage] = []

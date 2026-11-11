@@ -21,6 +21,7 @@
         var panelSnapshot: PanelSnapshot {
             let observation = observationPresentation
             return PanelSnapshot(
+                nonMotorTests: nonMotorTestPresentation,
                 hardwareObservation: observation,
                 listenOnly: listenOnly, capturePath: capturePath,
                 notifications: notifications, runtimeError: error.map { localizedError($0) } ?? connection.error,
@@ -45,6 +46,28 @@
                 oscParameter: oscParameter, oscOutput: oscOutput,
                 agents: agents.slots,
                 parameterValues: session.parameters.values
+            )
+        }
+
+        private var nonMotorTestPresentation: NonMotorTestPresentation {
+            let preview: NonMotorPreviewPresentation? = if let command = nonMotorTests.previewCommand, let message = nonMotorTests.previewMessage,
+                                                           let channel = nonMotorTests.previewChannel
+            {
+                NonMotorPreviewPresentation(command: command, message: message, receiveChannel: Int(channel) + 1)
+            } else {
+                nil
+            }
+            let latest = nonMotorTests.attempts.first
+            return NonMotorTestPresentation(
+                approval: nonMotorTests.approval,
+                attempts: nonMotorTests.attempts.map {
+                    NonMotorAttemptPresentation(id: $0.id, timestamp: $0.timestamp, command: $0.request.command,
+                                                message: $0.request.message, delivery: $0.delivery, reportedResponse: $0.observation, note: $0.note)
+                },
+                preview: preview, lastLockReason: nonMotorTests.lastLockReason,
+                canRequestPermission: isObservingHardware && hardwareMode && connection.isConnected && capturePath != nil,
+                canRecordObservation: isObservingHardware && hardwareMode && capturePath != nil && latest?.delivery == .sent &&
+                    latest?.request.approval.inputID == connection.connectedInput?.id && latest?.request.approval.outputID == connection.connectedOutput?.id && latest?.request.approval.generation == connection.generation
             )
         }
 
@@ -127,6 +150,11 @@
 
         var panelIntents: PanelIntents {
             PanelIntents(
+                armNonMotorTests: { [weak self] in self?.armNonMotorTests($0) },
+                lockNonMotorTests: { [weak self] in self?.lockNonMotorTests() },
+                previewNonMotorTest: { [weak self] in self?.previewNonMotorTest($0, receiveChannel: $1) },
+                performNonMotorTest: { [weak self] in self?.performNonMotorTest($0) },
+                recordNonMotorObservation: { [weak self] in self?.recordNonMotorObservation($0, result: $1, note: $2) },
                 beginHardwareObservation: { [weak self] in self?.beginHardwareObservation() },
                 endHardwareObservation: { [weak self] in self?.endHardwareObservation() },
                 resetHardwareObservation: { [weak self] in self?.resetHardwareObservation() },

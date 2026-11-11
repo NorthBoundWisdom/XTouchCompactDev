@@ -183,8 +183,9 @@ converts core channel numbers for display and selects the current input layer's
 encoder readings. Views render those values and their coverage rows directly.
 
 Choose **Hardware observation** in the console header. The dedicated workspace
-switches to physical input with listening locked on; returning to the console
-keeps listening on. It never recalls motors or sends a layer assertion. Incoming
+switches to physical input with listening initially locked on; returning to the console
+locks output again. The separate nonmotor permission flow below can allow one
+explicit test command; ordinary observation never recalls motors or asserts a layer. Incoming
 controls update the physical panel, a large last-input readout, touch/hold state,
 the latest 12 input events and counts of observed physical controls. These counts
 are input coverage, not hardware-test sign-off. Reset observations clears this
@@ -254,6 +255,49 @@ changes without inventing a MIDI message or physical acknowledgement.
 
 The app-owned `observation-review` preview uses labeled synthetic inputs. It
 does not satisfy Stage 1; see the acceptance handoff in HARDWARE_BRINGUP.md.
+
+#### Nonmotor test workbench (C3 software)
+
+The **Nonmotor tests** tab starts locked. Previewing a command sends nothing and
+requires an explicitly selected test RX. Enabling output requires operator-confirmed
+factory Standard mode, reviewed complete Stage 1 evidence, firmware read from the
+device/editor, independently checked Global RX and its source, both endpoints and
+active capture. These are recorded operator attestations, not facts inferred by
+the app; machine-observed firmware/actual RX fields remain unknown.
+
+Only one typed factory RX command can be sent: a button off/on/blink using the
+explicit manual or observed-1.14 encoding, a ring display, a ring style, or a
+Program Change layer assertion. Preview must match the requested command. The
+allowlist excludes motor CC 1–9, mode CC 127, Pitch Bend and unrelated messages.
+Layer B TX fader CC 28 is independently RX ring-display feedback; it is not
+classified using the input map. Test choices never rewrite the applied profile.
+
+Permission is transient and bound to endpoint IDs and the transport's reconnect
+generation. The serial CoreMIDI send queue checks both again, so a same-ID
+reconnection before the UI callback cannot reuse old permission. Every connection
+callback revokes permission. Profile/port/layer changes, observation reset, leaving
+the test page, recording stop/failure and send failure also lock output. Locking
+sends no cleanup MIDI and performs no retry. Ordinary parameter/Agent feedback
+stays blocked in this workspace even while explicit nonmotor output is permitted.
+
+Permission and each request are written and flushed before activation/transmission.
+Delivery and explicit operator observations are separate audit events. A failed
+post-send audit cannot retract a transport-accepted command; it stops recording
+and locks permission, retains the pending/partial evidence and does not retry.
+Only the latest accepted command on the unchanged route can receive an operator
+observation, with active recording. A sent command never fills physical LED/ring
+or layer readings. Incoming input is still observed without executing assignments.
+
+JSONL `nonMotorTest` entries contain approval/attempt IDs, reviewed route generation,
+operator evidence, test RX, command/encoding, transport delivery and nullable
+operator-reported response. Input-review exports include the latest 32 attempt
+summaries; the raw recording retains all events. Neither a successful send nor a
+matching operator observation automatically signs off Stage 2 or enables motors.
+
+Launch with `--hardware-observe --nonmotor-tests` for the locked workbench. The
+`nonmotor-tests`, `nonmotor-armed` and `nonmotor-result` snapshot scenes use labeled
+synthetic inputs and an in-memory writer. The result scene exercises a simulated
+transport and operator report; none accesses a physical port or transmits real MIDI.
 
 Hardware output is blocked by default on every launch. Connection's Listen only
 switch gates the single MIDI send boundary, including connect/reconnect assertions,

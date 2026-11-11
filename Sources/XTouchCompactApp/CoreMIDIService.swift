@@ -8,12 +8,14 @@
         case operation(String, OSStatus)
         case outputUnavailable
         case packetOverflow
+        case routeChanged
 
         var errorDescription: String? {
             switch self {
             case let .operation(operation, status): "\(operation) (OSStatus \(status))"
             case .outputUnavailable: "X-TOUCH COMPACT MIDI output not connected"
             case .packetOverflow: "MIDI packet could not be built"
+            case .routeChanged: "MIDI route changed; test output locked."
             }
         }
     }
@@ -27,6 +29,7 @@
         func start() throws
         func select(inputID: Int32?, outputID: Int32?)
         func send(_ message: MIDIMessage) throws
+        func sendPinned(_ message: MIDIMessage, inputID: Int32, outputID: Int32, generation: UInt64) throws
     }
 
     @MainActor
@@ -57,6 +60,11 @@
             guard let transport else { throw CompactMIDIError.outputUnavailable }
             try transport.send(message)
         }
+
+        func sendPinned(_ message: MIDIMessage, inputID: Int32, outputID: Int32, generation: UInt64) throws {
+            guard let transport else { throw CompactMIDIError.outputUnavailable }
+            try transport.send(message, expectedRoute: (inputID, outputID, generation))
+        }
     }
 
     private final class CompactMIDITransport: @unchecked Sendable {
@@ -74,6 +82,7 @@
         private var desiredInputID: Int32?
         private var desiredOutputID: Int32?
         private var active = false
+        private var routeGeneration: UInt64 = 0
 
         init(onMessages: @escaping MessageCallback, onConnection: @escaping StatusCallback) {
             self.onMessages = onMessages
@@ -141,10 +150,17 @@
             }
         }
 
-        func send(_ message: MIDIMessage) throws {
+        func send(_ message: MIDIMessage, expectedRoute: (Int32, Int32, UInt64)? = nil) throws {
             try queue.sync {
                 guard active, outputPort != 0, connectedOutput != 0 else {
                     throw CompactMIDIError.outputUnavailable
+                }
+                if let expectedRoute {
+                    var inputID: Int32 = 0; var outputID: Int32 = 0
+                    guard connectedInput != 0,
+                          MIDIObjectGetIntegerProperty(connectedInput, kMIDIPropertyUniqueID, &inputID) == noErr,
+                          MIDIObjectGetIntegerProperty(connectedOutput, kMIDIPropertyUniqueID, &outputID) == noErr,
+                          inputID == expectedRoute.0, outputID == expectedRoute.1, routeGeneration == expectedRoute.2 else { throw CompactMIDIError.routeChanged }
                 }
                 var packets = MIDIPacketList()
                 let start = MIDIPacketListInit(&packets)
@@ -160,6 +176,7 @@
 
         private func reconnect() {
             guard active else { return }
+            routeGeneration &+= 1
             if connectedInput != 0 {
                 MIDIPortDisconnectSource(inputPort, connectedInput)
             }
@@ -189,12 +206,11 @@
             if let output {
                 connectedOutput = output.1
             }
-            onConnection(CompactMIDIConnection(
-                inputs: sources.map(\.0), outputs: destinations.map(\.0),
-                connectedInput: connectedInput == 0 ? nil : source?.0,
-                connectedOutput: connectedOutput == 0 ? nil : output?.0,
-                error: error
-            ))
+            onConnection(CompactMIDIConnection(generation: routeGeneration,
+                                               inputs: sources.map(\.0), outputs: destinations.map(\.0),
+                                               connectedInput: connectedInput == 0 ? nil : source?.0,
+                                               connectedOutput: connectedOutput == 0 ? nil : output?.0,
+                                               error: error))
         }
 
         private static func endpoints(count: () -> Int, at: (Int) -> MIDIEndpointRef)

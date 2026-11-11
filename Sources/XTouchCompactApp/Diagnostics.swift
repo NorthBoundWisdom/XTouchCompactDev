@@ -19,6 +19,7 @@
         var ignored: Bool
         var text: LocalizedMessage
         var connection: CompactMIDIConnection?
+        var nonMotorTest: NonMotorTestAudit?
     }
 
     struct ConsoleNotification: Identifiable, Equatable, Sendable {

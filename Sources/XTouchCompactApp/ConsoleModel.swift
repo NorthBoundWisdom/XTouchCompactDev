@@ -30,6 +30,7 @@
         @Published private(set) var listenOnly = true
         @Published private(set) var isObservingHardware = false
         @Published private(set) var hardwareObserver = CompactInputObserver()
+        @Published private(set) var nonMotorTests = NonMotorTestState()
         @Published private(set) var observationStartedAt: Date?
         @Published private(set) var lastReviewExport: InputReviewExportReceipt?
         @Published private(set) var capturePath: String?
@@ -101,6 +102,9 @@
             self.midi.onConnection = { [weak self] snapshot in
                 guard let self else { return }
                 let wasConnected = connection.isConnected
+                if nonMotorTests.approval != nil {
+                    lockNonMotorTests("Connection changed; test output locked.")
+                }
                 connection = snapshot
                 if isObservingHardware, let newInput = snapshot.connectedInput?.id {
                     if let observationInputID, observationInputID != newInput {
@@ -173,6 +177,9 @@
         }
 
         func setListenOnly(_ enabled: Bool) {
+            if enabled {
+                lockNonMotorTests()
+            }
             guard !isObservingHardware || enabled, listenOnly != enabled else { return }
             listenOnly = enabled
             // No replay or layer assertion on either transition. Preserve hardware touch/layer evidence.
@@ -198,11 +205,13 @@
         }
 
         func endHardwareObservation() {
+            lockNonMotorTests()
             isObservingHardware = false
             // Returning to the console retains passive output and all safety ownership.
         }
 
         func resetHardwareObservation() {
+            lockNonMotorTests("Observation reset; test output locked.")
             hardwareObserver = CompactInputObserver()
             observationStartedAt = now(); lastReviewExport = nil
             if capturePath == nil {
@@ -210,7 +219,98 @@
             }
         }
 
+        // MARK: - Explicit nonmotor diagnostics
+
+        private var nonMotorContext: NonMotorTransportContext {
+            NonMotorTransportContext(inputID: connection.connectedInput?.id, outputID: connection.connectedOutput?.id,
+                                     recording: monitorCapture != nil, generation: connection.generation)
+        }
+
+        func armNonMotorTests(_ prerequisites: NonMotorTestPrerequisites) {
+            lockNonMotorTests()
+            do {
+                guard hardwareMode, isObservingHardware else { throw NonMotorTestError.permissionRevoked }
+                var candidate = nonMotorTests
+                try candidate.arm(prerequisites, context: nonMotorContext, id: UUID().uuidString)
+                guard let approval = candidate.approval else { return }
+                recordNonMotorAudit(NonMotorTestAudit(phase: "permission-granted", approval: approval))
+                guard checkpointNonMotorEvidence() else { return }
+                nonMotorTests = candidate
+                session.discardPendingMotorWrites()
+                listenOnly = false
+                error = nil
+            } catch { self.error = error }
+        }
+
+        func lockNonMotorTests(_ reason: String = "Test output locked.") {
+            guard nonMotorTests.approval != nil else { return }
+            let audit = nonMotorTests.lock(reason)
+            listenOnly = true; session.discardPendingMotorWrites()
+            if let audit {
+                recordNonMotorAudit(audit)
+            }
+        }
+
+        func performNonMotorTest(_ command: NonMotorTestCommand) {
+            do {
+                guard hardwareMode, isObservingHardware else { throw NonMotorTestError.permissionRevoked }
+                let request = try nonMotorTests.authorize(command, context: nonMotorContext)
+                let id = UUID().uuidString
+                nonMotorTests.add(request, id: id, at: now())
+                let audit = NonMotorTestAudit(phase: "command-requested", approval: request.approval,
+                                              attemptID: id, command: command, message: request.message)
+                recordNonMotorAudit(audit)
+                guard checkpointNonMotorEvidence() else { return }
+                let delivery = send([request.message], authorizedTest: request, testAudit: audit)
+                nonMotorTests.delivered(id, status: delivery)
+                if monitorCapture != nil {
+                    _ = checkpointNonMotorEvidence()
+                }
+                session.invalidateNonMotorFeedback()
+            } catch { self.error = error; lockNonMotorTests() }
+        }
+
+        func previewNonMotorTest(_ command: NonMotorTestCommand, receiveChannel: UInt8?) {
+            do {
+                try nonMotorTests.preview(command, channel: nonMotorTests.approval?.prerequisites.receiveChannel ?? receiveChannel)
+                error = nil
+            } catch { self.error = error }
+        }
+
+        func recordNonMotorObservation(_ id: String, result: NonMotorReportedResponse, note: String) {
+            do {
+                guard isObservingHardware, monitorCapture != nil else { throw NonMotorTestError.recordingRequired }
+                var candidate = nonMotorTests
+                let audit = try candidate.recordObservation(id, result: result, note: note, context: nonMotorContext)
+                recordNonMotorAudit(audit)
+                guard checkpointNonMotorEvidence() else { return }
+                nonMotorTests = candidate
+                error = nil
+            } catch { self.error = error }
+        }
+
+        private func recordNonMotorAudit(_ audit: NonMotorTestAudit) {
+            appendEvent(MonitorEvent(timestamp: now(), direction: nil, source: .application, message: nil,
+                                     control: audit.command?.control, hostLayer: layer, ignored: false,
+                                     text: LocalizedMessage("Nonmotor test: %@", audit.phase), nonMotorTest: audit))
+        }
+
+        private func checkpointNonMotorEvidence() -> Bool {
+            guard let monitorCapture else { return false }
+            do { try monitorCapture.checkpoint(); return true }
+            catch { captureFailed(error); return false }
+        }
+
+        private func captureFailed(_ failure: any Error) {
+            monitorCapture = nil; capturePath = nil; error = failure
+            if nonMotorTests.approval != nil {
+                _ = nonMotorTests.lock("Recording failed; test output locked.")
+                listenOnly = true; session.discardPendingMotorWrites()
+            }
+        }
+
         func configure() {
+            lockNonMotorTests("Profile changed; test output locked.")
             do {
                 guard (1 ... 16).contains(transmitChannel), (1 ... 16).contains(feedbackChannel) else {
                     throw CompactError.invalidChannel(16)
@@ -325,6 +425,7 @@
         }
 
         func selectPorts() {
+            lockNonMotorTests("Connection changed; test output locked.")
             appliedInputID = inputChoice == 0 ? nil : inputChoice
             appliedOutputID = outputChoice == 0 ? nil : outputChoice
             midi.select(inputID: inputChoice == 0 ? nil : inputChoice,
@@ -337,6 +438,7 @@
         }
 
         func setLayer(_ next: CompactLayer) {
+            lockNonMotorTests()
             apply { try $0.selectLayer(next) }
             layer = next
             updateBank()
@@ -455,14 +557,28 @@
             } catch { self.error = error }
         }
 
-        private func send(_ messages: [MIDIMessage]) {
+        // MARK: - Single outgoing MIDI boundary
+
+        @discardableResult
+        private func send(_ messages: [MIDIMessage], authorizedTest: AuthorizedNonMotorTest? = nil,
+                          testAudit: NonMotorTestAudit? = nil) -> MonitorEvent.Delivery
+        {
             let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
-            if hardwareMode, listenOnly || isObservingHardware {
+            var testAllowed = false
+            if let authorizedTest {
+                do {
+                    guard hardwareMode, isObservingHardware else { throw NonMotorTestError.permissionRevoked }
+                    try nonMotorTests.gate.validate(authorizedTest, messages: messages, context: nonMotorContext)
+                    testAllowed = true
+                } catch { self.error = error; lockNonMotorTests() }
+            }
+            if authorizedTest != nil && !testAllowed || hardwareMode && (listenOnly || isObservingHardware && !testAllowed) {
                 session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
                 for message in messages {
-                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
+                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control)
                 }
-                return
+                return .suppressed
             }
             for message in messages {
                 guard hardwareMode else {
@@ -471,15 +587,23 @@
                     continue
                 }
                 do {
-                    try midi.send(message)
-                    record(message, direction: .output, source: source, delivery: .sent)
+                    if let authorizedTest {
+                        try midi.sendPinned(message, inputID: authorizedTest.approval.inputID, outputID: authorizedTest.approval.outputID, generation: authorizedTest.approval.generation)
+                    } else {
+                        try midi.send(message)
+                    }
+                    record(message, direction: .output, source: source, delivery: .sent,
+                           nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control)
                 } catch {
                     self.error = error
-                    record(message, direction: .output, source: source, ignored: true, delivery: .failed)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .failed,
+                           nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control)
                     session.invalidateTransportFeedback()
-                    break
+                    lockNonMotorTests("MIDI send failed; test output locked.")
+                    return .failed
                 }
             }
+            return .sent
         }
 
         func applyAgentParameter(_ id: String, value: Double) throws {
@@ -514,6 +638,16 @@
         func localizedError(_ error: any Error) -> LocalizedMessage {
             let l = ErrorMessageBuilder()
             switch error {
+            case let failure as NonMotorTestError:
+                switch failure {
+                case .prerequisitesMissing: return l.text("Complete the operator prerequisites before enabling test output.")
+                case .recordingRequired: return l.text("Active recording is required for nonmotor tests.")
+                case .connectionMissing, .connectionChanged: return l.text("MIDI route changed; test output locked.")
+                case .permissionRevoked: return l.text("Test output locked.")
+                case .invalidTransmission: return l.text("Only the exact approved nonmotor command can be sent.")
+                case .observationUnavailable: return l.text("Record observations only for the latest delivered command on this route.")
+                case .previewRequired: return l.text("Select a test RX channel and preview this command before sending.")
+                }
             case let failure as EvidenceError:
                 switch failure {
                 case .fileExists: return l.text("Evidence already exists. Choose a new filename.")
@@ -528,6 +662,7 @@
                 case let .operation(operation, status): return l.text("%@ (OSStatus %@)", operation, String(status), localizedArgumentIndices: [0])
                 case .outputUnavailable: return l.text("X-TOUCH COMPACT MIDI output not connected")
                 case .packetOverflow: return l.text("MIDI packet could not be built")
+                case .routeChanged: return l.text("MIDI route changed; test output locked.")
                 }
             case let failure as ParameterError:
                 switch failure {
@@ -623,10 +758,13 @@
         }
 
         private func record(_ message: MIDIMessage, direction: MonitorEvent.Direction,
-                            source: MonitorEvent.Source, ignored: Bool = false, delivery: MonitorEvent.Delivery? = nil)
+                            source: MonitorEvent.Source, ignored: Bool = false, delivery: MonitorEvent.Delivery? = nil,
+                            nonMotorTest: NonMotorTestAudit? = nil, controlOverride: CompactControl? = nil)
         {
             let control: CompactControl?
-            if direction == .input {
+            if let controlOverride {
+                control = controlOverride
+            } else if direction == .input {
                 control = session.state.map.decode(message)?.control
             } else {
                 let candidates = (1 ... 9).map(CompactControl.fader) + (1 ... 16).map(CompactControl.encoder)
@@ -653,7 +791,7 @@
                                      control: control, hostLayer: layer,
                                      deviceLayer: direction == .input ? session.state.map.decode(message)?.layer : nil,
                                      delivery: delivery ?? (direction == .input ? .received : nil),
-                                     ignored: ignored, text: LocalizedMessage(key, message.description)))
+                                     ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest))
         }
 
         private func appendEvent(_ event: MonitorEvent) {
@@ -663,7 +801,7 @@
                                            lightProtocol: session.state.lightProtocol,
                                            hardwareMode: hardwareMode, listenOnly: listenOnly)
             } catch {
-                monitorCapture = nil; capturePath = nil; self.error = error
+                captureFailed(error)
             }
         }
 
@@ -695,11 +833,13 @@
                 selectedInputID: appliedInputID, selectedOutputID: appliedOutputID,
                 configuredTX: Int(session.state.map.transmitChannel) + 1,
                 configuredGlobalRX: Int(session.state.map.globalReceiveChannel) + 1,
-                ledProtocol: session.state.lightProtocol.rawValue, hardwareMode: hardwareMode, listenOnly: listenOnly
+                ledProtocol: session.state.lightProtocol.rawValue, hardwareMode: hardwareMode, listenOnly: listenOnly,
+                connectionGeneration: connection.connectedInput == nil ? nil : connection.generation
             )
         }
 
         func stopCapture() {
+            lockNonMotorTests("Recording stopped; test output locked.")
             defer { monitorCapture = nil; capturePath = nil }
             do { try monitorCapture?.finish(at: now()) }
             catch { self.error = error }
@@ -720,7 +860,7 @@
             do {
                 lastReviewExport = try InputReviewExporter.export(to: url, observer: hardwareObserver,
                                                                   observationStarted: observationStartedAt, captureURL: lastCaptureURL,
-                                                                  metadata: captureMetadata(), at: now())
+                                                                  metadata: captureMetadata(), at: now(), nonMotorAttempts: nonMotorTests.attempts)
                 error = nil
             } catch { self.error = error }
         }

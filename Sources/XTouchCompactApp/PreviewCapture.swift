@@ -53,6 +53,31 @@
         let width: CGFloat
         let height: CGFloat
         switch scene {
+        case "nonmotor-tests", "nonmotor-armed", "nonmotor-result":
+            width = 1260; height = 1160
+            let service = ObservationPreviewService()
+            let preview = ConsoleModel(startsMIDI: false, midi: service, isolated: true,
+                                       evidenceWriterFactory: { _ in PreviewEvidenceWriter() })
+            let endpoint = CompactMIDIEndpoint(id: 1, name: "Isolated preview fixture")
+            service.onConnection?(CompactMIDIConnection(connectedInput: endpoint, connectedOutput: endpoint))
+            preview.beginHardwareObservation()
+            preview.startCapture(URL(fileURLWithPath: "/preview-not-written.jsonl"))
+            if scene != "nonmotor-tests" {
+                preview.armNonMotorTests(.init(standardModeConfirmed: true, stage1Reviewed: true,
+                                               stage1Evidence: "SYNTHETIC PREVIEW · not hardware evidence", firmware: "preview fixture",
+                                               receiveChannel: 5, receiveChannelEvidence: "SYNTHETIC PREVIEW · independent RX fixture"))
+                preview.previewNonMotorTest(.button(1, .off, .manual), receiveChannel: 5)
+                if scene == "nonmotor-result" {
+                    service.acceptsNonMotorSimulation = true
+                    preview.performNonMotorTest(.button(1, .off, .manual))
+                    if let attempt = preview.nonMotorTests.attempts.first {
+                        preview.recordNonMotorObservation(attempt.id, result: .differs, note: "SYNTHETIC PREVIEW · simulated observation only")
+                    }
+                }
+            }
+            var snapshot = preview.panelSnapshot
+            snapshot.hardwareObservation?.isPreview = true
+            content = AnyView(ContentView(snapshot: snapshot, intents: preview.panelIntents))
         case "observation", "observation-waiting", "observation-release", "observation-review":
             width = 1260; height = 980
             let service = ObservationPreviewService()
@@ -117,14 +142,27 @@
         window.contentView = nil
     }
 
+    private final class PreviewEvidenceWriter: EvidenceWriting {
+        func write(_: Data) throws {}
+        func synchronize() throws {}
+        func close() throws {}
+    }
+
     /// Isolated, labeled screenshots never connect to or send messages to a device.
     @MainActor private final class ObservationPreviewService: MIDIService {
+        var acceptsNonMotorSimulation = false
         var onMessages: (([XTouchCompactCore.MIDIMessage]) -> Void)?
         var onConnection: ((CompactMIDIConnection) -> Void)?
         func start() throws {}
         func select(inputID _: Int32?, outputID _: Int32?) {}
         func send(_: XTouchCompactCore.MIDIMessage) throws {
             preconditionFailure("Preview attempted MIDI output")
+        }
+
+        func sendPinned(_ message: MIDIMessage, inputID: Int32, outputID: Int32, generation: UInt64) throws {
+            precondition(acceptsNonMotorSimulation && inputID == 1 && outputID == 1 && generation == 0 &&
+                NonMotorTestCommand.isNonMotorFeedback(message, receiveChannel: 5), "Preview attempted invalid MIDI output")
+            // This isolated fixture has no CoreMIDI transport or physical port.
         }
     }
 #endif

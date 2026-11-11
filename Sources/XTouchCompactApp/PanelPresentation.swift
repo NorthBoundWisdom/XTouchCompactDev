@@ -17,6 +17,7 @@
     }
 
     struct CompactMIDIConnection: Equatable, Sendable {
+        var generation: UInt64 = 0
         var inputs: [CompactMIDIEndpoint] = []
         var outputs: [CompactMIDIEndpoint] = []
         var connectedInput: CompactMIDIEndpoint?
@@ -268,6 +269,7 @@
     }
 
     struct PanelSnapshot: Equatable, Sendable {
+        var nonMotorTests = NonMotorTestPresentation()
         var hardwareObservation: HardwareObservationPresentation?
         var listenOnly = true
         var capturePath: String?
@@ -317,6 +319,11 @@
     /// while a software write is a host command that may move a motor. An optional intent that is
     /// nil is not supported by the backend yet and its affordance is disabled.
     struct PanelIntents {
+        var armNonMotorTests: ((NonMotorTestPrerequisites) -> Void)?
+        var lockNonMotorTests: (() -> Void)?
+        var previewNonMotorTest: ((NonMotorTestCommand, UInt8?) -> Void)?
+        var performNonMotorTest: ((NonMotorTestCommand) -> Void)?
+        var recordNonMotorObservation: ((String, NonMotorReportedResponse, String) -> Void)?
         var beginHardwareObservation: (() -> Void)?
         var endHardwareObservation: (() -> Void)?
         var resetHardwareObservation: (() -> Void)?

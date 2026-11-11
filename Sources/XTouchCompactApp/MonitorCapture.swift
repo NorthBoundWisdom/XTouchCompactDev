@@ -25,6 +25,14 @@
 
         deinit { try? writer.close() }
 
+        /// Diagnostic effects require a durable write-ahead audit. Input capture
+        /// remains streaming without a flush for every received event.
+        func checkpoint() throws {
+            guard !closed else { throw EvidenceError.closed }
+            do { try writer.synchronize() }
+            catch { closed = true; try? writer.close(); throw error }
+        }
+
         func append(_ event: MonitorEvent, map: FactoryStandardMap, lightProtocol: ButtonLightProtocol,
                     hardwareMode: Bool, listenOnly: Bool) throws
         {
@@ -43,8 +51,10 @@
             row["control"] = event.control?.description
             row["rawMIDI1Bytes"] = event.message?.midi1Bytes
             row["message"] = event.message?.description
+            row["nonMotorTest"] = event.nonMotorTest?.json
             if let connection = event.connection {
                 row["connection"] = [
+                    "generation": connection.generation,
                     "connectedInput": CaptureSessionMetadata.endpointJSON(connection.connectedInput),
                     "connectedOutput": CaptureSessionMetadata.endpointJSON(connection.connectedOutput),
                 ]

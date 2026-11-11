@@ -39,8 +39,23 @@ fresh observation scope. Earlier evidence stays unchanged in its original files.
 This is the point that requires the operator. Stage 2 cannot be finalized from
 synthetic tests: actual cross-layer release semantics and an independently
 confirmed Global RX are prerequisites. No LED/ring/motor output has been enabled
-by these changes. C3/C4 remain next-stage work; full HW sign-off and the separate
-N5 console cases remain open.
+by these changes. C3 tools have since been prepared in a locked state; C4, full
+HW sign-off and the separate N5 console cases remain open.
+
+### Stage 2 tools prepared, permission still required
+
+After Stage 1 review, use **Nonmotor tests**. Enter the reviewed evidence reference,
+firmware and independently read Global RX; the app will not infer them. Start
+capture and explicitly enable nonmotor output. Preview one command, send once,
+observe the actual device, then record matches/differs/no-response plus notes such
+as steady versus blinking, period, ring pattern/color or resulting layer.
+
+Both LED encodings remain explicit choices. Style and display commands are sent
+independently; Program Change does not itself prove the layer changed, so turn
+E1 afterward and inspect the received layer. Every route/reconnect change revokes
+permission. Locking or leaving the tab sends nothing. Stop capture before exporting
+the review. These tools are software-tested only; no real Stage 2 result has been
+recorded by this development pass, and no motor test is provided here.
 
 ### Full capture procedure
 

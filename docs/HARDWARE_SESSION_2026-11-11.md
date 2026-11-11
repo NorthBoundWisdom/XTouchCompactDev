@@ -184,3 +184,27 @@ operator work is full A/B input coverage, physical-identity checks and cross-lay
 touch release. Stage 2/3 remain blocked on those recorded firmware facts and an
 independent actual Global RX confirmation; they are not inferred from software
 coverage or simulated tests.
+
+## Following development round — C3 tools prepared, no physical output
+
+At the operator's request to continue development before acceptance, the nonmotor
+workbench was implemented with locked defaults. A typed command allowlist supports
+one button LED, ring display/style or layer assertion, with exact preview matching.
+It cannot express a motor or mode command. Operator prerequisites and independent
+RX evidence are required before permission; they do not change the device profile
+or become machine-observed firmware/RX facts.
+
+Permission is pinned to endpoint IDs and a reconnect generation, rechecked inside
+the serial CoreMIDI send queue. Request/permission audits are flushed before effects;
+failure, page exit, reconnect, profile/port changes and recording stop revoke output
+without a retry or cleanup command. Normal parameter/Agent traffic stays blocked.
+Transport acceptance and explicit operator observation are separate data, retained
+in JSONL and review exports. Physical LED/ring state and selected layer are never
+acknowledged merely because a command was sent.
+
+Software checks passed 62 Core, 65 App and 3 localization tests (130 total),
+14 workflow tests, repository command validation, build and SwiftFormat/Ruff checks.
+Native locked/armed/result views use synthetic fixtures only; native startup smoke
+is isolated. No C3 command was sent to the physical controller during development.
+Stage 1/2 hardware acceptance, actual firmware/Global RX and all motor behavior
+remain pending. The existing accepted apps and original captures were preserved.

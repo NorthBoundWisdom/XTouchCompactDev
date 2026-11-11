@@ -3,13 +3,27 @@
     import XTouchCompactCore
     import XTouchCompactLocalization
 
+    private enum ObservationWorkspaceTab: Hashable {
+        case panel, review, nonMotor
+    }
+
     /// A passive physical-input workspace. Views consume observations, never the transport.
     struct HardwareObservationView: View {
         let snapshot: PanelSnapshot
         let intents: PanelIntents
         @EnvironmentObject private var language: LanguageSettings
         @State private var inputChoice: Int32 = 0
-        @State private var reviewTab = ProcessInfo.processInfo.arguments.contains("--input-review") || ProcessInfo.processInfo.arguments.contains("observation-review")
+        @State private var tab: ObservationWorkspaceTab = {
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("--nonmotor-tests") || arguments.contains("nonmotor-tests") || arguments.contains("nonmotor-armed") || arguments.contains("nonmotor-result") {
+                return .nonMotor
+            }
+            if arguments.contains("--input-review") || arguments.contains("observation-review") {
+                return .review
+            }
+            return .panel
+        }()
+
         private var l: Localizer {
             language.localizer
         }
@@ -26,10 +40,11 @@
             VStack(spacing: 0) {
                 header
                 HStack {
-                    Picker(l.text("Observation workspace"), selection: $reviewTab) {
-                        Text(l.text("Live panel")).tag(false)
-                        Text(l.text("A/B input review")).tag(true)
-                    }.pickerStyle(.segmented).frame(width: 300)
+                    Picker(l.text("Observation workspace"), selection: $tab) {
+                        Text(l.text("Live panel")).tag(ObservationWorkspaceTab.panel)
+                        Text(l.text("A/B input review")).tag(ObservationWorkspaceTab.review)
+                        Text(l.text("Nonmotor tests")).tag(ObservationWorkspaceTab.nonMotor)
+                    }.pickerStyle(.segmented).frame(width: 410)
                     Spacer()
                     if snapshot.capturePath != nil {
                         Label(l.text("Recording inputs"), systemImage: "record.circle.fill")
@@ -48,13 +63,18 @@
                         .padding(.horizontal, 20).padding(.bottom, 10)
                 }
                 Divider()
-                if reviewTab {
-                    HardwareInputReviewView(snapshot: snapshot, intents: intents)
-                } else {
-                    livePanel
+                switch tab {
+                case .review: HardwareInputReviewView(snapshot: snapshot, intents: intents)
+                case .nonMotor: NonMotorTestView(snapshot: snapshot, intents: intents)
+                case .panel: livePanel
                 }
             }
             .onAppear { inputChoice = snapshot.inputChoice }
+            .onChange(of: tab) { previous, current in
+                if previous == .nonMotor, current != .nonMotor {
+                    intents.lockNonMotorTests?()
+                }
+            }
         }
 
         private var livePanel: some View {
@@ -98,8 +118,8 @@
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Label(l.text("Input only · motors locked"), systemImage: "lock.shield.fill")
-                    .font(.callout.bold()).foregroundStyle(Theme.value)
+                Label(l.text(snapshot.nonMotorTests.approval == nil ? "Input only · motors locked" : "Nonmotor output enabled · motor commands blocked"), systemImage: "lock.shield.fill")
+                    .font(.callout.bold()).foregroundStyle(snapshot.nonMotorTests.approval == nil ? Theme.value : Theme.touch)
                     .padding(10).background(Theme.value.opacity(0.1), in: Capsule())
                 Button(l.text("Reset observations")) { intents.resetHardwareObservation?() }
                 Button(l.text("Back to console")) { intents.endHardwareObservation?() }

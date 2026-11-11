@@ -16,6 +16,7 @@
         var ledProtocol: String?
         var hardwareMode: Bool?
         var listenOnly: Bool?
+        var connectionGeneration: UInt64?
 
         var json: [String: Any] {
             [
@@ -32,6 +33,7 @@
                 "configuredGlobalReceiveChannel": configuredGlobalRX as Any? ?? NSNull(),
                 "ledProtocol": ledProtocol as Any? ?? NSNull(),
                 "hardwareMode": hardwareMode as Any? ?? NSNull(), "listenOnly": listenOnly as Any? ?? NSNull(),
+                "connectionGeneration": connectionGeneration as Any? ?? NSNull(),
             ]
         }
 

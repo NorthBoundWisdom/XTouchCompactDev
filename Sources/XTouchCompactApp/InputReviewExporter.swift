@@ -13,7 +13,8 @@
     /// snapshot. The capture can include inputs before reset or omit later unrecorded inputs.
     enum InputReviewExporter {
         static func export(to url: URL, observer: CompactInputObserver, observationStarted: Date?,
-                           captureURL: URL?, metadata: CaptureSessionMetadata, at time: Date) throws -> InputReviewExportReceipt
+                           captureURL: URL?, metadata: CaptureSessionMetadata, at time: Date,
+                           nonMotorAttempts: [NonMotorTestAttempt] = []) throws -> InputReviewExportReceipt
         {
             let snapshotURL = url.deletingPathExtension().appendingPathExtension("capture.jsonl")
             let checksumURL = url.appendingPathExtension("sha256")
@@ -37,6 +38,7 @@
                 "observationMessageCount": observer.messageCount,
                 "observationScope": "since last observation reset; coverage is not hardware sign-off",
                 "captureScope": "independent raw snapshot; may include earlier inputs or omit later unrecorded inputs",
+                "nonMotorAttempts": nonMotorAttempts.map(\.audit.json),
                 "layers": CompactLayer.allCases.map { layer in
                     ["layer": layer.rawValue, "groups": CompactInputGroup.allCases.map { group in
                         ["group": group.rawValue, "controls": group.controls.map { control in
