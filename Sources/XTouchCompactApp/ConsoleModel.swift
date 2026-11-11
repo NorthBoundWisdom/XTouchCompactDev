@@ -215,7 +215,7 @@
                 if session.hasNonDefaultValues {
                     pendingPreset = configuration
                 } else {
-                    confirmLoadPreset(configuration)
+                    replaceWithPreset(configuration)
                 }
             } catch { self.error = error }
         }
@@ -225,7 +225,12 @@
         }
 
         /// Only the explicitly confirmed UI action calls this when a replacement is pending.
-        func confirmLoadPreset(_ configuration: SurfaceConfiguration) {
+        func confirmLoadPreset() {
+            guard let configuration = pendingPreset else { return }
+            replaceWithPreset(configuration)
+        }
+
+        private func replaceWithPreset(_ configuration: SurfaceConfiguration) {
             do {
                 let messages = try session.loadConfiguration(configuration, resetValues: true)
                 pendingPreset = nil
@@ -236,6 +241,7 @@
         func applyConfiguration(_ configuration: SurfaceConfiguration) {
             do {
                 let messages = try session.loadConfiguration(configuration)
+                pendingPreset = nil
                 send(messages); updateBank(); saveWorkspace()
             } catch { self.error = error }
         }

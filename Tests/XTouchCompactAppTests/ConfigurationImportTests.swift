@@ -57,7 +57,7 @@
         #expect(model.pendingPreset == nil)
         #expect(model.session.parameters.configuration == edited)
         model.loadPreset(.audioExample)
-        try model.confirmLoadPreset(#require(model.pendingPreset))
+        model.confirmLoadPreset()
         #expect(model.session.parameters.values["a.Fader.1"] == -60)
         #expect(model.mock.faders[0] == 83) // Replacing the configuration does not recall motors.
         #expect(!model.events.contains {
@@ -75,7 +75,7 @@
         model.importConfiguration(file)
         #expect(model.pendingPreset == .audioExample)
         #expect(model.session.parameters.values["a.Fader.1"] == -10)
-        try model.confirmLoadPreset(#require(model.pendingPreset))
+        model.confirmLoadPreset()
         #expect(model.session.parameters.values["a.Fader.1"] == -60)
         #expect(!model.events.contains {
             if case let .controlChange(_, n, _) = $0.message {
@@ -86,5 +86,29 @@
         model.loadPreset(.neutral)
         #expect(model.pendingPreset == nil)
         #expect(model.session.parameters.values["a.Fader.1"] == 0)
+    }
+#endif
+
+#if os(macOS)
+    @Test @MainActor func presetConfirmationConsumesOnlyModelOwnedPendingRequest() {
+        let model = ConsoleModel(startsMIDI: false)
+        model.setParameter("a.Fader.1", value: 83)
+        let confirm = model.panelIntents.confirmLoadPreset
+        confirm?()
+        #expect(model.session.parameters.values["a.Fader.1"] == 83)
+        model.loadPreset(.audioExample)
+        model.cancelLoadPreset()
+        confirm?()
+        #expect(model.session.parameters.configuration == .neutral)
+        model.loadPreset(.audioExample)
+        model.applyConfiguration(.neutral)
+        confirm?()
+        #expect(model.session.parameters.values["a.Fader.1"] == 83)
+        model.loadPreset(.audioExample)
+        confirm?()
+        #expect(model.session.parameters.configuration == .audioExample)
+        model.setParameter("a.Fader.1", value: -10)
+        confirm?() // Repeated stale action must not reset a later edit.
+        #expect(model.session.parameters.values["a.Fader.1"] == -10)
     }
 #endif

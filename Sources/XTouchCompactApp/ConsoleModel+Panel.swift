@@ -98,7 +98,7 @@
                 setParameter: { [weak self] id, value in self?.setParameter(id, value: value) },
                 applyConfiguration: { [weak self] config in self?.applyConfiguration(config) },
                 loadPreset: { [weak self] config in self?.loadPreset(config) },
-                confirmLoadPreset: { [weak self] config in self?.confirmLoadPreset(config) },
+                confirmLoadPreset: { [weak self] in self?.confirmLoadPreset() },
                 cancelLoadPreset: { [weak self] in self?.cancelLoadPreset() },
                 addressing: { [weak self] control, layer in
                     guard let map = self?.session.state.map,

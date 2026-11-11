@@ -161,7 +161,7 @@
         var setParameter: ((String, Double) -> Void)?
         var applyConfiguration: ((SurfaceConfiguration) -> Void)?
         var loadPreset: ((SurfaceConfiguration) -> Void)?
-        var confirmLoadPreset: ((SurfaceConfiguration) -> Void)?
+        var confirmLoadPreset: (() -> Void)?
         var cancelLoadPreset: (() -> Void)?
         var addressing: ((_ control: CompactControl, _ layer: CompactLayer) -> ControlAddressing?)?
     }

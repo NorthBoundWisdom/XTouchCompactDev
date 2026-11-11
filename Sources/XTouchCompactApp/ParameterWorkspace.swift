@@ -113,8 +113,8 @@
                         intents.cancelLoadPreset?()
                     }
                 }
-            ), presenting: snapshot.pendingPreset) { configuration in
-                Button(l.text("Reset values"), role: .destructive) { intents.confirmLoadPreset?(configuration) }
+            )) {
+                Button(l.text("Reset values"), role: .destructive) { intents.confirmLoadPreset?() }
                 Button(l.text("Cancel"), role: .cancel) { intents.cancelLoadPreset?() }
             }
         }
