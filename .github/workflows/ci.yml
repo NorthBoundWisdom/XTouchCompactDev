@@ -13,18 +13,21 @@ on:
 jobs:
   core-linux:
     runs-on: ubuntu-24.04
+    # Official Swift image retains the Ubuntu 24.04 / Swift 6.2 validation lane
+    # without a third-party setup action that still declares the Node 20 runtime.
+    container: swift:6.2-noble
     steps:
-      - uses: actions/checkout@v4
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: '6.2'
+      - uses: actions/checkout@v7.0.1
+      - name: Install workflow Python
+        run: apt-get update && apt-get install --no-install-recommends -y python3
+      - run: swift --version
       - run: python3 configs/setup_local_project.py
       - run: python3 -m unittest discover -s Tests/BuildWorkflowTests -v
       - run: swift test --jobs 2
   app-macos:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - run: brew install swiftformat ruff
       - run: python3 configs/format_repo.py --check
       - run: swift --version

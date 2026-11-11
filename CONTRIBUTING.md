@@ -29,3 +29,10 @@ out despite passing startup smoke. Run `tools/capture_readme_screenshots.py`
 locally on a Mac, or explicitly enable `capture_previews` in the manual GitHub
 workflow. It is not silently ignored when selected: a capture error still fails
 that diagnostic run. Push and pull-request CI do not run desktop preview capture.
+
+CI actions must use a supported Node runtime. Checkout is on Node 24; Linux runs
+inside the official `swift:6.2-noble` image with Python for workflow checks,
+removing the Node 20 setup action while retaining Swift 6.2 / Ubuntu 24.04.
+The macOS lane stays Apple Silicon. GitHub may attach an arm64 capacity notice;
+that provider scheduling notice is not a build failure and cannot be fixed by
+repository code. Do not hide it by silently replacing ARM coverage with Intel.
