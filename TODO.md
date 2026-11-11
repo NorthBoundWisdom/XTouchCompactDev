@@ -41,7 +41,7 @@
   未发送过灯环样式时 `style` 为 `nil`，未绑定控件的 `label` / `detail` 为 `nil`。
 - 最近一次本地验证（开发者报告）：macOS 上 `swift test --jobs 2`（46 项 Core + 30 项 App + 3 项本地化）、
   `swift build`、7 项工作流测试与原生打包冒烟通过。远端 CI 必需检查已通过（见 N1）；截图为手动诊断，鼠标交互目视验收未完成。
-- 下一步见文末“后续待办”。
+- 下一步见文末“后续待办”：阶段一（N2–N5、N7）→ 阶段二（实机）→ 阶段三（功能方向）。
 
 ## 后端任务（按顺序）
 
@@ -164,15 +164,18 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 ### HW 实机到货后（需现场操作，逐项记录到 `docs/`）
 
-沿用 `docs/IMPLEMENTATION_PLAN.md` 的 P1 清单，另外核对前端做出的假设。
-顺序：HW-1 → HW-7 → HW-6 → HW-5 → HW-2…HW-4。HW-6 / HW-7 优先，因为电机安全策略建立在下面三条
-**未验证的固件行为假设**上，任何一条不成立都要先改 Core 再继续输出测试：
+沿用 `docs/IMPLEMENTATION_PLAN.md` 的 P1 清单，另外核对前端做出的假设。按三个阶段做，前一阶段没记录完不进下一阶段：
+
+1. **只听不发**（Hardware 模式下不做任何软件写入）：HW-1、HW-7、HW-2、HW-3。
+2. **非电机输出**（一次一个控件）：HW-5、HW-4，以及下面的假设 2。
+3. **电机输出**（单个推子、小步、手离开面板）：HW-6，以及下面的假设 3。
+
+电机安全策略建立在三条**未验证的固件行为假设**上，任何一条不成立都要先改 Core 再继续：
 
 1. 物理 A/B 键换层后，设备改用另一层的 TX 地址发送（主机靠这一点发现层不一致）；
-   触摸中换层时，松手事件用哪一层的地址发出。
-2. 设备收到 Program Change 后确实切到主机指定的层（“重新对齐”依赖这一点）。
-3. 电机运动过程中设备是否回报推子位置；当前策略把“未触摸的位置回报”一律视为可能的电机进度，不驱动任何电机。
-
+   触摸中换层时，松手事件用哪一层的地址发出。属阶段 1。
+2. 设备收到 Program Change 后确实切到主机指定的层（“重新对齐”依赖这一点）。属阶段 2。
+3. 电机运动过程中设备是否回报推子位置；当前策略把“未触摸的位置回报”一律视为可能的电机进度，不驱动任何电机。属阶段 3。
 
 - [ ] HW-1 端口名、VID / PID、固件版本、TX 通道与 Global RX 通道。
 - [ ] HW-2 **按键编号与物理位置**：前端假设 1–24 是编码器下方三行（每行 8 个），25–32 在推子下方，
@@ -211,39 +214,54 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 ## 后续待办
 
-不依赖硬件，按顺序做：
+### 已完成
 
-- [x] N1 **远端 CI 必需检查已转绿**：[运行 42999395748](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/42999395748)
-  的 core-linux 与 app-macos 均通过，含 Swift 6.1.2 原生建置、测试、签名打包及启动冒烟。
-  历史问题与诊断边界：
-  - 早期 `1da00ed` 及其前一次运行因 SwiftPM 原生构建把 `zh-Hans.lproj` 改成小写，
-    本地化查找强制解包崩溃；`eea7a22` 已兼容小写并在缺目录时回退英文。
-  - 最新 `0019b24` 的运行 `42997141447` 中 `core-linux` 已通过，`app-macos` 在 Swift 6.1.2
-    编译 `LocalMCPServer.swift` 时报告 sending self risks causing data races。本机 Swift 6.4.2 未报此错。
-    修复在 MCP listener/peer 与 OSC callbacks 的 MainActor Task 内显式再次捕获 `[weak self]`，
-    与现有 CoreMIDI 的交接模式一致。首次修复运行 `42998174212` 已越过 data-race 错误，
-    随后报弱捕获 Task 解包后的隐式 self 不被 6.1.2 接受；改为 server/peer 命名引用，避免
-    SwiftFormat 再次移除显式成员基址。不关闭并发检查，不更改运行语义。
-  - `42998697476` 已在 Swift 6.1.2 上通过编译、测试及原生打包/启动冒烟；截图进程在 30 秒后逾时，
-    不能据此断言没有 WindowServer。保留本地截图脚本，将远端截图改为手动 workflow_dispatch 的
-    capture_previews 诊断选项（默认关闭）；推送 CI 仍强制建置、全部测试、签名打包及启动冒烟。
-    强制检查已通过；远端截图本身仍属未修好的桌面诊断，不宣称截图已转绿。
+- [x] N1 **远端 CI 必需检查转绿**（最近一次：[运行 43001312226](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43001312226)）。
+  `core-linux`（官方 `swift:6.2-noble` 容器）与 `app-macos`（macos-15，Swift 6.1.2：建置、全部测试、签名打包、启动冒烟）通过。
+  经过：
+  - `eea7a22`：SwiftPM 原生构建把 `zh-Hans.lproj` 输出成小写，本地化查找强制解包崩溃；改为兼容小写并回退英文。
+  - `9302a27`、`1a99f43`：Swift 6.1.2 拒绝 Network 回调里隐式捕获的 `self`；七处 MainActor Task 显式再捕获并用具名引用，未关闭并发检查。
+  - `95f2d89`：runner 上截图进程 30 秒超时，原因未查明；截图改为手动 `capture_previews` 诊断，默认关闭，见 N6。
+  - `77bd10a`：`actions/checkout` 升到 v7.0.1，Linux 改用官方容器，消除 Node 20 弃用警告。
+
+### 阶段一：现在可做，不依赖硬件
+
+按顺序做，N2–N5 是进入实机阶段前的门槛：
+
 - [ ] N2 **前端作者审视契约与视图改动**：`PanelSnapshot.pendingPreset`、`mcpPort`；`PanelIntents.realignLayer`、
   `resetParameters`、`applyConfiguration`（取代 `loadConfiguration`）、`loadPreset`、`confirmLoadPreset`、
   `cancelLoadPreset`；视图 `ParameterWorkspace`、`WorkspaceTabsView`、`ExternalServicesSettings`。
-- [ ] N3 `confirmLoadPreset` 改为无参数，由模型使用自己的 `pendingPreset`（契约改动，前端做；属 N2 的一部分）。
-- [ ] N4 **B10 工具链审查**：`configs/*.py`、`tools/*.py`、提交钩子与打包流程尚未做代码审查，只有开发者自测。
-- [ ] N5 **鼠标交互目视验收**：Mock 模式下逐项过一遍——拖住推子时软件写入出现暂缓标记、松手对位；
+- [ ] N3 `confirmLoadPreset` 改为无参数，由模型使用自己的 `pendingPreset`（契约改动，前端做；随 N2 一起）。
+- [ ] N4 **B10 工具链审查**：`configs/*.py`、`tools/*.py`、提交钩子与打包流程尚未做代码审查，只有开发者自测与 CI 通过。
+- [ ] N5 **鼠标交互目视验收**：Mock 模式下逐项过一遍并把结果记到 `docs/`——拖住推子时软件写入出现暂缓标记、松手对位；
   层不一致警告与重新对齐；预置替换确认框；OSC 停机通知；MCP 开关与令牌复制。
+- [ ] N7 **实机记录准备**（后端提出、前端做界面）：
+  - MIDI 监视器目前只保留最近 120 条且不能导出，阶段 1 的逐控件抓取没法留档。增加“导出监视记录”或抓取会话
+    （带时间、原始字节、解码结果、主机当前层），输出到用户选择的文件。
+  - 新建 `docs/HARDWARE_BRINGUP.md` 记录模板：HW-1…HW-7 各一节，写明操作步骤、预期、实际、抓取文件名和结论。
+  - Hardware 模式增加“只听不发”开关（阶段 1 用）：打开时不向设备发送任何消息，包括连接时的 Program Change 和 LED 同步。
+    现在切到 Hardware 会立即发层断言和非电机反馈，做不到纯被动抓取。
 
-实机到货后：
+可延后，不挡实机：
 
-- [ ] HW-1…HW-7（见上，按给出的顺序），每项结果记到 `docs/`，再做 F7。
+- [ ] N6 远端截图诊断超时的原因（手动运行 `capture_previews` 时仍会失败）。README 截图继续由本地脚本生成。
+- [ ] N8 编译器版本不一致：本机 Swift 6.4.2、macOS runner 6.1.2、Linux 容器 6.2，并发诊断结果不同。
+  决定是否加一条较新工具链的 CI 作业，或接受偶尔在 runner 上才暴露的编译错误。
 
-待决定，未排期（需要先定方向再开任务）：
+### 阶段二：实机到货后
+
+- [ ] HW-1…HW-7（见上，按三个阶段的顺序），每项结果记到 `docs/HARDWARE_BRINGUP.md`。
+- [ ] 三条固件假设逐条写明成立或不成立；不成立的先改 Core 并补测试，再继续输出测试。
+- [ ] F7 按 HW-2…HW-5 的结果修正面板；`docs/MIDI_PROTOCOL.md` 把“未实测”的标注改成实测结论。
+- [ ] 实机通过后更新 README 的阶段说明；是否打版本 tag 由用户决定。
+
+### 阶段三：实机验证之后的功能方向
+
+需要先定方向再开任务。建议顺序是 D1 → D3 → D4 → D2，D5 最后：
 
 - [ ] D1 参数数值是否持久化。现在只保存配置与设备档案，数值是会话状态，重启回到默认值。
-- [ ] D2 OSC 输出目前只有一个参数、固定地址 `/xtouch/value`；是否需要多参数与可配置地址。
-- [ ] D3 MCP 权限目前只有“允许写入”一个开关加参数级 `agentWritable`；接入真实 Agent 前是否需要更细的授权。
-- [ ] D4 真实外部 Agent 进程接入（现在只有 Mock 时间线）。
+  改动小、对日常使用影响大，建议最先定；无论怎么定，启动都不得自动归位电机。
+- [ ] D3 MCP 权限目前只有“允许写入”一个开关加参数级 `agentWritable`；接入真实 Agent 前是否需要更细的授权。D4 的前置。
+- [ ] D4 真实外部 Agent 进程接入（现在只有 Mock 时间线）。依赖 D3 与实机上的触摸仲裁验证。
+- [ ] D2 OSC 输出目前只有一个参数、固定地址 `/xtouch/value`；是否需要多参数与可配置地址。有具体接收端需求时再做。
 - [ ] D5 Mackie Control 模式、编辑器预置导入、相对编码器模式：见 `docs/IMPLEMENTATION_PLAN.md` 的 P2，特性化之前不做。
