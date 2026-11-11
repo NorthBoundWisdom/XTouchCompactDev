@@ -94,7 +94,7 @@ public struct CompactSession: Sendable {
         return try synchronizeParameters(includeMotors: false)
     }
 
-    private mutating func synchronizeParameters(includeMotors: Bool = true, ids: Set<String>? = nil) throws -> [MIDIMessage] {
+    private mutating func synchronizeParameters(includeMotors: Bool = true, ids: Set<String>? = nil, excludingFader: Int? = nil) throws -> [MIDIMessage] {
         var messages: [MIDIMessage] = []
         for assignment in parameters.configuration.assignments {
             guard case let .parameter(id) = assignment.action, ids == nil || ids!.contains(id),
@@ -103,7 +103,7 @@ public struct CompactSession: Sendable {
             switch assignment.control {
             case let .fader(index):
                 banks[assignment.layer, default: .init()].faders[index - 1] = raw
-                if includeMotors, assignment.layer == state.layer {
+                if includeMotors, assignment.layer == state.layer, index != excludingFader {
                     messages += try state.setFader(index, value: raw)
                 }
             case let .encoder(index):
@@ -167,7 +167,17 @@ public struct CompactSession: Sendable {
             }
             switch event.control {
             case let .fader(index):
-                result.feedback += try setFader(index, value: event.value, layer: event.layer)
+                state.acceptPhysicalFader(index)
+                if case let .parameter(id) = parameters.assignment(.fader(index), layer: event.layer),
+                   let definition = parameters.definition(id)
+                {
+                    try parameters.set(id, value: definition.minimum + Double(event.value) / 127 * (definition.maximum - definition.minimum))
+                    // Without touch evidence this may be motor-progress feedback. Never let it
+                    // drive another motor and bounce back through a shared binding.
+                    result.feedback += try synchronizeParameters(includeMotors: state.isTouched(index), ids: [id], excludingFader: index)
+                } else {
+                    banks[event.layer, default: .init()].faders[index - 1] = event.value
+                }
             case let .faderTouch(index):
                 let previous = parameters.values
                 if let slot = try parameters.receive(event) {

@@ -80,3 +80,41 @@ private func motors(_ messages: [MIDIMessage]) -> [MIDIMessage] {
     #expect(try motors(session.recallFaders()).isEmpty)
     #expect(session.bank(.b).faders[0] == 0)
 }
+
+@Test(arguments: [false, true]) func snappingPhysicalInputNeverEchoesToItsMotor(touched: Bool) throws {
+    var config = SurfaceConfiguration.neutral
+    config.parameters[0].step = 50
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = try session.loadConfiguration(config)
+    if touched {
+        _ = try session.receive([.controlChange(channel: 0, number: 101, value: 127)])
+    }
+    for raw: UInt8 in [44, 45, 46, 49] {
+        let result = try session.receive([.controlChange(channel: 0, number: 1, value: raw)])
+        #expect(motors(result.feedback).isEmpty)
+        #expect(session.parameters.values["a.Fader.1"] == 50)
+        #expect(session.state.observedFader(1) == raw)
+        #expect(!session.state.isMotorPending(1))
+    }
+    let release = try session.receive([.controlChange(channel: 0, number: 101, value: 0)])
+    #expect(motors(release.feedback).isEmpty)
+    config.parameters[0].isSwitch = true
+    _ = try session.loadConfiguration(config)
+    #expect(try motors(session.receive([.controlChange(channel: 0, number: 1, value: 70)]).feedback).isEmpty)
+    #expect(session.parameters.values["a.Fader.1"] == 127)
+}
+
+@Test func sharedBindingsCannotBounceMotorReportsBackToTheOriginalFader() throws {
+    var config = SurfaceConfiguration.neutral
+    config.parameters[0].step = 50
+    config.assignments.removeAll { $0.control == .fader(2) && $0.layer == .a }
+    config.assignments.append(.init(control: .fader(2), layer: .a, action: .parameter("a.Fader.1")))
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = try session.loadConfiguration(config)
+    _ = try session.setParameter("a.Fader.1", value: 100)
+    for raw: UInt8 in [1, 20, 45, 70, 90, 100] {
+        for number: UInt8 in [1, 2] {
+            #expect(try motors(session.receive([.controlChange(channel: 0, number: number, value: raw)]).feedback).isEmpty)
+        }
+    }
+}

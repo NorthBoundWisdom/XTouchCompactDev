@@ -193,6 +193,12 @@ public struct CompactState: Sendable {
         touchedFaders = touches
     }
 
+    public mutating func acceptPhysicalFader(_ index: Int) {
+        desiredFader.removeValue(forKey: index)
+        pendingMotor.remove(index)
+        lastMotorCommands.removeValue(forKey: index)
+    }
+
     public mutating func setButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
         guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
         desiredButtons[index] = light
