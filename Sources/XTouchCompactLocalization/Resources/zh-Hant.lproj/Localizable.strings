@@ -226,3 +226,7 @@
 "ignored" = "已忽略";
 "Encoder push" = "編碼器按下";
 "Touch" = "觸摸";
+
+"Device layer differs from the host; motor output is blocked." = "裝置層與主機不一致；已阻止馬達輸出。";
+"Realign current layer" = "重新對齊目前層";
+"Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset." = "重發目前層並清除舊的層不一致記錄；不召回馬達，也不清除觸摸狀態。";

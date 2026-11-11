@@ -18,7 +18,16 @@ public struct FactoryStandardMap: Sendable {
         self.globalReceiveChannel = globalReceiveChannel
     }
 
-    public func decode(_ message: MIDIMessage, layer: CompactLayer) -> CompactInput? {
+    public func decode(_ message: MIDIMessage) -> CompactInput? {
+        decodeOnLayer(message, layer: .a) ?? decodeOnLayer(message, layer: .b)
+    }
+
+    /// Compatibility entry point: the disjoint factory TX address identifies the actual layer.
+    public func decode(_ message: MIDIMessage, layer _: CompactLayer) -> CompactInput? {
+        decode(message)
+    }
+
+    private func decodeOnLayer(_ message: MIDIMessage, layer: CompactLayer) -> CompactInput? {
         switch message {
         case let .controlChange(channel, number, value):
             guard channel == transmitChannel else { return nil }

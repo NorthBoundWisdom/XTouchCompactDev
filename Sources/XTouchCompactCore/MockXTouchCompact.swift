@@ -132,6 +132,15 @@ public struct MockXTouchCompact: Sendable {
         }
     }
 
+    public func reconfigured(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) -> Self {
+        var next = Self(map: map, lightProtocol: lightProtocol)
+        next.layer = layer; next.faders = faders; next.touchedFaders = touchedFaders
+        next.encoders = encoders; next.pushedEncoders = pushedEncoders; next.pressedButtons = pressedButtons
+        next.buttons = buttons; next.rings = rings; next.ringStyles = ringStyles
+        next.ignoredMotorCommands = ignoredMotorCommands
+        return next
+    }
+
     private mutating func redrawRing(_ index: Int) {
         rings[index - 1] = .position(CompactSession.ringSegment(for: encoders[index - 1]))
     }

@@ -127,6 +127,7 @@
         var exportConfiguration: (() -> Void)?
         var setParameter: ((String, Double) -> Void)?
         var loadConfiguration: ((SurfaceConfiguration) -> Void)?
+        var realignLayer: (() -> Void)?
         var addressing: ((_ control: CompactControl, _ layer: CompactLayer) -> ControlAddressing?)?
     }
 

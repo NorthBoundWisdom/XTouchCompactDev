@@ -7,6 +7,12 @@ public struct CompactState: Sendable {
     public let lightProtocol: ButtonLightProtocol
     public private(set) var layer: CompactLayer = .a
 
+    public private(set) var observedLayer: CompactLayer?
+    public var layerMismatch: Bool {
+        observedLayer.map { $0 != layer } ?? false
+    }
+
+    private var safetyTouches: Set<Int> = []
     private var touchedFaders: Set<Int> = []
     private var desiredFader: [Int: UInt8] = [:]
     private var observedFaders: [Int: UInt8] = [:]
@@ -35,7 +41,7 @@ public struct CompactState: Sendable {
     }
 
     public func isTouched(_ index: Int) -> Bool {
-        touchedFaders.contains(index)
+        touchedFaders.contains(index) || safetyTouches.contains(index)
     }
 
     public func isMotorPending(_ index: Int) -> Bool {
@@ -71,7 +77,6 @@ public struct CompactState: Sendable {
         lastSentButtons.removeAll()
         lastSentRings.removeAll()
         lastSentStyles.removeAll()
-        touchedFaders.removeAll()
         pendingMotor.removeAll()
         pressedButtons.removeAll()
         pushedEncoders.removeAll()
@@ -82,12 +87,12 @@ public struct CompactState: Sendable {
 
     @discardableResult
     public mutating func selectLayer(_ layer: CompactLayer) -> MIDIMessage {
-        if self.layer != layer {
-            // A deferred command belongs to the old bank. Releasing a hand after a layer
-            // change must not implicitly recall that bank's target into the new layer.
-            pendingMotor.removeAll()
-            desiredFader.removeAll()
-        }
+        // An explicit assertion, including re-aligning the current layer, invalidates old
+        // layer evidence. This is not a physical acknowledgement and never recalls motors.
+        pendingMotor.removeAll()
+        desiredFader.removeAll()
+        invalidateMotorCommandHistory()
+        observedLayer = nil
         self.layer = layer
         // Never suppress layer assertions because physical button presses may change it invisibly.
         return map.selectLayer(layer)
@@ -96,7 +101,8 @@ public struct CompactState: Sendable {
     /// Decode input and invalidate stale feedback cache where local hardware behavior may overwrite LEDs.
     /// The domain engine consumes the returned CompactInput and chooses the resulting parameter value.
     public mutating func receive(_ message: MIDIMessage) -> CompactInput? {
-        guard let event = map.decode(message, layer: layer) else { return nil }
+        guard let event = map.decode(message) else { return nil }
+        observedLayer = event.layer
         switch event.control {
         case let .fader(i):
             observedFaders[i] = event.value
@@ -135,7 +141,7 @@ public struct CompactState: Sendable {
     /// Use only after a decoded fader-touch release; compare with the observed physical position.
     public mutating func reconcileReleasedFader(_ index: Int) throws -> [MIDIMessage] {
         guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
-        guard !touchedFaders.contains(index), pendingMotor.contains(index),
+        guard !isTouched(index), !layerMismatch, pendingMotor.contains(index),
               let desired = desiredFader[index] else { return [] }
         pendingMotor.remove(index)
         if observedIsCurrent.contains(index), observedFaders[index] == desired {
@@ -153,7 +159,8 @@ public struct CompactState: Sendable {
     public mutating func setFader(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
         guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
         desiredFader[index] = value
-        if touchedFaders.contains(index) {
+        guard !layerMismatch else { pendingMotor.remove(index); return [] }
+        if isTouched(index) {
             pendingMotor.insert(index)
             return []
         }
@@ -165,6 +172,25 @@ public struct CompactState: Sendable {
         lastMotorCommands[index] = value
         observedIsCurrent.remove(index)
         return try [map.motorPosition(fader: index, value: value)]
+    }
+
+    /// Safety ownership is independent of the currently selected transport (e.g. hardware while mocking).
+    public mutating func setSafetyTouch(_ index: Int, touched: Bool) {
+        guard (1 ... 9).contains(index) else { return }
+        if touched {
+            safetyTouches.insert(index)
+        } else {
+            safetyTouches.remove(index)
+        }
+    }
+
+    public mutating func cancelMotorIntents() {
+        pendingMotor.removeAll(); desiredFader.removeAll(); invalidateMotorCommandHistory()
+        observedFaders.removeAll(); observedLayer = nil
+    }
+
+    public mutating func setInputTouches(_ touches: Set<Int>) {
+        touchedFaders = touches
     }
 
     public mutating func setButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
@@ -237,6 +263,8 @@ public extension CompactState {
         var next = CompactState(map: map, lightProtocol: lightProtocol)
         next.layer = layer
         next.touchedFaders = touchedFaders
+        next.safetyTouches = safetyTouches
+        next.observedLayer = observedLayer
         next.observedFaders = observedFaders
         next.pressedButtons = pressedButtons
         next.pushedEncoders = pushedEncoders

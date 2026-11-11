@@ -52,3 +52,31 @@ import Testing
     #expect(state.receive(.controlChange(channel: 0, number: 28, value: 80))?.control == .fader(1))
     #expect(try state.setFader(1, value: 100) == [.controlChange(channel: 2, number: 1, value: 100)])
 }
+
+private func motors(_ messages: [MIDIMessage]) -> [MIDIMessage] {
+    messages.filter {
+        if case let .controlChange(_, n, _) = $0 {
+            return (1 ... 9).contains(n)
+        }; return false
+    }
+}
+
+@Test func physicalLayerMismatchTracksTouchAndBlocksSoftwareAndAgentMotors() throws {
+    let map = try FactoryStandardMap()
+    var mock = MockXTouchCompact(map: map, lightProtocol: .manual)
+    var session = CompactSession(map: map, lightProtocol: .manual)
+    mock.selectPhysicalLayer(.b)
+    let touch = try mock.touchFader(1, isTouched: true)
+    #expect(map.decode(touch[0])?.layer == .b)
+    _ = try session.receive(touch)
+    #expect(session.state.isTouched(1))
+    #expect(session.state.layerMismatch)
+    #expect(session.state.observedLayer == .b)
+    #expect(try motors(session.setFader(1, value: 100)).isEmpty)
+    #expect(try motors(session.setParameter("a.Fader.1", value: 110, fromAgent: true)).isEmpty)
+    let release = try session.receive(mock.touchFader(1, isTouched: false))
+    #expect(!session.state.isTouched(1))
+    #expect(motors(release.feedback).isEmpty)
+    #expect(try motors(session.recallFaders()).isEmpty)
+    #expect(session.bank(.b).faders[0] == 0)
+}

@@ -112,4 +112,85 @@
         #expect(damaged.notifications.contains { $0.id == "storage" })
         #expect(try String(contentsOf: store.url, encoding: .utf8) == "bad file")
     }
+
+    @Test @MainActor func inactiveHardwareTouchSurvivesModeSwitchAndReconnect() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi)
+        midi.connect()
+        midi.onMessages?([.controlChange(channel: 0, number: 111, value: 127)])
+        #expect(model.session.state.isTouched(1))
+        #expect(model.events.first?.ignored == false)
+        model.faderChanged(1, value: 80) // Never command even the mock motor against known hardware touch.
+        model.useHardware(true)
+        midi.sent.removeAll()
+        model.faderChanged(1, value: 90)
+        #expect(!midi.sent.contains {
+            if case .controlChange(_, 1, _) = $0 {
+                return true
+            }; return false
+        })
+        midi.onConnection?(CompactMIDIConnection())
+        midi.connect()
+        #expect(model.session.state.isTouched(1))
+        model.setParameter("a.Fader.1", value: 100, fromAgent: true)
+        #expect(!midi.sent.contains {
+            if case .controlChange(_, 1, _) = $0 {
+                return true
+            }; return false
+        })
+    }
+
+    @Test @MainActor func transportSwitchDoesNotRecallDeferredMockIntent() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi)
+        midi.connect()
+        midi.onMessages?([.controlChange(channel: 0, number: 101, value: 127)])
+        model.faderChanged(1, value: 100)
+        #expect(model.session.state.isMotorPending(1))
+        model.useHardware(true)
+        midi.sent.removeAll()
+        midi.onMessages?([.controlChange(channel: 0, number: 101, value: 0)])
+        #expect(!midi.sent.contains {
+            if case .controlChange(_, 1, _) = $0 {
+                return true
+            }; return false
+        })
+    }
+
+    @Test @MainActor func mockProfileEditsKeepPhysicalPositions() {
+        let model = ConsoleModel(startsMIDI: false)
+        model.moveFader(1, value: 37)
+        model.turnEncoder(1, delta: 53)
+        model.transmitChannel = 4
+        model.configure()
+        #expect(model.mock.faders[0] == 37)
+        #expect(model.mock.encoders[0] == 53)
+    }
+
+    @Test @MainActor func explicitRealignmentReassertsCurrentLayerWithoutMotorOrTouchReset() throws {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi)
+        midi.connect(); model.useHardware(true)
+        model.faderChanged(1, value: 90)
+        midi.onMessages?([.controlChange(channel: 0, number: 111, value: 127)])
+        #expect(model.session.state.layerMismatch)
+        #expect(model.notifications.contains { $0.id == "layer" })
+        midi.sent.removeAll()
+        let realign = try #require(model.panelIntents.realignLayer)
+        realign()
+        #expect(midi.sent.contains(.programChange(channel: 0, number: 0)))
+        #expect(!midi.sent.contains {
+            if case let .controlChange(_, n, _) = $0 {
+                return (1 ... 9).contains(n)
+            }; return false
+        })
+        #expect(!model.session.state.layerMismatch)
+        #expect(model.session.state.observedLayer == nil) // Assertion is not a position/layer observation.
+        #expect(model.session.state.isTouched(1))
+        #expect(!model.notifications.contains { $0.id == "layer" })
+        midi.onMessages?([.controlChange(channel: 0, number: 101, value: 0)])
+        midi.sent.removeAll()
+        model.faderChanged(1, value: 90)
+        #expect(midi.sent.contains(.controlChange(channel: 0, number: 1, value: 90))) // Explicit reassertion is not suppressed by old send history.
+    }
 #endif

@@ -69,7 +69,7 @@
                 case .parameters: ParameterWorkspace(snapshot: snapshot, intents: intents)
                 case .values: ValueListView(snapshot: snapshot, intents: intents, selection: $selection)
                 case .monitor: MIDIMonitorView(entries: model.events, clear: model.clearMonitor)
-                case .connection: ConnectionSettingsView(model: model)
+                case .connection: ConnectionSettingsView(model: model, realign: { intents.realignLayer?() })
                 }
             }
             .panelStyle()
@@ -200,12 +200,15 @@
         }
 
         @ObservedObject var model: ConsoleModel
+        let realign: () -> Void
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(l.text("仅支持出厂 Standard MIDI 模式。应用不会改写设备预设，也不会自动切换 MC 模式。"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button(l.text("Realign current layer"), action: realign)
+                    .help(l.text("Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset."))
                 VStack(alignment: .leading, spacing: 8) {
                     Text(l.text("端口")).font(.subheadline.bold())
                     Picker(l.text("输入"), selection: $model.inputChoice) {

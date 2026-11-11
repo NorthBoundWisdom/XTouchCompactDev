@@ -226,3 +226,7 @@
 "ignored" = "ignored";
 "Encoder push" = "Encoder push";
 "Touch" = "Touch";
+
+"Device layer differs from the host; motor output is blocked." = "Device layer differs from the host; motor output is blocked.";
+"Realign current layer" = "Realign current layer";
+"Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset." = "Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset.";

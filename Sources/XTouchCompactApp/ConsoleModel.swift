@@ -107,20 +107,23 @@
         }
 
         func useHardware(_ enabled: Bool) {
+            guard hardwareMode != enabled else { return }
+            session.prepareTransportSwitch(inputTouches: enabled ? [] : mock.touchedFaders)
+            if notifications.contains(where: { $0.id == "layer" }) {
+                notifications.removeAll { $0.id == "layer" }
+            }
             hardwareMode = enabled
             if enabled {
                 guard connection.isConnected else {
                     error = ConsoleError.noConnection
                     return
                 }
-                apply { try $0.connect() }
+                session.setInputTouches([])
+                apply { try $0.selectLayer(layer) }
             } else {
                 error = nil
-                apply { try $0.connect() }
-                // A mock hand can still be holding a physical fader across a mode switch.
-                for index in mock.touchedFaders.sorted() {
-                    touchFader(index, isTouched: true)
-                }
+                session.setInputTouches(mock.touchedFaders)
+                apply { try $0.selectLayer(layer) }
                 log(LocalizedMessage("Switched to deterministic mock surface"))
             }
         }
@@ -134,14 +137,9 @@
                     transmitChannel: UInt8(transmitChannel - 1),
                     globalReceiveChannel: UInt8(feedbackChannel - 1)
                 )
-                guard (1 ... 16).contains(transmitChannel), (1 ... 16).contains(feedbackChannel) else {
-                    throw CompactError.invalidChannel(16)
-                }
+
                 let variant: ButtonLightProtocol = observedLEDVariant ? .observed114 : .manual
-                mock = MockXTouchCompact(map: map, lightProtocol: variant)
-                for index in 1 ... 9 where session.state.isTouched(index) {
-                    _ = try mock.touchFader(index, isTouched: true)
-                }
+                mock = mock.reconfigured(map: map, lightProtocol: variant)
                 apply { try $0.reconfigure(map: map, lightProtocol: variant) }
                 log(LocalizedMessage("Profile applied; parameter values preserved"))
                 saveWorkspace()
@@ -247,13 +245,29 @@
 
         private func receive(_ messages: [MIDIMessage], fromMock: Bool = false) {
             for message in messages {
+                let event = session.state.map.decode(message)
+                if !fromMock, let event, case let .faderTouch(index) = event.control {
+                    session.setSafetyTouch(index, touched: event.isPressed == true)
+                }
+                let safetyOnly = !fromMock && !hardwareMode && event.map {
+                    if case .faderTouch = $0.control {
+                        return true
+                    }; return false
+                } == true
                 record(message, direction: .input, source: fromMock ? .mock : .hardware,
-                       ignored: hardwareMode == fromMock || session.state.map.decode(message, layer: layer) == nil)
+                       ignored: !safetyOnly && (hardwareMode == fromMock || event == nil))
             }
             guard hardwareMode != fromMock else { return }
             do {
                 let update = try session.receive(messages)
                 send(update.feedback)
+                if session.state.layerMismatch {
+                    if !notifications.contains(where: { $0.id == "layer" }) {
+                        notifications.append(ConsoleNotification(id: "layer", level: .warning, message: LocalizedMessage("Device layer differs from the host; motor output is blocked."), persistent: false))
+                    }
+                } else if notifications.contains(where: { $0.id == "layer" }) {
+                    notifications.removeAll { $0.id == "layer" }
+                }
                 for slot in update.agentIntents {
                     agentPrimary(slot)
                 }
@@ -305,6 +319,10 @@
             events.insert(MonitorEvent(timestamp: now(), direction: nil, source: .agent, message: nil, control: nil,
                                        ignored: false, text: LocalizedMessage("Agent call: %@", name)), at: 0)
             trimEvents()
+        }
+
+        func realignCurrentLayer() {
+            setLayer(layer)
         }
 
         private enum ConsoleError: Error { case noConnection }
@@ -448,7 +466,13 @@
         }
 
         private func updateBank() {
-            bank = session.bank(layer)
+            if !session.state.layerMismatch, notifications.contains(where: { $0.id == "layer" }) {
+                notifications.removeAll { $0.id == "layer" }
+            }
+            let next = session.bank(layer)
+            if bank != next {
+                bank = next
+            }
         }
 
         private func log(_ entry: LocalizedMessage) {

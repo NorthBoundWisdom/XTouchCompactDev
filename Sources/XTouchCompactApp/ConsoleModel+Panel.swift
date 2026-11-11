@@ -82,6 +82,7 @@
                 exportConfiguration: { [weak self] in self?.chooseExportConfiguration() },
                 setParameter: { [weak self] id, value in self?.setParameter(id, value: value) },
                 loadConfiguration: { [weak self] config in self?.loadConfiguration(config) },
+                realignLayer: { [weak self] in self?.realignCurrentLayer() },
                 addressing: { [weak self] control, layer in
                     guard let map = self?.session.state.map,
                           let input = map.inputAddress(for: control, layer: layer) else { return nil }

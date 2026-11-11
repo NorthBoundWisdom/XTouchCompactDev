@@ -66,7 +66,7 @@ import Testing
     #expect(!state.isEncoderPushed(17))
 }
 
-@Test func reconnectClearsObservationsAndHeldStateButKeepsDesiredFeedback() throws {
+@Test func reconnectKeepsTouchSafetyWhileInvalidatingObservations() throws {
     var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
     _ = state.receive(.controlChange(channel: 0, number: 1, value: 31))
     _ = state.receive(.controlChange(channel: 0, number: 101, value: 127))
@@ -78,7 +78,7 @@ import Testing
     _ = try state.setButton(1, light: .blink)
     let commands = try state.connect()
     #expect(state.observedFader(1) == nil)
-    #expect(!state.isTouched(1))
+    #expect(state.isTouched(1))
     #expect(!state.isMotorPending(1))
     #expect(!state.isEncoderPushed(1))
     #expect(!state.isButtonDown(1))

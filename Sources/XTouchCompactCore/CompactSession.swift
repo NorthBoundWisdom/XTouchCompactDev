@@ -41,6 +41,18 @@ public struct CompactSession: Sendable {
         return try [map.selectLayer(state.layer)] + syncVisibleNonMotorFeedback()
     }
 
+    public mutating func setSafetyTouch(_ index: Int, touched: Bool) {
+        state.setSafetyTouch(index, touched: touched)
+    }
+
+    public mutating func prepareTransportSwitch(inputTouches: Set<Int>) {
+        state.cancelMotorIntents(); state.setInputTouches(inputTouches)
+    }
+
+    public mutating func setInputTouches(_ touches: Set<Int>) {
+        state.setInputTouches(touches)
+    }
+
     public func bank(_ layer: CompactLayer) -> CompactParameterBank {
         banks[layer] ?? .init()
     }
@@ -150,6 +162,9 @@ public struct CompactSession: Sendable {
         for message in messages {
             guard let event = state.receive(message) else { continue }
             result.inputs.append(event)
+            if event.layer != state.layer {
+                continue
+            }
             switch event.control {
             case let .fader(index):
                 result.feedback += try setFader(index, value: event.value, layer: event.layer)
