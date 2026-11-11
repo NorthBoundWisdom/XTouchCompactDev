@@ -50,14 +50,14 @@
                 Text("X-TOUCH COMPACT")
                     .font(.system(size: m(17), weight: .black, design: .rounded))
                     .tracking(2)
-                Text(l.text(snapshot.isMock ? "MOCK DEVICE" : "HARDWARE MIRROR"))
+                Text(l.text(snapshot.hardwareObservation != nil ? "INPUT OBSERVER" : snapshot.isMock ? "MOCK DEVICE" : "HARDWARE MIRROR"))
                     .font(.system(size: m(9), weight: .bold, design: .monospaced))
                     .foregroundStyle(snapshot.isMock ? Theme.value : .green)
                     .padding(.horizontal, m(7))
                     .padding(.vertical, m(3))
                     .background((snapshot.isMock ? Theme.value : Color.green).opacity(0.14), in: Capsule())
                 Spacer()
-                Text(snapshot.isMock ? l.text("拖动推子 / 旋钮、按下按键 = 模拟实体操作") : l.text("镜像实体设备；操作即软件写入"))
+                Text(snapshot.hardwareObservation != nil ? l.text("Highlights show input, not device LEDs") : snapshot.isMock ? l.text("拖动推子 / 旋钮、按下按键 = 模拟实体操作") : l.text("镜像实体设备；操作即软件写入"))
                     .font(.system(size: m(10)))
                     .foregroundStyle(.secondary)
             }
@@ -105,7 +105,7 @@
                 Text(l.text("Layer")).font(.system(size: m(8), weight: .bold)).foregroundStyle(.secondary).tracking(1)
                 HStack(spacing: m(6)) {
                     ForEach(CompactLayer.allCases, id: \.self) { layer in
-                        let isActive = snapshot.layer == layer
+                        let isActive = snapshot.hardwareObservation.map { $0.inputLayer == layer } ?? (snapshot.layer == layer)
                         Button { onSelectLayer(layer) } label: {
                             Text(layer.rawValue.uppercased())
                                 .font(.system(size: m(13), weight: .heavy, design: .rounded))
@@ -158,6 +158,7 @@
                 ButtonCell(
                     button: button,
                     symbol: symbol,
+                    observesInput: snapshot.hardwareObservation != nil,
                     isSelected: selection == .button(index),
                     onSelect: { selection = .button(index) },
                     onPress: { intents.pressButton(index) },
@@ -190,6 +191,22 @@
             fader.isTouched ?? isDragging
         }
 
+        private var displayedValue: String {
+            if fader.followsObservedPosition {
+                return fader.observed.map { String($0) } ?? "—"
+            }
+            return fader.detail ?? String(fader.target)
+        }
+
+        private var accessibleValue: String {
+            if fader.followsObservedPosition {
+                let position = fader.observed.map { String($0) } ?? l.text("Not reported")
+                let touch = fader.isTouched.map { l.text($0 ? "Touched" : "Released") } ?? l.text("Not reported")
+                return position + " " + touch
+            }
+            return isTouched ? l.text("%@，触摸中", String(fader.capPosition)) : String(fader.target)
+        }
+
         var body: some View {
             VStack(spacing: m(4)) {
                 slot
@@ -197,7 +214,7 @@
                     .font(.system(size: m(9), weight: .semibold))
                     .foregroundStyle(fader.label == nil ? .secondary : Theme.value)
                     .lineLimit(1)
-                Text(fader.detail ?? "\(fader.target)")
+                Text(displayedValue)
                     .font(.system(size: m(10), design: .monospaced))
                     .foregroundStyle(.primary.opacity(0.85))
                     .lineLimit(1)
@@ -208,15 +225,16 @@
                         in: RoundedRectangle(cornerRadius: m(8)))
             .overlay {
                 RoundedRectangle(cornerRadius: m(8))
-                    .stroke(isSelected ? Theme.selection : Color.clear, lineWidth: 1.5)
+                    .stroke(isTouched ? Theme.touch : isSelected ? Theme.selection : Color.clear, lineWidth: isTouched ? 2.5 : 1.5)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(CompactControl.fader(fader.index).localizedName(using: l)) \(fader.label ?? "")")
-            .accessibilityValue(isTouched ? l.text("%@，触摸中", String(fader.capPosition)) : "\(fader.target)")
+            .accessibilityValue(accessibleValue)
             .accessibilityAdjustableAction { direction in
                 onSelect()
                 let step = direction == .increment ? 1 : -1
-                onMove(UInt8(min(max(Int(fader.target) + step, 0), 127)))
+                let nextValue: Int = min(max(Int(fader.target) + step, 0), 127)
+                onMove(UInt8(nextValue))
             }
             .help(l.text("拖动 %@", String(CompactControl.fader(fader.index).shortName)))
         }
@@ -236,16 +254,22 @@
                         .frame(width: m(26), height: 1)
                         .offset(y: cap / 2 + travel * CGFloat(mark) / 4)
                 }
-                if let observed = fader.observed, observed != fader.target {
+                if !fader.followsObservedPosition, let observed = fader.observed, observed != fader.target {
                     // Where the device last reported the fader: the motor has not arrived yet.
                     Capsule()
                         .fill(Theme.observed)
                         .frame(width: m(34), height: m(3))
                         .offset(y: cap / 2 + travel * (1 - FaderTravel.fraction(for: observed)) - m(1.5))
                 }
-                capView
-                    .frame(width: m(36), height: cap)
-                    .offset(y: travel * (1 - FaderTravel.fraction(for: fader.capPosition)))
+                if !fader.followsObservedPosition || fader.observed != nil {
+                    capView
+                        .frame(width: m(36), height: cap)
+                        .offset(y: travel * (1 - FaderTravel.fraction(for: fader.capPosition)))
+                } else {
+                    Image(systemName: isTouched ? "hand.point.up.left.fill" : "minus")
+                        .foregroundStyle(isTouched ? Theme.touch : Color.secondary)
+                        .offset(y: length / 2)
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: length)
@@ -319,7 +343,7 @@
                     .font(.system(size: m(9), weight: .semibold))
                     .foregroundStyle(encoder.label == nil ? .secondary : Theme.value)
                     .lineLimit(1)
-                Text(encoder.detail ?? "\(encoder.value)")
+                Text(encoder.observesInput ? encoder.observedValue.map { String($0) } ?? "—" : encoder.detail ?? "\(encoder.value)")
                     .font(.system(size: m(10), design: .monospaced))
                     .lineLimit(1)
                 pushCap
@@ -345,7 +369,7 @@
         private var knob: some View {
             let lit = RingLEDs.lit(encoder.ring, style: encoder.style)
             return ZStack {
-                RingView(lit: lit)
+                RingView(lit: encoder.observesInput ? RingLEDs.lit(.off, style: nil) : lit)
                 Circle()
                     .fill(RadialGradient(colors: [Color(white: 0.3), Color(white: 0.1)],
                                          center: .topLeading, startRadius: 1, endRadius: m(26)))
@@ -355,7 +379,7 @@
                             .fill(Color.white.opacity(0.85))
                             .frame(width: m(2), height: m(8))
                             .offset(y: -m(8))
-                            .rotationEffect(.degrees(-135 + 270 * Double(encoder.value) / 127))
+                            .rotationEffect(.degrees(-135 + 270 * Double(encoder.observesInput ? encoder.observedValue ?? 0 : encoder.value) / 127))
                     }
                     .scaleEffect((encoder.isPushed ?? isPushing) ? 0.92 : 1)
             }
@@ -456,6 +480,7 @@
 
         let button: ButtonPresentation
         let symbol: String?
+        var observesInput = false
         let isSelected: Bool
         let onSelect: () -> Void
         let onPress: () -> Void
@@ -465,12 +490,12 @@
 
         var body: some View {
             Group {
-                if button.light == .blink {
+                if !observesInput, button.light == .blink {
                     TimelineView(.periodic(from: .now, by: 0.35)) { context in
                         face(isLit: Int(context.date.timeIntervalSinceReferenceDate / 0.35).isMultiple(of: 2))
                     }
                 } else {
-                    face(isLit: button.light == .on)
+                    face(isLit: observesInput ? button.isDown == true : button.light == .on)
                 }
             }
             .frame(maxWidth: .infinity)

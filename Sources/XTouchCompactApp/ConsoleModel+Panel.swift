@@ -20,6 +20,7 @@
 
         var panelSnapshot: PanelSnapshot {
             PanelSnapshot(
+                hardwareObservation: isObservingHardware ? hardwareObserver.presentation : nil,
                 listenOnly: listenOnly, capturePath: capturePath,
                 notifications: notifications, runtimeError: error.map { localizedError($0) } ?? connection.error,
                 events: events, connection: connection, inputChoice: inputChoice, outputChoice: outputChoice,
@@ -29,10 +30,12 @@
                 faders: (1 ... CompactGeometry.faderCount).map { index in
                     FaderPresentation(
                         index: index, target: bank.faders[index - 1],
-                        observed: session.state.observedFader(index),
-                        isTouched: session.state.isTouched(index),
+                        observed: isObservingHardware ? hardwareObserver.presentation.faderPositions[index] : session.state.observedFader(index),
+                        isTouched: isObservingHardware ? hardwareObserver.presentation.faderTouches[index] : session.state.isTouched(index),
                         isMotorPending: session.state.isMotorPending(index),
-                        label: parameterLabel(.fader(index)), detail: parameterDetail(.fader(index))
+                        label: isObservingHardware ? "F\(index)" : parameterLabel(.fader(index)),
+                        detail: isObservingHardware ? nil : parameterDetail(.fader(index)),
+                        followsObservedPosition: isObservingHardware
                     )
                 },
                 encoders: (1 ... CompactGeometry.encoderCount).compactMap { index in
@@ -43,13 +46,16 @@
                     return EncoderPresentation(
                         index: index, value: value,
                         ring: ring, style: session.state.desiredRingStyle(index),
-                        isPushed: session.state.isEncoderPushed(index),
-                        label: parameterLabel(.encoder(index)), detail: parameterDetail(.encoder(index))
+                        isPushed: isObservingHardware ? hardwareObserver.presentation.encoderPushes[index] : session.state.isEncoderPushed(index),
+                        label: isObservingHardware ? "E\(index)" : parameterLabel(.encoder(index)),
+                        detail: isObservingHardware ? nil : parameterDetail(.encoder(index)),
+                        observedValue: hardwareObserver.presentation.encoderValues[hardwareObserver.presentation.inputLayer ?? layer]?[index],
+                        observesInput: isObservingHardware
                     )
                 },
                 buttons: (1 ... CompactGeometry.buttonCount).compactMap { index in
                     guard let light = session.state.desiredButton(index) else { return nil }
-                    return ButtonPresentation(index: index, light: light, isDown: session.state.isButtonDown(index))
+                    return ButtonPresentation(index: index, light: light, isDown: isObservingHardware ? hardwareObserver.presentation.buttonPresses[index] : session.state.isButtonDown(index))
                 },
                 pendingPreset: pendingPreset,
                 configuration: session.parameters.configuration,
@@ -64,6 +70,9 @@
 
         var panelIntents: PanelIntents {
             PanelIntents(
+                beginHardwareObservation: { [weak self] in self?.beginHardwareObservation() },
+                endHardwareObservation: { [weak self] in self?.endHardwareObservation() },
+                resetHardwareObservation: { [weak self] in self?.resetHardwareObservation() },
                 setListenOnly: { [weak self] in self?.setListenOnly($0) },
                 startCapture: { [weak self] in self?.chooseStartCapture() },
                 stopCapture: { [weak self] in self?.stopCapture() },

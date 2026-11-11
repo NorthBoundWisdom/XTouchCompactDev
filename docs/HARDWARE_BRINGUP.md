@@ -1,7 +1,9 @@
 # X-TOUCH COMPACT physical bring-up record
 
-**No physical tests have been performed.** All actual/result fields below are blank
-until an operator runs the steps. Factory Standard MIDI mode only; no firmware
+**Physical bring-up is in progress:** see [2026-11-11 session](HARDWARE_SESSION_2026-11-11.md).
+USB/CoreMIDI identity and front-panel mode indication have been recorded; no
+control, LED or motor test has been signed off. The fields below remain the full
+acceptance template. Factory Standard MIDI mode only; no firmware
 flashing, editor preset modifications or Mackie Control testing.
 
 Operator / date / app commit: __________

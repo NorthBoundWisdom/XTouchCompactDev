@@ -14,6 +14,18 @@
         @State private var selection: CompactControl? = .fader(1)
 
         var body: some View {
+            Group {
+                if snapshot.hardwareObservation != nil {
+                    HardwareObservationView(snapshot: snapshot, intents: intents)
+                } else {
+                    console
+                }
+            }
+            .background(Theme.background)
+            .preferredColorScheme(.dark)
+        }
+
+        private var console: some View {
             VStack(spacing: 0) {
                 HeaderBar(snapshot: snapshot, intents: intents)
                 ForEach(snapshot.notifications) { notification in
@@ -161,6 +173,11 @@
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 240)
+
+                Button { intents.beginHardwareObservation?() } label: {
+                    Label(l.text("Hardware observation"), systemImage: "hand.point.up.left.fill")
+                }
+                .controlSize(.small)
 
                 Spacer()
 

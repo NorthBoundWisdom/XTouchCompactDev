@@ -82,6 +82,14 @@ public struct CompactSession: Sendable {
         state.setInputTouches(touches)
     }
 
+    /// Passive diagnostics track physical state and layer safety without executing any
+    /// assignment, changing parameter values or producing feedback/Agent actions.
+    public mutating func observeInputs(_ messages: [MIDIMessage]) {
+        for message in messages {
+            _ = state.receive(message)
+        }
+    }
+
     public mutating func updateAgentLights(_ lights: [Int: ButtonLight]) throws -> [MIDIMessage] {
         agentLights = lights
         return try syncVisibleNonMotorFeedback()

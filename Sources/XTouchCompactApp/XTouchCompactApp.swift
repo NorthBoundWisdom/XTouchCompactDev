@@ -18,12 +18,20 @@
         @StateObject private var language: LanguageSettings
 
         init() {
-            let isolated = ProcessInfo.processInfo.arguments.contains("--startup-smoke") || ProcessInfo.processInfo.arguments.contains("--integration-test")
-            let root = isolated ? nil : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("XTouchCompactConsole")
+            let arguments = ProcessInfo.processInfo.arguments
+            let observing = arguments.contains("--hardware-observe")
+            let isolated = arguments.contains("--startup-smoke") || arguments.contains("--integration-test")
+            let root = isolated || observing ? nil : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("XTouchCompactConsole")
             let defaults = isolated ? UserDefaults(suiteName: "XTouchCompactDev.tests.\(UUID().uuidString)")! : .standard
             _language = StateObject(wrappedValue: LanguageSettings(defaults: defaults))
             let model = ConsoleModel(startsMIDI: !isolated, storageRoot: root, isolated: isolated)
             model.startRuntime()
+            if observing {
+                model.beginHardwareObservation()
+            }
+            if observing, !isolated, let index = arguments.firstIndex(of: "--capture-path"), arguments.indices.contains(index + 1) {
+                model.startCapture(URL(fileURLWithPath: arguments[index + 1]))
+            }
             _model = StateObject(wrappedValue: model)
         }
 
@@ -34,6 +42,9 @@
                     .environment(\.locale, Locale(identifier: language.localizer.language.rawValue))
                     .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
                         language.refreshSystemLanguage()
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                        model.stopCapture()
                     }
                     .task {
                         let arguments = ProcessInfo.processInfo.arguments

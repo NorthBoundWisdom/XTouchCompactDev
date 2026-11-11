@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import SwiftUI
+    import XTouchCompactCore
 
     /// The snapshot command starts from AppKit launch, independent of a SwiftUI window's
     /// appearance/task lifecycle. No visible window, CoreMIDI, user defaults or Keychain.
@@ -52,6 +53,23 @@
         let width: CGFloat
         let height: CGFloat
         switch scene {
+        case "observation", "observation-waiting", "observation-release":
+            width = 1260; height = 980
+            let service = ObservationPreviewService()
+            let preview = ConsoleModel(startsMIDI: false, midi: service, isolated: true)
+            preview.beginHardwareObservation()
+            if scene != "observation-waiting" {
+                service.onMessages?([
+                    .controlChange(channel: 0, number: 1, value: 73),
+                    .controlChange(channel: 0, number: 12, value: 91),
+                    .noteOn(channel: 0, number: 16, velocity: 127),
+                    .noteOff(channel: 0, number: 16, velocity: 0),
+                    .controlChange(channel: 0, number: 101, value: scene == "observation-release" ? 0 : 127),
+                ])
+            }
+            var snapshot = preview.panelSnapshot
+            snapshot.hardwareObservation?.isPreview = true
+            content = AnyView(ContentView(snapshot: snapshot, intents: preview.panelIntents))
         case "settings":
             width = 650; height = 760
             content = AnyView(LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents))
@@ -87,5 +105,16 @@
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try png.write(to: url, options: .atomic)
         window.contentView = nil
+    }
+
+    /// Isolated, labeled screenshots never connect to or send messages to a device.
+    @MainActor private final class ObservationPreviewService: MIDIService {
+        var onMessages: (([XTouchCompactCore.MIDIMessage]) -> Void)?
+        var onConnection: ((CompactMIDIConnection) -> Void)?
+        func start() throws {}
+        func select(inputID _: Int32?, outputID _: Int32?) {}
+        func send(_: XTouchCompactCore.MIDIMessage) throws {
+            preconditionFailure("Preview attempted MIDI output")
+        }
     }
 #endif

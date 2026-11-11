@@ -39,6 +39,7 @@
         var isMotorPending: Bool?
         var label: String?
         var detail: String?
+        var followsObservedPosition = false
 
         var id: Int {
             index
@@ -50,7 +51,7 @@
 
         /// A host write may change target while a hand still owns the physical cap.
         var capPosition: UInt8 {
-            isTouched == true ? observed ?? target : target
+            followsObservedPosition || isTouched == true ? observed ?? target : target
         }
     }
 
@@ -63,6 +64,8 @@
         var isPushed: Bool?
         var label: String?
         var detail: String?
+        var observedValue: UInt8?
+        var observesInput = false
 
         var id: Int {
             index
@@ -87,6 +90,7 @@
     }
 
     struct PanelSnapshot: Equatable, Sendable {
+        var hardwareObservation: HardwareObservationPresentation?
         var listenOnly = true
         var capturePath: String?
         var notifications: [ConsoleNotification] = []
@@ -135,6 +139,9 @@
     /// while a software write is a host command that may move a motor. An optional intent that is
     /// nil is not supported by the backend yet and its affordance is disabled.
     struct PanelIntents {
+        var beginHardwareObservation: (() -> Void)?
+        var endHardwareObservation: (() -> Void)?
+        var resetHardwareObservation: (() -> Void)?
         var setListenOnly: ((Bool) -> Void)?
         var startCapture: (() -> Void)?
         var stopCapture: (() -> Void)?

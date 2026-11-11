@@ -28,6 +28,8 @@
         @Published private(set) var hardwareMode = false
         /// Session-only safety choice: every launch starts passively. Never rewrites a device profile.
         @Published private(set) var listenOnly = true
+        @Published private(set) var isObservingHardware = false
+        @Published private(set) var hardwareObserver = HardwareInputObserver()
         @Published private(set) var capturePath: String?
         private var monitorCapture: MonitorCapture?
         @Published var transmitChannel = 1
@@ -128,6 +130,9 @@
         }
 
         func useHardware(_ enabled: Bool) {
+            if isObservingHardware, !enabled {
+                endHardwareObservation()
+            }
             guard hardwareMode != enabled else { return }
             session.prepareTransportSwitch(inputTouches: enabled ? [] : mock.touchedFaders)
             if notifications.contains(where: { $0.id == "layer" }) {
@@ -152,12 +157,32 @@
         }
 
         func setListenOnly(_ enabled: Bool) {
-            guard listenOnly != enabled else { return }
+            guard !isObservingHardware || enabled, listenOnly != enabled else { return }
             listenOnly = enabled
             // No replay or layer assertion on either transition. Preserve hardware touch/layer evidence.
             if hardwareMode {
                 session.discardPendingMotorWrites(); session.invalidateTransportFeedback(); updateBank()
             }
+        }
+
+        func beginHardwareObservation() {
+            setListenOnly(true)
+            session.prepareTransportSwitch(inputTouches: [])
+            hardwareMode = true
+            hardwareObserver = HardwareInputObserver()
+            isObservingHardware = true
+            if oscEnabled {
+                setOSCEnabled(false)
+            }
+        }
+
+        func endHardwareObservation() {
+            isObservingHardware = false
+            // Returning to the console retains passive output and all safety ownership.
+        }
+
+        func resetHardwareObservation() {
+            hardwareObserver = HardwareInputObserver()
         }
 
         func configure() {
@@ -366,6 +391,13 @@
                 } == true
                 record(message, direction: .input, source: fromMock ? .mock : .hardware,
                        ignored: !safetyOnly && (hardwareMode == fromMock || event == nil))
+                if !fromMock, isObservingHardware {
+                    hardwareObserver.receive(message, map: session.state.map, at: now())
+                }
+            }
+            if isObservingHardware, !fromMock {
+                session.observeInputs(messages)
+                return
             }
             guard hardwareMode != fromMock else { return }
             do {
@@ -396,7 +428,7 @@
 
         private func send(_ messages: [MIDIMessage]) {
             let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
-            if hardwareMode, listenOnly {
+            if hardwareMode, listenOnly || isObservingHardware {
                 session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
                 for message in messages {
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed)

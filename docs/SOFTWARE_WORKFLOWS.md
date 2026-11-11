@@ -174,6 +174,43 @@ existing errors; user names, MIDI data and file paths remain literal.
 
 ## Passive hardware capture
 
+### Visual hardware observation
+
+Choose **Hardware observation** in the console header. The dedicated workspace
+switches to physical input with listening locked on; returning to the console
+keeps listening on. It never recalls motors or sends a layer assertion. Incoming
+controls update the physical panel, a large last-input readout, touch/hold state,
+the latest 12 input events and counts of observed physical controls. These counts
+are input coverage, not hardware-test sign-off. Reset observations clears this
+display only; safety touch ownership and the MIDI capture remain intact.
+
+Unreported positions and touch states remain unknown. Fader caps stay hidden until
+a position arrives, and follow reported positions after release. Host targets and
+feedback commands never supply those positions. Input-layer evidence is displayed
+separately from the host bank; a physical A/B press is not visible until subsequent
+control input. Encoder values retain separate A/B observations. Highlights indicate
+received operations, not measured LED/ring output. Wrong-channel or unsupported
+messages remain visible as raw input without changing the device profile.
+
+The observation path updates physical/layer safety without invoking parameter
+assignments or Agent actions. Input connection status uses the input endpoint;
+an output endpoint is unnecessary for observation. The dedicated page also offers
+input-port selection and the existing JSONL capture controls.
+
+For an on-device observation session without loading or saving the user's workspace:
+
+```sh
+open build/app/debug/XTouchCompactApp.app --args --hardware-observe
+```
+
+An explicitly supplied `--capture-path /absolute/path/new-session.jsonl` starts
+the app's normal JSONL capture. Use a new evidence filename. Capture stops on the
+page's Stop capture action or normal app termination. No MCP/OSC service is
+enabled by this launch option. `--integration-test --hardware-observe` remains
+hardware-isolated. App-owned snapshot scenes `observation-waiting`, `observation`
+and `observation-release` use clearly labeled synthetic preview data and never
+open hardware ports.
+
 Hardware output is blocked by default on every launch. Connection's Listen only
 switch gates the single MIDI send boundary, including connect/reconnect assertions,
 LED sync, gestures, software/Agent writes and recall. Suppressed commands are marked
