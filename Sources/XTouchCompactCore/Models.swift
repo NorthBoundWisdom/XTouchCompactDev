@@ -32,12 +32,12 @@ public enum MIDIMessage: Equatable, Sendable, CustomStringConvertible {
 public enum CompactLayer: String, Codable, Sendable, CaseIterable { case a, b }
 
 /// Physical identity is independent from MIDI input identity and MIDI feedback address.
-public enum CompactControl: Hashable, Sendable, CustomStringConvertible {
-    case fader(Int)          // 1...9, master = 9
-    case faderTouch(Int)     // 1...9
-    case encoder(Int)        // 1...16
-    case encoderPush(Int)    // 1...16
-    case button(Int)         // 1...39
+public enum CompactControl: Codable, Hashable, Sendable, CustomStringConvertible {
+    case fader(Int) // 1...9, master = 9
+    case faderTouch(Int) // 1...9
+    case encoder(Int) // 1...16
+    case encoderPush(Int) // 1...16
+    case button(Int) // 1...39
 
     public var description: String {
         switch self {
@@ -78,7 +78,7 @@ public enum RingDisplay: Equatable, Sendable {
 /// The official manual and firmware 1.14 hardware observation differ by 1 for the LED velocities.
 /// Select explicitly until the user's hardware revision has been characterized.
 public enum ButtonLightProtocol: String, Codable, Sendable {
-    case manual      // Off = 0; On = 1; Blink = 2
+    case manual // Off = 0; On = 1; Blink = 2
     case observed114 // Off = 0; On = 2; Blink = 3 (JetsonHacks hardware observation)
 
     public func velocity(for light: ButtonLight) -> UInt8 {

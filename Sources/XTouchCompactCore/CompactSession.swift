@@ -13,6 +13,7 @@ public struct CompactParameterBank: Equatable, Sendable {
 public struct CompactSessionUpdate: Equatable, Sendable {
     public var inputs: [CompactInput]
     public var feedback: [MIDIMessage]
+    public var agentIntents: [Int] = []
 
     public init(inputs: [CompactInput] = [], feedback: [MIDIMessage] = []) {
         self.inputs = inputs
@@ -24,6 +25,7 @@ public struct CompactSessionUpdate: Equatable, Sendable {
 /// All incoming control events and programmatic writes traverse the same state model.
 public struct CompactSession: Sendable {
     public private(set) var state: CompactState
+    public private(set) var parameters = try! ParameterEngine()
     private var banks: [CompactLayer: CompactParameterBank] = [.a: .init(), .b: .init()]
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) {
@@ -36,10 +38,12 @@ public struct CompactSession: Sendable {
 
     public mutating func reconfigure(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) throws -> [MIDIMessage] {
         state = state.reconfigured(map: map, lightProtocol: lightProtocol)
-        return [map.selectLayer(state.layer)] + (try syncVisibleNonMotorFeedback())
+        return try [map.selectLayer(state.layer)] + syncVisibleNonMotorFeedback()
     }
 
-    public func bank(_ layer: CompactLayer) -> CompactParameterBank { banks[layer] ?? .init() }
+    public func bank(_ layer: CompactLayer) -> CompactParameterBank {
+        banks[layer] ?? .init()
+    }
 
     /// Layer assertion is always sent. LED/rings restored from last host state; faders aren't.
     public mutating func connect() throws -> [MIDIMessage] {
@@ -51,33 +55,88 @@ public struct CompactSession: Sendable {
     public mutating func selectLayer(_ layer: CompactLayer) throws -> [MIDIMessage] {
         let command = state.selectLayer(layer)
         state.invalidateNonMotorFeedback()
-        return [command] + (try syncVisibleNonMotorFeedback())
+        return try [command] + syncVisibleNonMotorFeedback()
     }
 
     /// Explicitly opt in to motor recall after connection or a layer change.
     /// The state model still prevents commands while a fader is touched.
     public mutating func recallFaders() throws -> [MIDIMessage] {
         let values = bank(state.layer).faders
-        return try (1...9).flatMap { try state.setFader($0, value: values[$0 - 1]) }
+        return try (1 ... 9).flatMap { try state.setFader($0, value: values[$0 - 1]) }
+    }
+
+    public mutating func setAgentButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
+        try state.setButton(index, light: light)
+    }
+
+    public mutating func setParameter(_ id: String, value: Double, fromAgent: Bool = false) throws -> [MIDIMessage] {
+        try parameters.set(id, value: value, fromAgent: fromAgent)
+        return try synchronizeParameters(ids: [id])
+    }
+
+    public mutating func loadConfiguration(_ configuration: SurfaceConfiguration) throws -> [MIDIMessage] {
+        let next = try ParameterEngine(configuration: configuration)
+        parameters = next
+        // Loading a preset is not permission to move motors.
+        state = state.reconfigured(map: state.map, lightProtocol: state.lightProtocol)
+        return try synchronizeParameters(includeMotors: false)
+    }
+
+    private mutating func synchronizeParameters(includeMotors: Bool = true, ids: Set<String>? = nil) throws -> [MIDIMessage] {
+        var messages: [MIDIMessage] = []
+        for assignment in parameters.configuration.assignments {
+            guard case let .parameter(id) = assignment.action, ids == nil || ids!.contains(id),
+                  let definition = parameters.definition(id), let value = parameters.values[id] else { continue }
+            let raw = try definition.midiValue(value)
+            switch assignment.control {
+            case let .fader(index):
+                banks[assignment.layer, default: .init()].faders[index - 1] = raw
+                if includeMotors, assignment.layer == state.layer {
+                    messages += try state.setFader(index, value: raw)
+                }
+            case let .encoder(index):
+                banks[assignment.layer, default: .init()].encoders[index - 1] = raw
+                if assignment.layer == state.layer {
+                    messages += try state.setRing(index, display: .position(Self.ringSegment(for: raw)))
+                }
+            case let .button(index):
+                banks[assignment.layer, default: .init()].buttons[index - 1] = raw > 0
+                if assignment.layer == state.layer {
+                    messages += try state.setButton(index, light: raw > 0 ? .on : .off)
+                }
+            default: break
+            }
+        }
+        return messages
     }
 
     public mutating func setFader(_ index: Int, value: UInt8, layer: CompactLayer? = nil) throws -> [MIDIMessage] {
-        guard (1...9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
+        guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
         let target = layer ?? state.layer
+        if case let .parameter(id) = parameters.assignment(.fader(index), layer: target),
+           let definition = parameters.definition(id)
+        {
+            return try setParameter(id, value: definition.minimum + Double(value) / 127 * (definition.maximum - definition.minimum))
+        }
         banks[target, default: .init()].faders[index - 1] = value
         return target == state.layer ? try state.setFader(index, value: value) : []
     }
 
     public mutating func setEncoder(_ index: Int, value: UInt8, layer: CompactLayer? = nil) throws -> [MIDIMessage] {
-        guard (1...16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
+        guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
         let target = layer ?? state.layer
+        if case let .parameter(id) = parameters.assignment(.encoder(index), layer: target),
+           let definition = parameters.definition(id)
+        {
+            return try setParameter(id, value: definition.minimum + Double(value) / 127 * (definition.maximum - definition.minimum))
+        }
         banks[target, default: .init()].encoders[index - 1] = value
         guard target == state.layer else { return [] }
         return try state.setRing(index, display: .position(Self.ringSegment(for: value)))
     }
 
     public mutating func toggleButton(_ index: Int, layer: CompactLayer? = nil) throws -> [MIDIMessage] {
-        guard (1...39).contains(index) else { throw CompactError.invalidIndex("button", index) }
+        guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
         let target = layer ?? state.layer
         banks[target, default: .init()].buttons[index - 1].toggle()
         guard target == state.layer else { return [] }
@@ -95,17 +154,40 @@ public struct CompactSession: Sendable {
             case let .fader(index):
                 result.feedback += try setFader(index, value: event.value, layer: event.layer)
             case let .faderTouch(index):
-                if event.isPressed == false { result.feedback += try state.reconcileReleasedFader(index) }
+                let previous = parameters.values
+                if let slot = try parameters.receive(event) {
+                    result.agentIntents.append(slot)
+                }
+                result.feedback += try synchronizeParameters(ids: Set(parameters.values.keys.filter { previous[$0] != parameters.values[$0] }))
+                if event.isPressed == false {
+                    result.feedback += try state.reconcileReleasedFader(index)
+                }
             case let .encoder(index):
                 result.feedback += try setEncoder(index, value: event.value, layer: event.layer)
             case let .button(index):
-                if event.isPressed == true {
+                let previous = parameters.values
+                if let slot = try parameters.receive(event) {
+                    result.agentIntents.append(slot)
+                }
+                let changed = Set(parameters.values.keys.filter { previous[$0] != parameters.values[$0] })
+                result.feedback += try synchronizeParameters(ids: changed)
+                if event.isPressed == true, {
+                    if case .parameter = parameters.assignment(.button(index), layer: event.layer) {
+                        return false
+                    }
+                    return true
+                }() {
                     result.feedback += try toggleButton(index, layer: event.layer)
                 }
                 // Local release/transport presses can overwrite feedback without a message
                 // describing which other LEDs were redrawn. Reassert invalidated desired state.
                 result.feedback += try state.restoreNonMotorFeedback()
-            case .encoderPush: break
+            case .encoderPush:
+                let previous = parameters.values
+                if let slot = try parameters.receive(event) {
+                    result.agentIntents.append(slot)
+                }
+                result.feedback += try synchronizeParameters(ids: Set(parameters.values.keys.filter { previous[$0] != parameters.values[$0] }))
             }
         }
         return result
@@ -121,10 +203,10 @@ public struct CompactSession: Sendable {
     private mutating func syncVisibleNonMotorFeedback() throws -> [MIDIMessage] {
         let values = bank(state.layer)
         var result: [MIDIMessage] = []
-        for i in 1...16 {
+        for i in 1 ... 16 {
             result += try state.setRing(i, display: .position(Self.ringSegment(for: values.encoders[i - 1])))
         }
-        for i in 1...39 {
+        for i in 1 ... 39 {
             result += try state.setButton(i, light: values.buttons[i - 1] ? .on : .off)
         }
         return result
