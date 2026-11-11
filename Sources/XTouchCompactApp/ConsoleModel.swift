@@ -19,11 +19,13 @@ final class ConsoleModel: ObservableObject {
     @Published private(set) var error: String?
 
     private let midi = CoreMIDIService()
-    private var session: CompactSession
+    private(set) var session: CompactSession
+    private(set) var mock: MockXTouchCompact
 
-    init() {
+    init(startsMIDI: Bool = true) {
         let map = try! FactoryStandardMap() // Constant channels are valid by construction.
         session = CompactSession(map: map, lightProtocol: .manual)
+        mock = MockXTouchCompact(map: map, lightProtocol: .manual)
         midi.onMessages = { [weak self] messages in self?.receive(messages) }
         midi.onConnection = { [weak self] snapshot in
             guard let self else { return }
@@ -34,8 +36,10 @@ final class ConsoleModel: ObservableObject {
             }
             if self.hardwareMode && !snapshot.isConnected { self.session.invalidateTransportFeedback() }
         }
-        do { try midi.start() } catch { self.error = error.localizedDescription }
-        updateBank()
+        if startsMIDI {
+            do { try midi.start() } catch { self.error = error.localizedDescription }
+        }
+        apply { try $0.connect() }
     }
 
     func useHardware(_ enabled: Bool) {
@@ -48,6 +52,9 @@ final class ConsoleModel: ObservableObject {
             apply { try $0.connect() }
         } else {
             error = nil
+            apply { try $0.connect() }
+            // A mock hand can still be holding a physical fader across a mode switch.
+            for index in mock.touchedFaders.sorted() { touchFader(index, isTouched: true) }
             log("Switched to deterministic mock surface")
         }
     }
@@ -60,10 +67,13 @@ final class ConsoleModel: ObservableObject {
             )
             session = CompactSession(map: map,
                 lightProtocol: observedLEDVariant ? .observed114 : .manual)
+            mock = MockXTouchCompact(map: map,
+                lightProtocol: observedLEDVariant ? .observed114 : .manual)
             layer = .a
             updateBank()
             log("MIDI channel/profile changed; application values reset")
             if hardwareMode && connection.isConnected { apply { try $0.connect() } }
+            if !hardwareMode { apply { try $0.connect() } }
         } catch { self.error = error.localizedDescription }
     }
 
@@ -91,13 +101,50 @@ final class ConsoleModel: ObservableObject {
     }
 
     func pressButton(_ index: Int) {
+        guard hardwareMode else {
+            performMockGesture { try $0.pressButton(index, isDown: true) }
+            return
+        }
         apply { try $0.toggleButton(index) }
         updateBank()
     }
 
-    private func receive(_ messages: [MIDIMessage]) {
-        for message in messages { log("IN " + message.description) }
-        guard hardwareMode else { return }
+    func moveFader(_ index: Int, value: UInt8) {
+        if hardwareMode { faderChanged(index, value: Double(value)) }
+        else { performMockGesture { try $0.moveFader(index, value: value) } }
+    }
+
+    func touchFader(_ index: Int, isTouched: Bool) {
+        performMockGesture { try $0.touchFader(index, isTouched: isTouched) }
+    }
+
+    func turnEncoder(_ index: Int, delta: Int) {
+        if hardwareMode {
+            guard (1...CompactGeometry.encoderCount).contains(index) else { return }
+            let current = Int(bank.encoders[index - 1])
+            encoderChanged(index, value: Double(min(max(current + min(max(delta, -127), 127), 0), 127)))
+        } else {
+            performMockGesture { try $0.turnEncoder(index, delta: delta) }
+        }
+    }
+
+    func pushEncoder(_ index: Int, isDown: Bool) {
+        performMockGesture { try $0.pushEncoder(index, isDown: isDown) }
+    }
+
+    func releaseButton(_ index: Int) {
+        performMockGesture { try $0.pressButton(index, isDown: false) }
+    }
+
+    private func performMockGesture(_ operation: (inout MockXTouchCompact) throws -> [MIDIMessage]) {
+        guard !hardwareMode else { return }
+        do { receive(try operation(&mock), fromMock: true) }
+        catch { self.error = error.localizedDescription }
+    }
+
+    private func receive(_ messages: [MIDIMessage], fromMock: Bool = false) {
+        for message in messages { log("IN " + message.description + (fromMock ? " [MOCK]" : "")) }
+        guard hardwareMode != fromMock else { return }
         do {
             let update = try session.receive(messages)
             send(update.feedback)
@@ -106,14 +153,20 @@ final class ConsoleModel: ObservableObject {
     }
 
     private func apply(_ operation: (inout CompactSession) throws -> [MIDIMessage]) {
-        do { send(try operation(&session)) }
+        do {
+            send(try operation(&session))
+            updateBank()
+        }
         catch { self.error = error.localizedDescription }
     }
 
     private func send(_ messages: [MIDIMessage]) {
         for message in messages {
             log("OUT " + message.description + (hardwareMode ? "" : " [MOCK]"))
-            guard hardwareMode else { continue }
+            guard hardwareMode else {
+                mock.receive(message)
+                continue
+            }
             do { try midi.send(message) }
             catch {
                 self.error = error.localizedDescription

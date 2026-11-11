@@ -96,6 +96,7 @@ public enum CompactError: Error, Equatable, Sendable {
     case invalidChannel(UInt8)
     case invalidIndex(String, Int)
     case invalidDisplayPosition(Int)
+    case invalidMIDIValue(UInt8)
 }
 
 public enum CompactGeometry {

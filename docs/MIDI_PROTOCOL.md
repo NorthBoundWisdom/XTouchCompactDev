@@ -67,4 +67,8 @@ Using one symmetric `MIDIControlID` for both `IN` and `OUT` would update the wro
 
 ## Mock test boundaries
 
+`MockXTouchCompact` deterministically models the tables above with separate configured TX and Global RX channels. Motors arrive immediately without emitting a position acknowledgement; touched motors reject commands and increment a diagnostic counter. Physical layer selection emits no messages and leaves faders in place. Encoders retain a separate local absolute value: RX ring commands change illumination, not that value.
+
+Local redraws are intentionally disruptive so tests exercise reassertion: rotation and ring-style changes redraw from the local encoder value; a transport press clears the other five LEDs and lights the pressed key; release turns that key off. These redraw patterns, encoder accumulator behavior across layer changes, initial simulated positions and instantaneous motor motion are simulation choices, **not per-firmware physical measurements**.
+
 This protocol core test suite is **not** a substitute for capture-based, per-firmware verification. It does not prove USB enumeration, physical position precision, motor servo calibration, patch loading or Mac DriverKit compatibility.
