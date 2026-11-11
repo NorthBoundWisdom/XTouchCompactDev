@@ -39,3 +39,11 @@ jobs:
       - name: Capture previews (manual desktop diagnostic)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.capture_previews }}
         run: python3 tools/capture_readme_screenshots.py
+      - name: Preserve preview diagnostics
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.capture_previews }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: isolated-preview-diagnostics
+          path: build/screenshots/
+          if-no-files-found: warn
+          retention-days: 7

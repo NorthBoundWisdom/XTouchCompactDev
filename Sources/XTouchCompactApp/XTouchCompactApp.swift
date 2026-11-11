@@ -2,6 +2,16 @@
     import SwiftUI
 
     @main
+    enum XTouchLauncher {
+        @MainActor static func main() {
+            if ProcessInfo.processInfo.arguments.contains("--snapshot-output") {
+                PreviewCommand.run()
+            } else {
+                XTouchCompactDevApp.main()
+            }
+        }
+    }
+
     @MainActor
     struct XTouchCompactDevApp: App {
         @StateObject private var model: ConsoleModel
@@ -27,13 +37,6 @@
                     }
                     .task {
                         let arguments = ProcessInfo.processInfo.arguments
-                        if let index = arguments.firstIndex(of: "--snapshot-output"), arguments.indices.contains(index + 1) {
-                            do {
-                                try await capturePreview(model: model, language: language, path: arguments[index + 1])
-                                print("Preview capture complete")
-                            } catch { print("Preview capture failed: \(error)"); exit(1) }
-                            NSApplication.shared.terminate(nil)
-                        }
                         if arguments.contains("--startup-smoke") {
                             try? await Task.sleep(for: .milliseconds(300))
                             print("{\"type\":\"xtouch.native_startup\",\"hardwareAccessed\":false}")

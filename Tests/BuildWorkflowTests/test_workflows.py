@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from configs import macos_workflow, setup_local_project, source_root_workflow
 from configs._vendor.freecm.errors import RepoCommandManifestError
@@ -20,6 +20,7 @@ from configs.build_environment import (
     load_build_environment,
 )
 from configs.build_paths import build_path
+from tools import capture_readme_screenshots
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -159,6 +160,42 @@ class WorkflowTests(unittest.TestCase):
                 (resources / "zh-hant.lproj/Localizable.strings").unlink()
                 with self.assertRaises(ValueError):
                     macos_workflow.verify_bundle(bundle)
+
+    def test_preview_timeout_samples_and_reaps_only_owned_process(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "preview.png"
+            output.write_bytes(b"stale")
+            process = MagicMock(pid=123)
+            process.wait.side_effect = [subprocess.TimeoutExpired(["preview"], 1), 0]
+            with (
+                patch.object(capture_readme_screenshots.subprocess, "Popen", return_value=process),
+                patch.object(capture_readme_screenshots.subprocess, "run") as sample,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                with self.assertRaises(TimeoutError):
+                    capture_readme_screenshots.capture(Path("test-app"), output, "en", timeout=1)
+                sample.assert_called_once()
+                self.assertEqual(sample.call_args.args[0][:2], ["sample", "123"])
+                process.kill.assert_called_once()
+                self.assertEqual(process.wait.call_count, 2)
+                self.assertFalse(output.exists())
+
+    def test_preview_requires_fresh_png_and_preserves_nonzero_exit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "preview.png"
+            output.write_bytes(b"stale")
+            process = MagicMock()
+            process.wait.return_value = 7
+            with (
+                patch.object(capture_readme_screenshots.subprocess, "Popen", return_value=process),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError) as caught:
+                    capture_readme_screenshots.capture(Path("test-app"), output, "en")
+                self.assertEqual(caught.exception.returncode, 7)
+            output.write_bytes(b"invalid")
+            with self.assertRaises(ValueError):
+                capture_readme_screenshots.validate_png(output)
 
     def test_plugin_initialization_flags(self):
         with patch.object(source_root_workflow, "setup_main", return_value=0) as setup:
