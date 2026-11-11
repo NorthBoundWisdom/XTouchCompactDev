@@ -222,9 +222,10 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
     与现有 CoreMIDI 的交接模式一致。首次修复运行 `42998174212` 已越过 data-race 错误，
     随后报弱捕获 Task 解包后的隐式 self 不被 6.1.2 接受；改为 server/peer 命名引用，避免
     SwiftFormat 再次移除显式成员基址。不关闭并发检查，不更改运行语义。
-  - 本地测试、建置、格式检查通过不等于远端验证。补丁需在 Swift 6.1.2 runner 重跑后才能勾选 N1。
-    打包与截图在上述失败运行中均被跳过，窗口服务相关问题仍未验证；保留这两步，
-    若 runner 实际报告窗口服务不可用，再将截图改为可跳过或移出 CI，不删除本地脚本。
+  - `42998697476` 已在 Swift 6.1.2 上通过编译、测试及原生打包/启动冒烟；截图进程在 30 秒后逾时，
+    不能据此断言没有 WindowServer。保留本地截图脚本，将远端截图改为手动 workflow_dispatch 的
+    capture_previews 诊断选项（默认关闭）；推送 CI 仍强制建置、全部测试、签名打包及启动冒烟。
+    下一轮强制检查全部通过后再勾选 N1；远端截图本身仍属未验证的桌面诊断，不宣称已修好。
 - [ ] N2 **前端作者审视契约与视图改动**：`PanelSnapshot.pendingPreset`、`mcpPort`；`PanelIntents.realignLayer`、
   `resetParameters`、`applyConfiguration`（取代 `loadConfiguration`）、`loadPreset`、`confirmLoadPreset`、
   `cancelLoadPreset`；视图 `ParameterWorkspace`、`WorkspaceTabsView`、`ExternalServicesSettings`。

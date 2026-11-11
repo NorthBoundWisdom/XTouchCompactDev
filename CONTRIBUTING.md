@@ -22,3 +22,10 @@ tags unless explicitly requested. Use `--startup-smoke` or `--integration-test`
 for isolated app checks: neither starts CoreMIDI nor loads user workspace files.
 MCP and OSC are off at startup. Tests inject fake MIDI, temporary storage and
 in-memory authentication tokens; they never use user Keychain credentials.
+
+Hosted macOS CI requires native build/tests, ad-hoc ZIP/DMG packaging and isolated
+startup smoke. Preview capture is a desktop diagnostic: the hosted runner timed
+out despite passing startup smoke. Run `tools/capture_readme_screenshots.py`
+locally on a Mac, or explicitly enable `capture_previews` in the manual GitHub
+workflow. It is not silently ignored when selected: a capture error still fails
+that diagnostic run. Push and pull-request CI do not run desktop preview capture.
