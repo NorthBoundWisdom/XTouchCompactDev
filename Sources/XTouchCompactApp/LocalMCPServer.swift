@@ -33,10 +33,11 @@
             self.listener = listener
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor [weak self] in
-                    guard let self, peers.count < 16 else { connection.cancel(); return }
+                    // Named owners keep member access explicit under Swift 6.1 and SwiftFormat.
+                    guard let server = self, server.peers.count < 16 else { connection.cancel(); return }
                     let id = UUID()
                     let peer = MCPPeer(connection: connection) { [weak self] request in self?.respond(request) ?? (503, Data()) }
-                    peers[id] = peer
+                    server.peers[id] = peer
                     peer.finished = { [weak self] in self?.peers.removeValue(forKey: id) }
                     peer.start()
                 }
@@ -181,21 +182,21 @@
         func receive() {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 16384) { [weak self] data, _, complete, error in
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
+                    guard let peer = self else { return }
                     if let data {
-                        bytes.append(data)
+                        peer.bytes.append(data)
                     }
                     do {
-                        if let request = try HTTPRequest.parse(bytes) {
-                            let (status, body) = respond(request)
+                        if let request = try HTTPRequest.parse(peer.bytes) {
+                            let (status, body) = peer.respond(request)
                             let header = "HTTP/1.1 \(status) Response\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-                            connection.send(content: Data(header.utf8) + body, completion: .contentProcessed { [weak self] _ in Task { @MainActor [weak self] in self?.cancel() } })
+                            peer.connection.send(content: Data(header.utf8) + body, completion: .contentProcessed { [weak peer] _ in Task { @MainActor [weak peer] in peer?.cancel() } })
                         } else if complete || error != nil {
-                            cancel()
+                            peer.cancel()
                         } else {
-                            receive()
+                            peer.receive()
                         }
-                    } catch { cancel() }
+                    } catch { peer.cancel() }
                 }
             }
         }

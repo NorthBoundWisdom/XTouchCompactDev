@@ -219,7 +219,9 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
   - 最新 `0019b24` 的运行 `42997141447` 中 `core-linux` 已通过，`app-macos` 在 Swift 6.1.2
     编译 `LocalMCPServer.swift` 时报告 sending self risks causing data races。本机 Swift 6.4.2 未报此错。
     修复在 MCP listener/peer 与 OSC callbacks 的 MainActor Task 内显式再次捕获 `[weak self]`，
-    与现有 CoreMIDI 的交接模式一致；不关闭并发检查，不更改运行语义。
+    与现有 CoreMIDI 的交接模式一致。首次修复运行 `42998174212` 已越过 data-race 错误，
+    随后报弱捕获 Task 解包后的隐式 self 不被 6.1.2 接受；改为 server/peer 命名引用，避免
+    SwiftFormat 再次移除显式成员基址。不关闭并发检查，不更改运行语义。
   - 本地测试、建置、格式检查通过不等于远端验证。补丁需在 Swift 6.1.2 runner 重跑后才能勾选 N1。
     打包与截图在上述失败运行中均被跳过，窗口服务相关问题仍未验证；保留这两步，
     若 runner 实际报告窗口服务不可用，再将截图改为可跳过或移出 CI，不删除本地脚本。
