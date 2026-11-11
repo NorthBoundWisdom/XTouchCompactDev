@@ -1,0 +1,9 @@
+.build/
+.DS_Store
+.swiftpm/
+build/
+*.dmg
+*.app/
+*.xcuserstate
+captures/private/
+user-profiles/
