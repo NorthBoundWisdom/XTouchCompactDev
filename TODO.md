@@ -40,7 +40,7 @@
 - 契约：视图只读 `PanelSnapshot`、只发 `PanelIntents`。未获得位置输入时 `observed` 为 `nil`，
   未发送过灯环样式时 `style` 为 `nil`，未绑定控件的 `label` / `detail` 为 `nil`。
 - 最近一次本地验证（开发者报告）：macOS 上 `swift test --jobs 2`（46 项 Core + 30 项 App + 3 项本地化）、
-  `swift build`、7 项工作流测试与原生打包冒烟通过。**远端 CI 此前为失败状态**（见 N1）；鼠标交互目视验收未完成。
+  `swift build`、7 项工作流测试与原生打包冒烟通过。远端 CI 必需检查已通过（见 N1）；截图为手动诊断，鼠标交互目视验收未完成。
 - 下一步见文末“后续待办”。
 
 ## 后端任务（按顺序）
@@ -213,7 +213,9 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 不依赖硬件，按顺序做：
 
-- [ ] N1 **远端 CI 转绿**：需区分两个独立失败原因：
+- [x] N1 **远端 CI 必需检查已转绿**：[运行 42999395748](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/42999395748)
+  的 core-linux 与 app-macos 均通过，含 Swift 6.1.2 原生建置、测试、签名打包及启动冒烟。
+  历史问题与诊断边界：
   - 早期 `1da00ed` 及其前一次运行因 SwiftPM 原生构建把 `zh-Hans.lproj` 改成小写，
     本地化查找强制解包崩溃；`eea7a22` 已兼容小写并在缺目录时回退英文。
   - 最新 `0019b24` 的运行 `42997141447` 中 `core-linux` 已通过，`app-macos` 在 Swift 6.1.2
@@ -225,7 +227,7 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
   - `42998697476` 已在 Swift 6.1.2 上通过编译、测试及原生打包/启动冒烟；截图进程在 30 秒后逾时，
     不能据此断言没有 WindowServer。保留本地截图脚本，将远端截图改为手动 workflow_dispatch 的
     capture_previews 诊断选项（默认关闭）；推送 CI 仍强制建置、全部测试、签名打包及启动冒烟。
-    下一轮强制检查全部通过后再勾选 N1；远端截图本身仍属未验证的桌面诊断，不宣称已修好。
+    强制检查已通过；远端截图本身仍属未修好的桌面诊断，不宣称截图已转绿。
 - [ ] N2 **前端作者审视契约与视图改动**：`PanelSnapshot.pendingPreset`、`mcpPort`；`PanelIntents.realignLayer`、
   `resetParameters`、`applyConfiguration`（取代 `loadConfiguration`）、`loadPreset`、`confirmLoadPreset`、
   `cancelLoadPreset`；视图 `ParameterWorkspace`、`WorkspaceTabsView`、`ExternalServicesSettings`。
