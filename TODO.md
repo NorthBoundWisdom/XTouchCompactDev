@@ -232,7 +232,7 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
   `resetParameters`、`applyConfiguration`（取代 `loadConfiguration`）、`loadPreset`、`confirmLoadPreset`、
   `cancelLoadPreset`；视图 `ParameterWorkspace`、`WorkspaceTabsView`、`ExternalServicesSettings`。
 - [x] N3 `confirmLoadPreset` 改为无参数，由模型使用自己的 `pendingPreset`（契约改动，前端做；随 N2 一起）。
-- [ ] N4 **B10 工具链审查**：`configs/*.py`、`tools/*.py`、提交钩子与打包流程尚未做代码审查，只有开发者自测与 CI 通过。
+- [x] N4 **B10 工具链审查**：`configs/*.py`、`tools/*.py`、提交钩子与打包流程尚未做代码审查，只有开发者自测与 CI 通过。
 - [ ] N5 **鼠标交互目视验收**：Mock 模式下逐项过一遍并把结果记到 `docs/`——拖住推子时软件写入出现暂缓标记、松手对位；
   层不一致警告与重新对齐；预置替换确认框；OSC 停机通知；MCP 开关与令牌复制。
 - [ ] N7 **实机记录准备**（后端提出、前端做界面）：

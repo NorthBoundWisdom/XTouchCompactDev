@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import platform
 import plistlib
@@ -19,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from configs.app_build import load_app_build_settings
 from configs.build_environment import use_build_environment
+from configs.build_paths import build_path
 
 PRODUCT = "XTouchCompactApp"
 BUNDLE_ID = "dev.xtouchcompact.app"
@@ -37,6 +39,8 @@ def run(command: list[str | Path], *, capture: bool = False, timeout: int | None
 
 def build(configuration: str) -> Path:
     settings = load_app_build_settings(REPO_ROOT)
+    for relative in ("swiftpm", f"app/{configuration}/{PRODUCT}.app", "icons/AppIcon.iconset", "icons/AppIcon.png"):
+        build_path(REPO_ROOT, relative)
     options = ["swift", "build", "--build-path", SWIFTPM_ROOT, "--jobs", "2", "--configuration", configuration]
     run([*options, "--product", PRODUCT])
     executable = Path(run([*options, "--show-bin-path"], capture=True)) / PRODUCT
@@ -63,6 +67,7 @@ def build(configuration: str) -> Path:
         for scale in (1, 2):
             pixels = str(size * scale)
             suffix = "@2x" if scale == 2 else ""
+            build_path(REPO_ROOT, f"icons/AppIcon.iconset/icon_{size}x{size}{suffix}.png")
             run(
                 [
                     "sips",
@@ -75,6 +80,7 @@ def build(configuration: str) -> Path:
                 ],
                 capture=True,
             )
+    build_path(REPO_ROOT, str((resources / "AppIcon.icns").relative_to(BUILD_ROOT)))
     run(["iconutil", "-c", "icns", iconset, "-o", resources / "AppIcon.icns"])
     info = {
         "CFBundleDevelopmentRegion": "en",
@@ -113,8 +119,12 @@ def verify_bundle(bundle: Path) -> None:
         raise ValueError("Missing app executable.")
     for language in ("en", "zh-Hans", "zh-Hant"):
         localization = bundle / "Contents/Resources/XTouchCompactDev_XTouchCompactLocalization.bundle"
-        relative = f"{language}.lproj/Localizable.strings"
-        if not any((root / relative).is_file() for root in (localization, localization / "Contents/Resources")):
+        if not any(
+            child.name.casefold() == f"{language}.lproj".casefold() and (child / "Localizable.strings").is_file()
+            for root in (localization, localization / "Contents/Resources")
+            if root.is_dir()
+            for child in root.iterdir()
+        ):
             raise ValueError(f"Missing packaged language: {language}")
     run(["codesign", "--verify", "--deep", "--strict", bundle])
 
@@ -122,11 +132,18 @@ def verify_bundle(bundle: Path) -> None:
 def package() -> Path:
     bundle = build("release")
     settings = load_app_build_settings(REPO_ROOT)
-    destination = BUILD_ROOT / "package"
+    destination = build_path(REPO_ROOT, "package")
     destination.mkdir(parents=True, exist_ok=True)
     archive = destination / (
         f"{PRODUCT}_v{settings['MARKETING_VERSION']}_{settings['ARCHIVE_ID']}_macOS_{platform.machine()}_ad-hoc.zip"
     )
+    for artifact in (
+        archive,
+        archive.with_suffix(".zip.sha256"),
+        archive.with_suffix(".dmg"),
+        archive.with_suffix(".dmg.sha256"),
+    ):
+        build_path(REPO_ROOT, str(artifact.relative_to(BUILD_ROOT)))
     archive.unlink(missing_ok=True)
     run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", bundle, archive])
     checksum = hashlib.sha256()
@@ -136,18 +153,32 @@ def package() -> Path:
     digest = checksum.hexdigest()
     archive.with_suffix(".zip.sha256").write_text(f"{digest}  {archive.name}\n")
     dmg = archive.with_suffix(".dmg")
-    run(["hdiutil", "create", "-volname", "XTouch Compact", "-srcfolder", bundle.parent, "-ov", "-format", "UDZO", dmg])
+    run(["hdiutil", "create", "-volname", "XTouch Compact", "-srcfolder", bundle, "-ov", "-format", "UDZO", dmg])
     checksum = hashlib.sha256()
     with dmg.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             checksum.update(chunk)
     dmg.with_suffix(".dmg.sha256").write_text(f"{checksum.hexdigest()}  {dmg.name}\n")
     smoke = run([bundle / "Contents/MacOS" / PRODUCT, "--startup-smoke"], capture=True, timeout=30)
-    if '"hardwareAccessed":false' not in smoke or '"type":"xtouch.native_startup"' not in smoke:
-        raise ValueError("Native startup smoke marker is missing.")
+    validate_smoke(smoke)
     print(smoke)
     print(f"Packaged {archive.relative_to(REPO_ROOT)} (local ad-hoc signature; not notarized)")
     return archive
+
+
+def validate_smoke(output: str) -> None:
+    for line in output.splitlines():
+        try:
+            marker = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            isinstance(marker, dict)
+            and marker.get("type") == "xtouch.native_startup"
+            and marker.get("hardwareAccessed") is False
+        ):
+            return
+    raise ValueError("Native startup smoke marker is missing or invalid.")
 
 
 def main(argv: list[str] | None = None) -> int:

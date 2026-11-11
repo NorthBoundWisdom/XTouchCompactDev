@@ -15,7 +15,7 @@
           "inputs": [
             "Package.swift", "configs/app_build.json", "configs/build.local.example.json",
             "configs/setup_local_project.py", "configs/build_environment.py",
-            "configs/app_build.py", "configs/macos_workflow.py", "configs/validate_repo_commands.py",
+            "configs/app_build.py", "configs/build_paths.py", "configs/macos_workflow.py", "configs/validate_repo_commands.py",
             "configs/_vendor/freecm/repo_commands.py", "configs/_vendor/freecm/jsonc.py", "build.local.json"
           ],
           "outputs": ["build/configured.json"]
@@ -34,7 +34,7 @@
           "inputs": [
             "Package.swift", "configs/app_build.json", "configs/build.local.example.json",
             "configs/setup_local_project.py", "configs/build_environment.py",
-            "configs/app_build.py", "configs/macos_workflow.py", "configs/validate_repo_commands.py",
+            "configs/app_build.py", "configs/build_paths.py", "configs/macos_workflow.py", "configs/validate_repo_commands.py",
             "configs/_vendor/freecm/repo_commands.py", "configs/_vendor/freecm/jsonc.py", "build.local.json"
           ],
           "outputs": ["build/configured.json"]

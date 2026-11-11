@@ -19,6 +19,7 @@ from configs.build_environment import (
     ensure_local_build_environment,
     load_build_environment,
 )
+from configs.build_paths import build_path
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -102,6 +103,62 @@ class WorkflowTests(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError) as caught:
                 macos_workflow.run(["swift", "build"])
         self.assertEqual(caught.exception.returncode, 7)
+
+    def test_artifact_writes_reject_symlinked_ancestors(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            outside = root / "outside"
+            outside.mkdir()
+            (root / "build").symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                build_path(root, "configured.json")
+            (root / "build").unlink()
+            (root / "build").mkdir()
+            (root / "build/app").symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                build_path(root, "app/debug/XTouchCompactApp.app")
+            with self.assertRaises(ValueError):
+                build_path(root, "../outside")
+            self.assertEqual(list(outside.iterdir()), [])
+
+    def test_smoke_requires_structured_false_hardware_marker(self):
+        macos_workflow.validate_smoke('log line\n{"type":"xtouch.native_startup","hardwareAccessed":false}')
+        for invalid in (
+            '{"type":"xtouch.native_startup","hardwareAccessed":"false"}',
+            '{"type":"xtouch.native_startup","hardwareAccessed":true}',
+            '"hardwareAccessed":false "type":"xtouch.native_startup"',
+        ):
+            with self.assertRaises(ValueError):
+                macos_workflow.validate_smoke(invalid)
+
+    def test_bundle_accepts_swiftpm_lowercase_localization_and_rejects_missing_language(self):
+        import plistlib
+
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary) / "Test.app"
+            executable = bundle / "Contents/MacOS" / macos_workflow.PRODUCT
+            executable.parent.mkdir(parents=True)
+            executable.write_text("test")
+            executable.chmod(0o755)
+            (bundle / "Contents/Info.plist").write_bytes(
+                plistlib.dumps(
+                    {
+                        "CFBundleIdentifier": macos_workflow.BUNDLE_ID,
+                        "CFBundleExecutable": macos_workflow.PRODUCT,
+                        "LSMinimumSystemVersion": "14.0",
+                    }
+                )
+            )
+            resources = bundle / "Contents/Resources/XTouchCompactDev_XTouchCompactLocalization.bundle"
+            for language in ("en", "zh-hans", "zh-hant"):
+                directory = resources / f"{language}.lproj"
+                directory.mkdir(parents=True)
+                (directory / "Localizable.strings").write_text("test")
+            with patch.object(macos_workflow, "run"):
+                macos_workflow.verify_bundle(bundle)
+                (resources / "zh-hant.lproj/Localizable.strings").unlink()
+                with self.assertRaises(ValueError):
+                    macos_workflow.verify_bundle(bundle)
 
     def test_plugin_initialization_flags(self):
         with patch.object(source_root_workflow, "setup_main", return_value=0) as setup:

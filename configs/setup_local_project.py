@@ -17,12 +17,13 @@ from configs.build_environment import (
     ensure_local_build_environment,
     use_build_environment,
 )
+from configs.build_paths import build_path
 from configs.validate_repo_commands import main as validate_commands
 
 
 def main() -> int:
     # A failed reconfiguration must not leave a successful setup marker behind.
-    marker = REPO_ROOT / "build/configured.json"
+    marker = build_path(REPO_ROOT, "configured.json")
     marker.unlink(missing_ok=True)
     ensure_local_build_environment(REPO_ROOT)
     with use_build_environment(REPO_ROOT):
