@@ -1,4 +1,5 @@
 import Foundation
+import SurfacePluginContracts
 
 public struct ParameterDefinition: Codable, Equatable, Sendable, Identifiable {
     public var id: String
@@ -22,13 +23,20 @@ public struct ParameterDefinition: Codable, Equatable, Sendable, Identifiable {
     }
 
     public func normalized(_ raw: Double) throws -> Double {
-        guard raw.isFinite, minimum.isFinite, maximum.isFinite, minimum < maximum,
-              step.isFinite, step >= 0, (maximum - minimum).isFinite else { throw ParameterError.invalidDefinition(id) }
-        let value = min(max(raw, minimum), maximum)
-        if isSwitch {
-            return value >= (minimum + maximum) / 2 ? maximum : minimum
+        do { return try sharedDefinition.clamp(raw) }
+        catch { throw ParameterError.invalidDefinition(id) }
+    }
+
+    /// The saved version-1 shape stays host-owned: numeric step 0 means continuous,
+    /// and isSwitch is translated only at this configuration boundary.
+    public var sharedDefinition: SurfacePluginContracts.ParameterDefinition {
+        get throws {
+            guard step.isFinite, step >= 0 else { throw ParameterError.invalidDefinition(id) }
+            return try .init(id: .init(rawValue: id), nameKey: name, group: group, unit: unit,
+                             minimum: minimum, maximum: maximum, defaultValue: defaultValue,
+                             kind: isSwitch ? .toggle : .continuous, agentWritable: agentWritable,
+                             step: step == 0 ? nil : step)
         }
-        return step > 0 ? min(max(minimum + ((value - minimum) / step).rounded() * step, minimum), maximum) : value
     }
 
     public func midiValue(_ value: Double) throws -> UInt8 {

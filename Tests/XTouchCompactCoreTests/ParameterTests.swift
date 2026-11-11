@@ -41,7 +41,7 @@ import Testing
     var engine = try ParameterEngine(configuration: config)
     #expect(throws: ParameterError.self) { _ = try engine.set("p", value: 4, fromAgent: true) }
     _ = try engine.receive(.init(control: .button(1), layer: .b, value: 127, isPressed: true))
-    #expect(engine.values["p"] == 6)
+    #expect(engine.values["p"] == 4)
     _ = try engine.receive(.init(control: .button(2), layer: .b, value: 127, isPressed: true))
     #expect(engine.values["p"] == 8)
     _ = try engine.receive(.init(control: .button(3), layer: .b, value: 127, isPressed: true))
@@ -54,7 +54,7 @@ import Testing
         .init(control: .button(1), layer: .a, action: .cycle("p", [1, 3])),
     ]))
     _ = try snapped.receive(.init(control: .button(1), layer: .a, value: 127, isPressed: true))
-    #expect(snapped.values["p"] == 4)
+    #expect(snapped.values["p"] == 0)
     _ = try snapped.receive(.init(control: .button(1), layer: .a, value: 127, isPressed: true))
     #expect(snapped.values["p"] == 2)
 }
@@ -94,4 +94,38 @@ private func parameterMotors(_ messages: [MIDIMessage]) -> [MIDIMessage] {
     _ = try session.loadConfiguration(unbound, resetValues: true)
     #expect(session.bank(.a).faders[0] == 0)
     #expect(session.bank(.b).encoders[3] == 0)
+}
+
+@Test func sharedParameterRulesPreserveSavedShapeAndUseZeroAnchoredLowerTies() throws {
+    var p = ParameterDefinition(id: "p", name: "P", minimum: 1, maximum: 10, step: 3)
+    #expect(try p.normalized(4) == 3)
+    #expect(try p.normalized(9.8) == 10)
+    #expect(try p.normalized(-100) == 1)
+    p.minimum = -10; p.maximum = 10; p.step = 2
+    #expect(try p.normalized(3) == 2)
+    #expect(try p.normalized(-3) == -4)
+    p.step = 0
+    #expect(try p.normalized(0.37) == 0.37)
+    #expect(try p.sharedDefinition.step == nil)
+    p.isSwitch = true
+    #expect(try p.normalized(0) == 10)
+    #expect(try p.normalized(-0.01) == -10)
+    let decoded = try JSONDecoder().decode(ParameterDefinition.self, from: JSONEncoder().encode(p))
+    #expect(decoded == p)
+    #expect(decoded.step == 0 && decoded.isSwitch)
+    #expect(decoded.defaultValue == 0)
+    p.minimum = 1e308; p.maximum = 1.5e308; p.defaultValue = 1e308
+    #expect(try p.normalized(1.3e308) == 1.5e308)
+    #expect(throws: ParameterError.self) { _ = try p.normalized(.nan) }
+}
+
+@Test func builtInPresetsKeepDefaultsAndApplyLowerTieRules() throws {
+    for configuration in [SurfaceConfiguration.neutral, .audioExample] {
+        try configuration.validate()
+        for p in configuration.parameters {
+            #expect(try p.normalized(p.defaultValue) == p.defaultValue)
+        }
+    }
+    #expect(try SurfaceConfiguration.neutral.parameters[0].normalized(12.5) == 12)
+    #expect(try SurfaceConfiguration.audioExample.parameters[0].normalized(-12.25) == -12.5)
 }

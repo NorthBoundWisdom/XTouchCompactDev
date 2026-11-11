@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
 from configs.app_build import load_app_build_settings
 from configs.build_environment import use_build_environment
 from configs.build_paths import build_path
+from configs.surface_plugins_dependency import ensure_dependency
 
 PRODUCT = "XTouchCompactApp"
 BUNDLE_ID = "dev.xtouchcompact.app"
@@ -207,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.action not in {"core", "test"} and sys.platform != "darwin":
         parser.error("App build/run/package requires macOS 14+ and a Swift 6 toolchain.")
     with use_build_environment(REPO_ROOT):
+        ensure_dependency(REPO_ROOT)
         if args.action == "test":
             run(["swift", "test", "--build-path", SWIFTPM_ROOT, "--jobs", "2"])
         elif args.action == "core":

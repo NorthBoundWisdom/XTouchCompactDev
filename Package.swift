@@ -1,5 +1,26 @@
 // swift-tools-version: 6.0
 import PackageDescription
+import Foundation
+
+// Acquisition is explicit and outside SwiftPM. Even direct Swift invocations validate
+// the locked clean materialization; this read-only verification never contacts a remote.
+let repositoryRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+let dependencyCheck = Process()
+dependencyCheck.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+dependencyCheck.arguments = ["python3", repositoryRoot.appendingPathComponent("configs/surface_plugins_dependency.py").path, "verify"]
+dependencyCheck.currentDirectoryURL = repositoryRoot
+let dependencyOutput = Pipe()
+dependencyCheck.standardOutput = dependencyOutput
+dependencyCheck.standardError = dependencyOutput
+do {
+    try dependencyCheck.run()
+    dependencyCheck.waitUntilExit()
+    if dependencyCheck.terminationStatus != 0 {
+        let message = String(decoding: dependencyOutput.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        fatalError(message + "\nRun python3 configs/surface_plugins_dependency.py ensure first.")
+    }
+} catch { fatalError("Cannot verify locked SurfacePlugins dependency: \(error)") }
+let surfacePlugins: Package.Dependency = .package(path: "build/dependencies/SurfacePlugins")
 
 let package = Package(
     name: "XTouchCompactDev",
@@ -9,8 +30,9 @@ let package = Package(
         .library(name: "XTouchCompactCore", targets: ["XTouchCompactCore"]),
         .executable(name: "XTouchCompactApp", targets: ["XTouchCompactApp"])
     ],
+    dependencies: [surfacePlugins],
     targets: [
-        .target(name: "XTouchCompactCore"),
+        .target(name: "XTouchCompactCore", dependencies: [.product(name: "SurfacePluginContracts", package: "SurfacePlugins"), .product(name: "AgentPlugin", package: "SurfacePlugins")]),
         .target(name: "XTouchCompactLocalization", resources: [.process("Resources")]),
         .executableTarget(name: "XTouchCompactApp", dependencies: ["XTouchCompactCore", "XTouchCompactLocalization"],
                           linkerSettings: [.linkedFramework("CoreMIDI", .when(platforms: [.macOS]))]),

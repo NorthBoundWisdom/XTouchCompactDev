@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FreeCM adapter: local setup and explicit cleanup; no external source roots."""
+"""FreeCM adapter: local setup and explicit cleanup; dependency acquisition uses Git."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         clean_build(dry_run=args.dry_run)
         return 0
     if args.initlock:
-        print("No external source roots; no dependency lock is required.")
+        print("SurfacePlugins revision is pinned in configs/surface_plugins.lock.json.")
         return 0
     return setup_main()
 

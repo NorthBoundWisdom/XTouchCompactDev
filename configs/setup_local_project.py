@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the local Swift package and FreeCM commands without downloads."""
+"""Prepare locked dependencies and validate the Swift package and FreeCM commands."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from configs.build_environment import (
     use_build_environment,
 )
 from configs.build_paths import build_path
+from configs.surface_plugins_dependency import ensure_dependency
 from configs.validate_repo_commands import main as validate_commands
 
 
@@ -30,6 +31,7 @@ def main() -> int:
         settings = load_app_build_settings(REPO_ROOT)
         if validate_commands([str(REPO_ROOT)]):
             return 1
+        ensure_dependency(REPO_ROOT)
         subprocess.run(["swift", "package", "dump-package"], cwd=REPO_ROOT, check=True, stdout=subprocess.DEVNULL)
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(json.dumps({"schema_version": 1, "app_build": settings}, indent=2) + "\n")
