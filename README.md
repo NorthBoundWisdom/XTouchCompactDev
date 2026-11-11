@@ -1,77 +1,178 @@
-# XTouchCompactDev
+# X-TOUCH COMPACT Console
 
-Native Swift 6 / SwiftUI / CoreMIDI control surface for the **Behringer X-TOUCH COMPACT**. A sibling of [BCR2000Dev](https://github.com/NorthBoundWisdom/BCR2000Dev), sharing its value-oriented MIDI and testable hardware-session architecture, but designed for the Compact's motorized, touch-sensitive faders and asymmetric RX/TX mapping.
+A native macOS control surface app for the **Behringer X-TOUCH COMPACT**. It turns the controller's
+motorized faders, encoders and buttons into named software parameters and actions that you can drive
+from the hardware, from the on-screen panel, or from a local AI agent over MCP.
 
-## Current stage — P0 software complete, passive hardware bring-up in progress
+![The console in Mock mode](docs/images/console-en.png)
 
-- **Implemented and locally tested without hardware:** factory Standard MIDI protocol core with distinct input/feedback addressing and layer-independent decoding; 9 motorized faders, 9 touch sensors, 16 encoders and pushes, 39 buttons; touch ownership across layers, transports and reconnects; deferred motor reconciliation and a layer-mismatch motor interlock; typed parameters and per-layer control assignments; protected configuration persistence; eight Mock Agent slots; opt-in localhost MCP; guarded OSC output; deterministic mock device and Swift tests.
-- **macOS app:** SwiftUI virtual panel laid out like the device, control inspector, and workspaces for values, parameters, Agents, MIDI monitor and connection; Mock/Hardware modes; separate TX and Global RX channel configuration; manual LED velocity variant; explicit motor recall with confirmation; English, Simplified Chinese and Traditional Chinese.
-- **Physical input observed:** the operator accepted the Hardware observation workspace's response. A reviewed recording contains 56 Layer A touch/release messages for eight faders on TX channel 1, with no output records. See the [scoped session result](docs/HARDWARE_SESSION_2026-11-11.md).
-- **Still unverified:** complete input coverage and physical layout, LED velocity encoding, ring styles, cross-layer behavior and motor behavior. These remain open in [TODO.md](TODO.md). Remote CI covers build, tests, packaging and startup smoke on Linux and macOS; it does not exercise hardware.
-- **Not implemented:** Mackie Control mode, firmware replacement, measured 14-bit fader resolution, real external Agent processes, incoming OSC motor feedback, production signing and notarization.
+> **Project status: early.** The software runs end to end against a built-in mock device.
+> Testing on a physical controller has started but is not complete, so treat hardware output with
+> care and read [Connecting a real controller](#connecting-a-real-controller) first.
 
-## Test and run
+## What it does
 
-```bash
-swift test
-swift build
-# macOS 14+ only; mock mode works without a physical Compact:
+- **On-screen panel** laid out like the device: 9 touch-sensitive motorized faders, 16 push encoders
+  with LED rings, 39 illuminated buttons, and both A/B layers.
+- **Parameters** with names, groups, units, ranges and steps. Assign them to faders and encoders, and
+  assign toggle, step, set, cycle and group-reset actions to buttons. Each layer has its own assignments.
+- **Touch-aware motor policy.** Reported touch ownership blocks motor commands to that fader.
+  Connecting, reconnecting and switching layers never recall fader positions.
+- **Mock mode** that models the documented Standard MIDI input and feedback paths without hardware.
+- **Agent slots.** Eight demonstration slots that start, wait for approval and complete, with status
+  shown on button LEDs. These are simulated; no external agent process is launched.
+- **Local MCP endpoint** (off by default) so an agent on the same Mac can read state and write
+  permitted parameters.
+- **OSC output** (off by default) that sends one parameter to a destination you choose, rate-limited
+  and stopped automatically on faults.
+- **MIDI monitor and capture** for inspecting traffic and saving it to a file.
+- **Hardware observation and nonmotor tests.** Inspect A/B input coverage, export fingerprinted
+  evidence, and prepare single LED/ring/layer tests. Output starts locked and requires recorded
+  operator prerequisites, independent RX confirmation and an exact command preview.
+- **English, Simplified Chinese and Traditional Chinese** interface.
+
+## Requirements
+
+- macOS 14 or later.
+- Swift 6 toolchain (Xcode or the Xcode command-line tools) to build from source.
+- Optional: a Behringer X-TOUCH COMPACT in its **factory Standard MIDI mode**, connected over USB.
+
+There are no prebuilt, notarized downloads yet. You build the app yourself.
+
+## Getting started
+
+```sh
+git clone https://github.com/NorthBoundWisdom/XTouchCompactDev.git
+cd XTouchCompactDev
 swift run XTouchCompactApp
 ```
 
-For VS Code FreeCM integration, open **FreeCM: Show Workflow Panel**, run **Config**,
-then use **Build / Run / Test / Package**. The repository provides local ad-hoc
-signed `.app` bundles and Release ZIP/DMG packages; production signing and notarization remain
-out of scope. See [FreeCM commands and local configuration](docs/FREECM.md).
-On Linux the executable prints a platform explanation; the core/tests work unchanged.
+The app opens in **Mock** mode. Drag the faders, turn the encoders and click the buttons on the panel;
+they follow the same path as real hardware input.
 
-## Interface language
+To build a double-clickable app bundle instead:
 
-The interface defaults to the system's preferred supported language, with English,
-Simplified Chinese and Traditional Chinese translations. Open **Settings…** using
-the gear button or **⌘,**, then choose **Follow System / English / 简体中文 / 繁體中文**.
-Changes apply immediately and persist across launches. Switching language preserves
-the MIDI session and parameter values. Labels, motor confirmation, errors and
-existing monitor messages follow the selected language; device names and raw MIDI
-data remain unchanged. Unsupported system languages fall back to English.
+```sh
+python3 configs/setup_local_project.py
+python3 configs/macos_workflow.py build     # build/app/debug/XTouchCompactApp.app
+python3 configs/macos_workflow.py package   # Release ZIP and DMG under build/package/
+```
 
-## First physical connection
+These bundles are ad-hoc signed for local use. They are not signed with a Developer ID or notarized.
 
-1. Use the **factory Standard MIDI** mapping on the hardware, not MC mode, and connect USB. Do not flash firmware.
-2. Start in **Mock** mode, verify **Listen only — send no MIDI** in Connection (on at every launch), then switch to **Hardware** after selecting the correct CoreMIDI endpoints. Use MIDI monitor → Start capture… to stream evidence to JSONL. Follow [physical bring-up](docs/HARDWARE_BRINGUP.md) before explicitly enabling output; turning listening off itself sends nothing.
-3. Set the separately configured **Global RX channel** to match the hardware. The default is channel 1; that is a starting assumption, not auto-detection.
-4. Keep all nine faders unobstructed. Connecting/reconnecting or changing layer **does not automatically move motors**. Use **Recall motors…** to confirm and move them deliberately.
-5. Validate which button LED velocity encoding works on the actual unit (official manual vs firmware-1.14 observation). See `docs/MIDI_PROTOCOL.md`.
+## Using the app
 
-## Design
+| Workspace | What you do there |
+| --- | --- |
+| Values | See and adjust the current value of every control on the active layer. |
+| Parameters | Define parameters, bulk-assign them to controls, load presets, import and export configurations. |
+| Agents | Start, interrupt and approve the eight demonstration agent slots. |
+| MIDI monitor | Watch incoming and outgoing messages; start and stop capture to a JSONL file. |
+| Connection | Select MIDI ports and channels and explicitly realign the layer. Source choice and motor recall are in the header. |
 
-`XTouchCompactCore` has no CoreMIDI/SwiftUI dependencies. `FactoryStandardMap` handles protocol and factory addressing. `CompactState` owns the host-desired LED/motor states and touch policies. `CompactSession` routes device events through the parameter engine into two per-layer banks, while `CoreMIDIService` owns native transport and `ConsoleModel` routes UI inputs. This deliberately avoids binding physical input Note numbers to the same output Note numbers.
+Select any control on the panel to open the inspector, which shows its assignment, value and MIDI addresses.
 
-`CompactInputObserver` accumulates passive physical input in the pure core, retaining
-last reported state and coverage independently of its bounded history. Presentation
-types stay in `PanelPresentation.swift`; `ConsoleModel+Panel.swift` projects one
-observation snapshot and converts zero-based protocol channels to display numbers.
-Choose **Hardware observation** to view touches, releases and movements with MIDI
-output locked. This path tracks safety state without executing parameter or Agent actions.
+**Settings** (gear button or ⌘,) holds the interface language, the MCP endpoint and OSC output.
 
-Views render a `PanelSnapshot` and emit `PanelIntents` (`PanelPresentation.swift`); `ConsoleModel+Panel.swift` is the single adapter between the UI and the session. Mock panel gestures produce factory TX messages through `MockXTouchCompact`, traverse the session, and consume RX feedback; inspector writes remain software commands. Snapshots expose touch, deferred motors, held controls and host-desired lights. Observed fader positions come only from actual input reports, never from motor commands. Unreported positions, ring styles and labels stay nil. The inspector describes factory TX and Global RX addresses from the applied session mapping, including separate encoder ring display/style addresses. The panel's button and encoder numbering by position is an assumption to be checked on hardware.
+Your configuration and device settings are saved to
+`~/Library/Application Support/XTouchCompactConsole/workspace.json`. Parameter values and agent activity
+are not saved; they reset when the app restarts. Configurations made for other controllers, including
+the BCR2000, are rejected on import.
 
-## References and next steps
+Full details are in [Software workflows](docs/SOFTWARE_WORKFLOWS.md).
 
-- [Exact manufacturer-vs-observed MIDI map](docs/MIDI_PROTOCOL.md)
-- [Research, upstream projects, and licensing](docs/UPSTREAM.md)
-- [Actionable task list and frontend/backend split](TODO.md)
-- [Hardware checklist and backlog](docs/IMPLEMENTATION_PLAN.md)
-- [Agent constraints](AGENTS.md)
+**Hardware observation** in the header opens the live panel, A/B coverage review and nonmotor test
+tabs. Nonmotor test settings are session-only, never rewrite the device profile, and do not enable
+motor tests. A successful send and an operator's reported response are recorded separately.
 
-Reference implementation: [jetsonhacks/xtouch-compact](https://github.com/jetsonhacks/xtouch-compact), an MIT-licensed Linux ALSA library with validated behavior. We model its documented observations independently in Swift; no Python ALSA dependency is included. Original BCR2000Dev code influenced CoreMIDI callback and session boundaries.
+### MCP for local agents
 
-## Software workflows
+1. In Settings, enable MCP. It listens on `127.0.0.1:8765/mcp` only.
+2. Copy the access token and give it to your agent as a bearer token.
+3. To let the agent change values, also turn on **Allow Agent writes**. Each parameter additionally has
+   its own agent-write permission.
 
-Parameters and bulk assignments, protected configuration persistence, eight Mock
-Agent slots, structured MIDI monitoring, opt-in localhost MCP and guarded OSC
-output are available without hardware. See [software workflows and safety boundaries](docs/SOFTWARE_WORKFLOWS.md).
+Three tools are available: `get_state`, `set_parameter` and `agent_primary`. Agent writes go through the
+same path as your own, so they cannot move a fader you are touching, and a remote agent cannot approve a
+waiting slot.
 
-![Isolated Mock console](docs/images/console-en.png)
+### OSC output
 
-[Settings preview](docs/images/settings.png) · [Traditional Chinese preview](docs/images/console-zh-Hant.png)
+In Settings, choose a parameter and a destination, apply it, then enable output. The app sends the
+normalized value (0 to 1) to `/xtouch/value`. Output switches itself off, with a visible notice, if the
+value becomes invalid, the destination changes or sending fails.
+
+The app does not accept incoming OSC, and stopping packets cannot stop equipment that ignores them.
+Anything you drive with this output needs its own limits and stop mechanism.
+
+## Connecting a real controller
+
+Hardware support is still being verified, so the app is deliberately cautious.
+
+1. Put the controller in its **factory Standard MIDI mode** (not MC mode) and connect it by USB.
+   Do not flash or modify firmware.
+2. Start the app. Every launch begins with **Listen only — send no MIDI** switched on in Connection.
+3. Select the controller's input and output ports, then switch from Mock to Hardware.
+4. Set **Global RX channel** to match the controller. The default of channel 1 is a starting guess;
+   the app does not detect it.
+5. Complete the Stage 1 input review in **Hardware observation** before enabling output tests.
+   The nonmotor test page requires the reviewed evidence, firmware information and independently
+   checked RX; motor acceptance remains a separate later stage.
+6. Keep all nine faders clear. Motors stay where they are until you write a value or choose
+   **Recall motors…** and confirm.
+
+If you unplug the controller while touching a fader, touch and release that fader once after
+reconnecting so the app sees a fresh release.
+
+The step-by-step checklist is in [Hardware bring-up](docs/HARDWARE_BRINGUP.md).
+
+## Current limitations
+
+- **Verified on hardware so far:** USB and CoreMIDI identity, and touch and release input for eight
+  faders on Layer A. See the [session record](docs/HARDWARE_SESSION_2026-11-11.md).
+- **Not yet verified on hardware:** full input coverage and physical layout, button LED encoding,
+  encoder ring styles, behavior across layers, and motor behavior. The panel's button and encoder
+  numbering by position is an assumption until checked.
+- **Not supported:** Mackie Control mode, editor-modified presets, firmware replacement, 14-bit fader
+  resolution, real external agent processes, incoming OSC, Developer ID signing and notarization.
+- The app runs on macOS only. The protocol core also builds and tests on Linux.
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [Software workflows](docs/SOFTWARE_WORKFLOWS.md) | Parameters, persistence, agents, MCP, OSC, capture and safety policies |
+| [MIDI protocol](docs/MIDI_PROTOCOL.md) | Factory Standard MIDI map, manufacturer documentation versus observed behavior |
+| [Hardware bring-up](docs/HARDWARE_BRINGUP.md) | Checklist for testing on a physical controller |
+| [Build workflow](docs/FREECM.md) | Build, run, test and package commands; local settings |
+| [Upstream research](docs/UPSTREAM.md) | Related projects and their licenses |
+| [TODO](TODO.md) | Task list and open items |
+
+More screenshots: [Settings](docs/images/settings.png) ·
+[Traditional Chinese interface](docs/images/console-zh-Hant.png)
+
+## Development
+
+```sh
+swift test --jobs 2
+swift build
+```
+
+The package has three parts: `XTouchCompactCore` (protocol, session, parameters and mock device, with no
+CoreMIDI or SwiftUI dependency), `XTouchCompactLocalization`, and `XTouchCompactApp` (SwiftUI and CoreMIDI).
+Tests do not need a controller. Contribution rules and hardware safety constraints are in
+[AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Acknowledgements
+
+Protocol facts and hardware observations draw on
+[jetsonhacks/xtouch-compact](https://github.com/jetsonhacks/xtouch-compact) (MIT), reimplemented
+independently in Swift. The app's architecture follows its sibling project,
+[BCR2000Dev](https://github.com/NorthBoundWisdom/BCR2000Dev).
+
+Behringer and X-TOUCH are trademarks of their respective owner. This project is not affiliated with or
+endorsed by Behringer.
+
+## License
+
+[MIT](LICENSE)
