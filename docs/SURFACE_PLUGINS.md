@@ -64,3 +64,16 @@ Protected examples use configuration version 2. Old version-1 files keep their
 original fields; ordinary exports do not add the optional protection field.
 Version 1 with a protection field is rejected. This version fence prevents older
 applications from ignoring a new protection flag and weakening write policy.
+
+
+Parameter metadata validation is deliberately stricter than the pre-migration
+host: identifiers or names containing only whitespace are rejected, as are steps
+so small that range/step cannot be represented as a finite number. An invalid
+import or configuration edit leaves the current configuration and values intact.
+Valid neutral/audio presets and ordinary legacy JSON fields retain their shape.
+The zero-anchored/lower-tie changes above still apply to valid numeric inputs.
+
+Reference-arm defaults remain keys and values in Core. The app resolves their
+names and groups in the selected language only when explicitly creating the
+example. Later configuration edits, imports and user-authored names are preserved
+as data and are never automatically translated.

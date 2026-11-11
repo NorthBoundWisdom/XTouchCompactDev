@@ -1,11 +1,13 @@
 #if os(macOS)
     import ChassisRemoteBinding
     import Combine
+    import Foundation
     import SimulationContracts
     import SurfacePluginContracts
     import Testing
     @testable import XTouchCompactApp
     import XTouchCompactCore
+    import XTouchCompactLocalization
 
     @Test @MainActor func activeSimulationPublishesActualDetailEvenWhenSemanticIsUnchanged() throws {
         let clock = TestClock()
@@ -49,5 +51,19 @@
             }; return false
         })
         #expect(model.mock.faders.allSatisfy { $0 == 0 })
+    }
+
+    @Test @MainActor func referenceExampleLocalizesOnlyAtCreationAndPreservesUserNames() throws {
+        for (language, group, enabled) in [(AppLanguage.english, "Reference arm", "Output enable"), (.simplifiedChinese, "参考机械臂", "输出使能"), (.traditionalChinese, "參考機械臂", "輸出使能")] {
+            let model = ConsoleModel(startsMIDI: false)
+            model.loadReferenceArmExample(using: Localizer(language: language))
+            #expect(model.session.parameters.definition("arm.enabled")?.name == enabled)
+            #expect(model.session.parameters.definition("arm.enabled")?.group == group)
+            var edited = model.session.parameters.configuration
+            edited.parameters[0].name = "User custom name"
+            model.applyConfiguration(edited)
+            #expect(model.session.parameters.configuration.parameters[0].name == "User custom name")
+            #expect(try JSONDecoder().decode(SurfaceConfiguration.self, from: JSONEncoder().encode(edited)).parameters[0].name == "User custom name")
+        }
     }
 #endif

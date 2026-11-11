@@ -24,7 +24,8 @@
             let isolated = arguments.contains("--startup-smoke") || arguments.contains("--integration-test")
             let root = isolated || observing ? nil : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("XTouchCompactConsole")
             let defaults = isolated ? UserDefaults(suiteName: "XTouchCompactDev.tests.\(UUID().uuidString)")! : .standard
-            _language = StateObject(wrappedValue: LanguageSettings(defaults: defaults))
+            let languageSettings = LanguageSettings(defaults: defaults)
+            _language = StateObject(wrappedValue: languageSettings)
             let model = ConsoleModel(startsMIDI: !isolated, storageRoot: root, isolated: isolated)
             var selection = Set<OptionalBusinessPlugin>()
             if arguments.contains("--robot-plugin") {
@@ -40,7 +41,7 @@
                 model.installOptionalPlugins(selection)
             }
             if arguments.contains("--reference-arm-example") {
-                model.loadReferenceArmExample()
+                model.loadReferenceArmExample(using: languageSettings.localizer)
             }
             model.startRuntime()
             if observing {

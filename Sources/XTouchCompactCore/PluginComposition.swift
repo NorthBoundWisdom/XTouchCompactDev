@@ -31,12 +31,10 @@ public extension CompactPluginHost {
 
     static func referenceArmParameters() throws -> [ParameterDefinition] {
         try ExampleParameterSets.referenceArm().map { p in
-            let local = p.id.rawValue.split(separator: ".").last.map(String.init) ?? p.id.rawValue
-            let name = local == "enabled" ? "Output enable" : local == "gripper" ? "Gripper" : local == "speed" ? "Speed" : local.uppercased()
-            return .init(id: p.id.rawValue, name: name, group: "Reference arm", unit: p.unit, minimum: p.minimum,
-                         maximum: p.maximum, defaultValue: p.defaultValue, step: p.step ?? 0,
-                         isSwitch: p.kind == .toggle, agentWritable: p.agentWritable,
-                         externallyProtected: p.externallyProtected ? true : nil)
+            .init(id: p.id.rawValue, name: p.nameKey, group: p.group, unit: p.unit, minimum: p.minimum,
+                  maximum: p.maximum, defaultValue: p.defaultValue, step: p.step ?? 0,
+                  isSwitch: p.kind == .toggle, agentWritable: p.agentWritable,
+                  externallyProtected: p.externallyProtected ? true : nil)
         }
     }
 }

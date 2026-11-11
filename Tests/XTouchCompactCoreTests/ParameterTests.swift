@@ -168,3 +168,24 @@ private func parameterMotors(_ messages: [MIDIMessage]) -> [MIDIMessage] {
     #expect(legacy.version == 1)
     #expect(try JSONDecoder().decode(SurfaceConfiguration.self, from: JSONEncoder().encode(legacy)) == legacy)
 }
+
+@Test func invalidSharedMetadataRejectsWithoutReplacingTheCurrentConfiguration() throws {
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = try session.setParameter("a.Fader.1", value: 41)
+    let original = session.parameters.configuration
+    let values = session.parameters.values
+    let invalid = [
+        ParameterDefinition(id: " \t", name: "Name"),
+        ParameterDefinition(id: "name", name: " \n"),
+        ParameterDefinition(id: "small-step", name: "Small step", step: .leastNonzeroMagnitude),
+    ]
+    for definition in invalid {
+        let configuration = SurfaceConfiguration(parameters: [definition], assignments: [])
+        #expect(throws: ParameterError.invalidDefinition(definition.id)) { try session.loadConfiguration(configuration) }
+        #expect(session.parameters.configuration == original)
+        #expect(session.parameters.values == values)
+    }
+    for preset in [SurfaceConfiguration.neutral, .audioExample] {
+        try preset.validate()
+    }
+}

@@ -448,3 +448,23 @@
 "OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming." = "OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming.";
 
 "OSC output stopped: telemetry timestamp is invalid." = "OSC output stopped: telemetry timestamp is invalid.";
+
+"example.arm" = "Reference arm";
+
+"example.arm.enabled" = "Output enable";
+
+"example.arm.gripper" = "Gripper";
+
+"example.arm.speed" = "Speed";
+
+"example.arm.j1" = "J1";
+
+"example.arm.j2" = "J2";
+
+"example.arm.j3" = "J3";
+
+"example.arm.j4" = "J4";
+
+"example.arm.j5" = "J5";
+
+"example.arm.j6" = "J6";

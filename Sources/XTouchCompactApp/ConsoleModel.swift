@@ -343,9 +343,15 @@
             } catch { self.error = error }
         }
 
-        func loadReferenceArmExample() {
-            do { try loadPreset(SurfaceConfiguration(parameters: CompactPluginHost.referenceArmParameters(), assignments: [], version: 2)) }
-            catch { self.error = error }
+        func loadReferenceArmExample(using localizer: Localizer = Localizer(language: .system)) {
+            do {
+                var parameters = try CompactPluginHost.referenceArmParameters()
+                for index in parameters.indices {
+                    parameters[index].name = localizer.text(parameters[index].name)
+                    parameters[index].group = localizer.text(parameters[index].group)
+                }
+                loadPreset(SurfaceConfiguration(parameters: parameters, assignments: [], version: 2))
+            } catch { self.error = error }
         }
 
         func installOptionalPlugins(_ selection: Set<OptionalBusinessPlugin>) {

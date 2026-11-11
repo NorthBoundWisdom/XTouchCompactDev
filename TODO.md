@@ -44,7 +44,8 @@
   参数使用共享0锚点/平分取低规则。构建只消费Git锁定SHA的build目录副本，见[共享包说明](docs/SURFACE_PLUGINS.md)。
   没有两个宿主之间的源码依赖；跨宿主一致性与Linux验收由工作区监督汇总。
 - 最近一次本地验证：macOS Swift 6.4.2上149项Swift（Core75、App Swift Testing62、App XCTest9、
-  本地化3），25项Python工作流，build、命令校验和SwiftFormat/Ruff通过。Linux与实机不由这些检查推定。
+  本地化3），25项Python工作流，build、命令校验和SwiftFormat/Ruff通过。随后补2项metadata/示例本地化测试，
+  当前定义151项；相关5项定向检查通过，未为该小收敛重复全量/Release检查。Linux与实机不由这些检查推定。
   此前原生打包、签名、启动冒烟、13 项工作流测试通过；观察页面三种隔离预览已生成并检查。
   调整前最新的 [远端运行 43053024236](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43053024236)
   已覆盖观察、重构及非电机工具；当时的 Linux、旧 macOS 和 Xcode 26.6 新 macOS 三条作业均通过。

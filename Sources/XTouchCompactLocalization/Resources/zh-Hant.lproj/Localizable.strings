@@ -448,3 +448,23 @@
 "OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming." = "OSC 輸出已停止：實際回饋或獨立心跳缺失、逾時，或需要先關閉再重新啟用。";
 
 "OSC output stopped: telemetry timestamp is invalid." = "OSC 輸出已停止：實際回饋或心跳的時間戳無效。";
+
+"example.arm" = "參考機械臂";
+
+"example.arm.enabled" = "輸出使能";
+
+"example.arm.gripper" = "夾爪";
+
+"example.arm.speed" = "速度";
+
+"example.arm.j1" = "關節 1";
+
+"example.arm.j2" = "關節 2";
+
+"example.arm.j3" = "關節 3";
+
+"example.arm.j4" = "關節 4";
+
+"example.arm.j5" = "關節 5";
+
+"example.arm.j6" = "關節 6";
