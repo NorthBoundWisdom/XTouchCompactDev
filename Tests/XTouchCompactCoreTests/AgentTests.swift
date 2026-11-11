@@ -42,6 +42,7 @@ import Testing
         #expect(try session.agentFeedback(agents).contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
         for feedback in try [session.selectLayer(.b), session.connect(), session.reconfigure(map: FactoryStandardMap(), lightProtocol: variant), session.loadConfiguration(.neutral)] {
             #expect(feedback.contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
+            #expect(!feedback.contains { if case let .controlChange(_, number, _) = $0 { return (1 ... 9).contains(number) }; return false })
             #expect(!feedback.contains(.noteOn(channel: 0, number: 0, velocity: 0)))
         }
         let unassigned = try session.receive([.noteOn(channel: 0, number: 109, velocity: 127)])
@@ -64,4 +65,26 @@ import Testing
         #expect(!pressed.feedback.contains(.noteOn(channel: 0, number: UInt8(index - 1), velocity: 1)))
         #expect(!session.bank(.a).buttons[index - 1])
     }
+}
+
+@Test func agentLightStatesOnlyAffectCurrentlyBoundLayerButtons() throws {
+    #expect(AgentSlot(id: 1, phase: .idle).light == .off)
+    #expect(AgentSlot(id: 1, phase: .completed).light == .off)
+    #expect(AgentSlot(id: 1, phase: .interrupted).light == .off)
+    #expect(AgentSlot(id: 1, phase: .running).light == .on)
+    #expect(AgentSlot(id: 1, phase: .waitingApproval).light == .blink)
+    var session = CompactSession(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var config = SurfaceConfiguration(parameters: [], assignments: [
+        .init(control: .button(12), layer: .a, action: .agent(1)),
+        .init(control: .button(23), layer: .b, action: .agent(1))
+    ])
+    _ = try session.loadConfiguration(config)
+    let a = try session.updateAgentLights([1: .blink])
+    #expect(a.contains(.noteOn(channel: 0, number: 11, velocity: 2)))
+    #expect(!a.contains(.noteOn(channel: 0, number: 22, velocity: 2)))
+    let b = try session.selectLayer(.b)
+    #expect(b.contains(.noteOn(channel: 0, number: 22, velocity: 2)))
+    config.assignments.removeAll()
+    let cleared = try session.loadConfiguration(config)
+    #expect(cleared.contains(.noteOn(channel: 0, number: 22, velocity: 0)))
 }
