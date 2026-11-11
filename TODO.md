@@ -39,8 +39,10 @@
   本机 MCP 端点、受限 OSC 输出、三语界面；运行时排程由模型持有，不依赖窗口。
 - 契约：视图只读 `PanelSnapshot`、只发 `PanelIntents`。未获得位置输入时 `observed` 为 `nil`，
   未发送过灯环样式时 `style` 为 `nil`，未绑定控件的 `label` / `detail` 为 `nil`。
-- 最近一次本地验证（开发者报告）：macOS 上 `swift test --jobs 2`（46 项 Core + 30 项 App + 3 项本地化）、
-  `swift build`、7 项工作流测试与原生打包冒烟通过。远端 CI 必需检查已通过（见 N1）；截图为手动诊断，鼠标交互目视验收未完成。
+- 最近一次本地验证：macOS Swift 6.4.2 上 `swift test --jobs 2`（47 项 Core + 37 项 App + 3 项本地化）、
+  `swift build`、13 项工作流测试通过。原生打包、签名与启动冒烟通过；五张隔离预览已生成。
+  [远端运行 43007338487](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43007338487)
+  的 Linux、旧 macOS 和 Xcode 26.6 / Swift 6.3.3 新 macOS 三条作业均通过；鼠标目视验收仍因原生窗口不可访问而未完成。
 - 下一步见文末“后续待办”：阶段一（剩余 N5 鼠标验收）→ 阶段二（实机）→ 阶段三（功能方向）。
 
 ## 后端任务（按顺序）
@@ -232,9 +234,10 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
   `resetParameters`、`applyConfiguration`（取代 `loadConfiguration`）、`loadPreset`、`confirmLoadPreset`、
   `cancelLoadPreset`；视图 `ParameterWorkspace`、`WorkspaceTabsView`、`ExternalServicesSettings`。
 - [x] N3 `confirmLoadPreset` 改为无参数，由模型使用自己的 `pendingPreset`（契约改动，前端做；随 N2 一起）。
-- [x] N4 **B10 工具链审查**：`configs/*.py`、`tools/*.py`、提交钩子与打包流程尚未做代码审查，只有开发者自测与 CI 通过。
+- [x] N4 **B10 工具链审查**：已审查 `configs/*.py`、`tools/*.py`、提交钩子与打包流程，修复路径/语言资源/冒烟校验问题；见 [审查记录](docs/reviews/N2-N8.md)。
 - [ ] N5 **鼠标交互目视验收**：Mock 模式下逐项过一遍并把结果记到 `docs/`——拖住推子时软件写入出现暂缓标记、松手对位；
   层不一致警告与重新对齐；预置替换确认框；OSC 停机通知；MCP 开关与令牌复制。
+  本次原生工具返回 `cgWindowNotFound` / 超时，未取得可操作窗口；[验收步骤与阻塞记录](docs/NATIVE_ACCEPTANCE.md)。
 - [x] N7 **实机记录准备**（后端提出、前端做界面）：
   - MIDI 监视器目前只保留最近 120 条且不能导出，阶段 1 的逐控件抓取没法留档。增加“导出监视记录”或抓取会话
     （带时间、原始字节、解码结果、主机当前层），输出到用户选择的文件。
@@ -244,9 +247,12 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 可延后，不挡实机：
 
-- [x] N6 远端截图诊断超时的原因（手动运行 `capture_previews` 时仍会失败）。README 截图继续由本地脚本生成。
-- [x] N8 编译器版本不一致：本机 Swift 6.4.2、macOS runner 6.1.2、Linux 容器 6.2，并发诊断结果不同。
-  决定是否加一条较新工具链的 CI 作业，或接受偶尔在 runner 上才暴露的编译错误。
+- [x] N6 远端截图超时：旧窗口 `.task` 入口在运行 43005877417 再次超时；改为独立 AppKit 入口后，
+  [手动作业 43006052440](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43006052440) 五张预览全部通过。
+  已下载并目视核对产物；加入阶段日志、超时采样、进程回收与诊断产物保留。截图仍为按需作业。
+- [x] N8 编译器版本覆盖：保留旧 macOS / Linux 6.2 作业，新增明确选择 Xcode 26.6 的 `app-macos-modern`。
+  实际 Swift 6.3.3 的完整测试、建置、签名应用和启动冒烟已在运行 43007338487 通过；版本门禁拒绝低于 6.2 的编译器。
+  本机仍为 Swift 6.4.2，明确接受这一小段差异；没有放宽 Swift 6 并发检查。
 
 ### 阶段二：实机到货后
 
