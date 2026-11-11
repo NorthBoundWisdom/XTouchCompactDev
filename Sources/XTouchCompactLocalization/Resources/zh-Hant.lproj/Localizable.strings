@@ -468,3 +468,5 @@
 "example.arm.j5" = "關節 5";
 
 "example.arm.j6" = "關節 6";
+
+"OSC output stopped: actual feedback precision cannot be used safely for OSC." = "OSC 輸出保持關閉：實際回饋精度無法安全用於 OSC，請檢查可信回饋來源。";

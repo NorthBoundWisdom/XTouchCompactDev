@@ -468,3 +468,5 @@
 "example.arm.j5" = "J5";
 
 "example.arm.j6" = "J6";
+
+"OSC output stopped: actual feedback precision cannot be used safely for OSC." = "OSC output stopped: actual feedback precision cannot be used safely for OSC.";

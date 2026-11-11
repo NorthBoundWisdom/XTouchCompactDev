@@ -3,6 +3,7 @@
     import Testing
     @testable import XTouchCompactApp
     import XTouchCompactCore
+    import XTouchCompactLocalization
 
     @MainActor private final class FakeOSC: OSCTransport {
         var starts = 0
@@ -139,5 +140,31 @@
             #expect(transport.packets.count == 1)
             #expect(model.notifications.first(where: { $0.id == "osc" })?.message?.key.contains("timestamp") == true)
         }
+    }
+
+    @Test @MainActor func outputRefusesUnsafeDoubleSeedAndAcceptsActualFloatMeasurement() throws {
+        let clock = TestClock()
+        let transport = FakeOSC()
+        let model = ConsoleModel(startsMIDI: false, now: { clock.date }, oscTransport: transport)
+        model.receiveTrustedOSCActual(0.1, at: model.runtimeTime)
+        model.receiveTrustedOSCHeartbeat(at: model.runtimeTime)
+        model.setOSCEnabled(true)
+        #expect(!model.oscEnabled && transport.packets.isEmpty)
+        let reason = try #require(model.notifications.first(where: { $0.id == "osc" })?.message)
+        #expect(reason.key == "OSC output stopped: actual feedback precision cannot be used safely for OSC.")
+        #expect(Localizer(language: .simplifiedChinese).text(reason).contains("实际反馈精度不能安全"))
+        #expect(Localizer(language: .traditionalChinese).text(reason).contains("實際回饋精度無法安全"))
+        // This fact originates in an actual Float sample, not a rounded arbitrary Double.
+        let measured: Float = 0.25
+        model.receiveTrustedOSCActual(Double(measured), at: model.runtimeTime)
+        model.receiveTrustedOSCHeartbeat(at: model.runtimeTime)
+        model.setOSCEnabled(true) // Explicit enable performs the host's off/on sequence.
+        #expect(model.oscEnabled)
+        clock.time += 0.25
+        model.receiveTrustedOSCActual(Double(measured), at: model.runtimeTime)
+        model.receiveTrustedOSCHeartbeat(at: model.runtimeTime)
+        model.tickOSC()
+        #expect(model.oscEnabled && transport.packets.count == 1)
+        #expect(try transport.packets.first == (OSCCodec.encode(address: "/xtouch/value", value: 0.1875)))
     }
 #endif

@@ -468,3 +468,5 @@
 "example.arm.j5" = "关节 5";
 
 "example.arm.j6" = "关节 6";
+
+"OSC output stopped: actual feedback precision cannot be used safely for OSC." = "OSC 输出保持关闭：实际反馈精度不能安全用于 OSC，请检查可信反馈源。";

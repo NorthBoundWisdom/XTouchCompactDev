@@ -126,7 +126,11 @@ OSC starts disabled. Its codec and motion safety decisions now come from the
 same SurfacePlugins output module used by the other host. The destination and
 one-parameter `/xtouch/value` float packet remain unchanged; normalization is
 0…1 with a maximum velocity of 0.25 units/second and a 0.1 per-cycle cap.
-Float32 rounding stays inside the permitted interval.
+Float32 rounding stays inside the permitted interval. On first enable or rearm,
+the measured baseline must itself be exactly representable by the OSC Float wire
+format; an unsafe arbitrary Double sample keeps output closed with an explicit
+precision message. The host delegates this check to the shared gate and does not
+round measurements to manufacture an acceptable observation.
 
 Enabling requires a fresh destination actual-state sample and an independent
 heartbeat supplied by a trusted host adapter. Both expire after 0.3 seconds.

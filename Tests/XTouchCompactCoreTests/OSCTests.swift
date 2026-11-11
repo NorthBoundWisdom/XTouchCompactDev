@@ -40,3 +40,17 @@ import Testing
     #expect(!gate.enabled)
     #expect(throws: OSCError.self) { _ = try MotionSafetyGate(timeout: 1) }
 }
+
+@Test func scalarAdapterCannotSeedFloatOutputBeyondItsSoftLimit() throws {
+    var gate = try MotionSafetyGate(minimum: 0, maximum: 0.1)
+    gate.setConnected(true, now: 0)
+    gate.beat(now: 0); gate.receiveActual(0.1, now: 0)
+    gate.setEnabled(false, now: 0); gate.setEnabled(true, now: 0)
+    #expect(gate.sample(0.1, now: 0) == nil)
+    #expect(!gate.enabled)
+    gate.receiveActual(0.0625, now: 0)
+    gate.setEnabled(true, now: 0)
+    #expect(gate.sample(0.0625, now: 0) == nil)
+    gate.setEnabled(false, now: 0); gate.setEnabled(true, now: 0)
+    #expect(gate.sample(0.0625, now: 0) == 0.0625)
+}

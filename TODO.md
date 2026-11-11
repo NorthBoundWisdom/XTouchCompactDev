@@ -43,10 +43,10 @@
 - 共享Agent宿主C0–C2已完成：唯一RemoteRegistry拥有插件值；版本1配置翻译为中性动作/指示灯绑定，
   参数使用共享0锚点/平分取低规则。构建只消费Git锁定SHA的build目录副本，见[共享包说明](docs/SURFACE_PLUGINS.md)。
   没有两个宿主之间的源码依赖；跨宿主一致性与Linux验收由工作区监督汇总。
-- 最近一次产品代码完整验证：clean `3e59bea`，macOS Swift 6.4.2上151项Swift（Core76、
-  App Swift Testing63、App XCTest9、本地化3）通过；25项Python、格式和命令校验通过。
-  Debug/Release原生构建签名、隔离启动和ZIP/DMG通过，产物source与clean `3e59bea`精确一致。
-  之后仅R2-10文档和分页测试收敛，定义增至152项，分页定向测试通过，不重复相同Release流程。
+- R2-12最终共享安全修复后，macOS Swift 6.4.2上154项Swift（Core78、App Swift Testing64、
+  App XCTest9、本地化3）通过；25项Python、格式和命令校验通过。
+  Float32首次/重武装baseline只接受能安全表示的真实actual；无法表示时共享gate拒发并给三语精度提示。
+  产品源与原生Debug/Release/签名/ZIP/DMG/隔离启动证据在工作区reports/C.md按最终提交记录。
   Linux与实机不由这些检查推定；工作区监督另汇总Linux证据。
   此前原生打包、签名、启动冒烟、13 项工作流测试通过；观察页面三种隔离预览已生成并检查。
   调整前最新的 [远端运行 43053024236](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43053024236)

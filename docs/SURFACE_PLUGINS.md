@@ -77,3 +77,11 @@ Reference-arm defaults remain keys and values in Core. The app resolves their
 names and groups in the selected language only when explicitly creating the
 example. Later configuration edits, imports and user-authored names are preserved
 as data and are never automatically translated.
+
+
+R2-12 closes the initial/rearm Float32 baseline boundary: an arbitrary Double
+actual sample that cannot be represented exactly as an OSC Float is rejected by
+the shared gate before any enabled frame. The host maps the stable precision
+reason to a localized actionable notice. A real decoded Float sample remains
+valid. Double-precision outputs retain their existing behavior; do not round
+unrepresentable observations in a host adapter to bypass the gate.

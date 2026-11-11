@@ -144,7 +144,7 @@
                 try binding.plugin.setEnabled(true)
                 let decision = binding.plugin.evaluate(targets: ["output.value": actual.value], at: time)
                 guard decision.command?.enabled == true else {
-                    oscFault("OSC output stopped: trusted actual state and an independent heartbeat are required."); return
+                    oscFault(oscSafetyMessage(decision.reason, fallback: "OSC output stopped: trusted actual state and an independent heartbeat are required.")); return
                 }
                 var next = plugins
                 try next.replaceBinding(binding, at: time, event: .init(code: "output.enabled"))
@@ -167,13 +167,19 @@
                 try next.replaceBinding(binding, at: time, event: .init(code: "output.evaluated"))
                 try commitPlugins(next)
                 guard let command = decision.command, command.enabled, let output = command.values["output.value"] else {
-                    oscFault("OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming."); return
+                    oscFault(oscSafetyMessage(decision.reason, fallback: "OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming.")); return
                 }
                 try oscTransport.send(OSCCodec.encode(address: "/xtouch/value", value: Float(output)))
                 if oscOutput != output {
                     oscOutput = output
                 }
             } catch { oscFault("OSC output stopped: transport failure."); serviceError(error) }
+        }
+
+        private func oscSafetyMessage(_ reason: String, fallback: String) -> String {
+            reason == "output.actual_not_float32_representable"
+                ? "OSC output stopped: actual feedback precision cannot be used safely for OSC."
+                : fallback
         }
 
         private func oscFault(_ key: String) {
