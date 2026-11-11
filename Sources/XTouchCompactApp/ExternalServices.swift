@@ -3,6 +3,7 @@
     import Foundation
     import Network
     import OutputRemoteBinding
+    import RemoteToolContracts
     import SurfacePluginContracts
     import XTouchCompactCore
 
@@ -31,11 +32,17 @@
         }
 
         func routeMCP(_ request: [String: Any]) throws -> [String: Any] {
-            let tools: [[String: Any]] = [
+            var tools: [[String: Any]] = [
                 ["name": "get_state", "description": "Read active layer, parameters and physical touch state.", "inputSchema": ["type": "object", "properties": [:], "additionalProperties": false]],
                 ["name": "set_parameter", "description": "Write a parameter; touched faders defer motors until release.", "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "value": ["type": "number"]], "required": ["id", "value"], "additionalProperties": false]],
                 ["name": "agent_primary", "description": "Start or interrupt a Mock Agent slot. Approval requires the user interface.", "inputSchema": ["type": "object", "properties": ["slot": ["type": "integer", "minimum": 1, "maximum": 8]], "required": ["slot"], "additionalProperties": false]],
             ]
+            tools += try plugins.remoteTools.map { tool in
+                try ["name": tool.name, "description": "Shared business plugin operation: " + tool.name,
+                     "inputSchema": JSONSerialization.jsonObject(with: JSONEncoder().encode(tool.inputSchema)),
+                     "outputSchema": JSONSerialization.jsonObject(with: JSONEncoder().encode(tool.outputSchema)),
+                     "annotations": ["readOnlyHint": !tool.isMutation]]
+            }
             if request["method"] as? String == "tools/list" {
                 return ["tools": tools]
             }
@@ -44,6 +51,16 @@
             defer { logAgentCall(name) }
             guard params["arguments"] == nil || params["arguments"] is [String: Any] else { throw MCPError.invalidRequest }
             let args = params["arguments"] as? [String: Any] ?? [:]
+            if let tool = plugins.remoteTools.first(where: { $0.name == name }) {
+                do {
+                    guard !tool.isMutation || mcpWritesAllowed else { throw RemoteFailure(code: "permissionDenied") }
+                    guard let data = try? JSONSerialization.data(withJSONObject: args),
+                          let arguments = try? JSONDecoder().decode(JSONValue.self, from: data) else { throw RemoteFailure(code: "invalidParameter") }
+                    return try surfaceMCPContent(performSurfaceCall(name, arguments: arguments), isError: false)
+                } catch {
+                    return try surfaceMCPContent(.encoded(RemoteFailure.from(error)), isError: true)
+                }
+            }
             var result: [String: Any] = [:]
             switch name {
             case "get_state":
@@ -71,6 +88,14 @@
             }
             let text = try String(data: JSONSerialization.data(withJSONObject: result, options: .sortedKeys), encoding: .utf8)!
             return ["content": [["type": "text", "text": text]], "isError": false]
+        }
+
+        private func surfaceMCPContent(_ value: JSONValue, isError: Bool) throws -> [String: Any] {
+            var response: [String: Any] = try ["content": [["type": "text", "text": value.jsonText]], "isError": isError]
+            if value.objectValue != nil {
+                response["structuredContent"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value))
+            }
+            return response
         }
 
         func setOSCEnabled(_ enabled: Bool) {

@@ -44,8 +44,13 @@ There are no prebuilt, notarized downloads yet. You build the app yourself.
 ```sh
 git clone https://github.com/NorthBoundWisdom/XTouchCompactDev.git
 cd XTouchCompactDev
+python3 configs/setup_local_project.py
 swift run XTouchCompactApp
 ```
+
+Setup acquires the exact shared Git commit recorded in the repository lock. Until
+that commit is published, use a local Git acquisition source as described in
+[shared dependency setup](docs/SURFACE_PLUGINS.md).
 
 The app opens in **Mock** mode. Drag the faders, turn the encoders and click the buttons on the panel;
 they follow the same path as real hardware input.
@@ -66,7 +71,7 @@ These bundles are ad-hoc signed for local use. They are not signed with a Develo
 | --- | --- |
 | Values | See and adjust the current value of every control on the active layer. |
 | Parameters | Define parameters, bulk-assign them to controls, load presets, import and export configurations. |
-| Agents | Start, interrupt and approve the eight demonstration agent slots. |
+| Agents | Start, interrupt and approve the eight demonstration agent slots; view explicitly enabled optional module states. |
 | MIDI monitor | Watch incoming and outgoing messages; start and stop capture to a JSONL file. |
 | Connection | Select MIDI ports and channels and explicitly realign the layer. Source choice and motor recall are in the header. |
 
@@ -92,18 +97,23 @@ motor tests. A successful send and an operator's reported response are recorded 
 3. To let the agent change values, also turn on **Allow Agent writes**. Each parameter additionally has
    its own agent-write permission.
 
-Three tools are available: `get_state`, `set_parameter` and `agent_primary`. Agent writes go through the
+The legacy tools are `get_state`, `set_parameter` and `agent_primary`. Shared
+`surface_` tools add plugin discovery, snapshots, actions and cursor-based events;
+see [shared tools](docs/SHARED_REMOTE.md). Agent writes go through the
 same path as your own, so they cannot move a fader you are touching, and a remote agent cannot approve a
 waiting slot.
 
 ### OSC output
 
-In Settings, choose a parameter and a destination, apply it, then enable output. The app sends the
-normalized value (0 to 1) to `/xtouch/value`. Output switches itself off, with a visible notice, if the
-value becomes invalid, the destination changes or sending fails.
+OSC output retains the parameter/destination settings and `/xtouch/value` float packet.
+The shared safety gate now requires a fresh trusted destination actual-state sample
+and an independent heartbeat, each younger than 0.3 seconds. No production receiver
+is integrated yet, so ordinary enable stays closed with a visible reason. Parameter
+requests, previous packets and the app scheduler cannot create those facts.
 
-The app does not accept incoming OSC, and stopping packets cannot stop equipment that ignores them.
-Anything you drive with this output needs its own limits and stop mechanism.
+Explicit trusted telemetry fixtures still exercise rate-limited output in software
+tests. These inputs never drive fader motors. See [output behavior](docs/SOFTWARE_WORKFLOWS.md#osc)
+for the explicit rearm and fault policy.
 
 ## Connecting a real controller
 

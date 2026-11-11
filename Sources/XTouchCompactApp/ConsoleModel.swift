@@ -4,6 +4,7 @@
     import Foundation
     import Network
     import OutputRemoteBinding
+    import RemoteToolContracts
     import SurfacePluginContracts
     import SwiftUI
     import UniformTypeIdentifiers
@@ -400,6 +401,14 @@
         func invokePluginAction(_ ref: ActionReference, origin: InputOrigin) {
             do { try performPluginAction(ref, origin: origin) }
             catch { self.error = error }
+        }
+
+        func performSurfaceCall(_ name: String, arguments: JSONValue) throws -> JSONValue {
+            var next = plugins
+            let response = try next.callRemote(name, arguments: arguments,
+                                               context: .init(time: runtimeTime, controlToken: UUID().uuidString, permitsOutputEnable: false))
+            try commitPlugins(next)
+            return response
         }
 
         func performPluginAction(_ ref: ActionReference, origin: InputOrigin) throws {

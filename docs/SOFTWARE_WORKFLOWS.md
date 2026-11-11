@@ -88,12 +88,32 @@ The stateless JSON Streamable HTTP endpoint supports `initialize`, `ping`,
 `tools/list`, `tools/call` and notification acceptance. It pins protocol version
 2025-03-26, returns JSON rather than SSE, and returns 405 to GET. Transport basis:
 [official MCP specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports).
-The tools are `get_state`, `set_parameter` and `agent_primary`. State exposes
+The legacy tools remain `get_state`, `set_parameter` and `agent_primary`. State exposes
 layer, parameter permissions, touched and deferred faders. Writes use the same
 parameter/session pipeline as UI writes; they do not bypass touch ownership.
 Calls appear in the monitor without credentials or request arguments. Remote
 `agent_primary` can start or interrupt but cannot approve a waiting slot, even
 when Agent writes are enabled. Local interface and hardware actions can approve; remote actions cannot.
+
+Shared business tools use the `surface_` prefix and the exact shared input/output
+schemas. `surface_capabilities` lists installed instances; `surface_events` reads
+the bounded 256-record journal using epoch, decimal cursor and limit. Old epochs,
+future cursors or evicted history report `gap`; refetch snapshots after a gap.
+Snapshots and event reads never advance plugins or replay actions, and failed
+mutations append no event. Agent tools are `surface_agent_snapshot`,
+`surface_agent_primary` and `surface_agent_interrupt`. Optional robot/chassis/output
+tools appear only when that module is explicitly installed.
+
+Every mutation checks the existing Allow Agent writes policy. The authenticated
+host supplies monotonic time and fresh opaque control grants; request data cannot
+claim a local origin, provide grant entropy or create actual/heartbeat samples.
+Output enabling is denied by default even when Agent writes are allowed. GUI,
+clock, legacy operations and new tools use one canonical plugin instance.
+
+New-tool success returns the raw shared JSON as text and, for object results,
+matching `structuredContent`. A new-tool failure has `isError: true` and the stable
+`{code, fields}` object in both forms. Legacy tool envelopes/error behavior remain
+unchanged. See [shared-tool reference](SHARED_REMOTE.md) for discovery and examples.
 
 To exercise an explicitly enabled normal app, put its token in the environment
 and run `python3 tools/mcp_integration.py`. Tests use an ephemeral loopback port

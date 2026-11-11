@@ -103,6 +103,17 @@ public struct CompactPluginHost: Sendable {
         }
     }
 
+    public var remoteTools: [RemoteToolDescriptor] {
+        registry.tools
+    }
+
+    public mutating func callRemote(_ name: String, arguments: JSONValue, context: RemoteCallContext) throws -> JSONValue {
+        var next = self
+        let response = try next.registry.call(name, arguments: arguments, context: context)
+        self = next
+        return response
+    }
+
     public mutating func replaceBinding(_ binding: any RemoteBinding, at time: PluginTime, event: PluginEvent) throws {
         var next = self
         try next.registry.replace(binding, at: time, event: event)

@@ -43,7 +43,7 @@
 - 共享Agent宿主C0–C2已完成：唯一RemoteRegistry拥有插件值；版本1配置翻译为中性动作/指示灯绑定，
   参数使用共享0锚点/平分取低规则。构建只消费Git锁定SHA的build目录副本，见[共享包说明](docs/SURFACE_PLUGINS.md)。
   没有两个宿主之间的源码依赖；跨宿主一致性与Linux验收由工作区监督汇总。
-- 最近一次本地验证：macOS Swift 6.4.2上137项Swift（Core69、App Swift Testing56、App XCTest9、
+- 最近一次本地验证：macOS Swift 6.4.2上149项Swift（Core75、App Swift Testing62、App XCTest9、
   本地化3），25项Python工作流，build、命令校验和SwiftFormat/Ruff通过。Linux与实机不由这些检查推定。
   此前原生打包、签名、启动冒烟、13 项工作流测试通过；观察页面三种隔离预览已生成并检查。
   调整前最新的 [远端运行 43053024236](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43053024236)
@@ -331,7 +331,8 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 - [x] C3：架构/构建/参数及Agent时间线说明对齐。跨宿主M1由监督窗口验收。
 - [x] M2：显式可选机器人、底盘、参数输出与示例参数集装配；默认仍只Agent。OSC改用共享安全门，
   缺少可信actual/独立heartbeat时保持关闭；带独立保护字段的示例采用v2配置，旧v1原shape不变。
-- [ ] M3：共享surface_远程合同；保留旧get_state/set_parameter/agent_primary。
+- [x] M3：共享surface_远程合同、capabilities/events与独立typed bindings；保留旧get_state/set_parameter/agent_primary。
+  同一registry拥有GUI/clock/旧与新工具的plugin值；mutation仍需宿主写权限，output enable默认拒。
 
 用户本轮明确授权同一开发线程负责必要的PanelSnapshot/PanelIntents、适配器和视图调整；
 这不改变视图只读快照/只发意图的边界。实机记录与既有HW/N5/C4等未验收项目保持原状态。
