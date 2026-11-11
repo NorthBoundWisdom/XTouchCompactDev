@@ -329,7 +329,8 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 - [x] C1：共享参数规则、版本1配置兼容、固定远端/完整SHA锁与Git物化获取。
 - [x] C2：七态Agent、原子注册、中性ActionReference/IndicatorID、多实例隔离、来源审批。
 - [x] C3：架构/构建/参数及Agent时间线说明对齐。跨宿主M1由监督窗口验收。
-- [ ] M2：显式可选机器人、底盘、参数输出与示例参数集装配；默认仍只Agent。
+- [x] M2：显式可选机器人、底盘、参数输出与示例参数集装配；默认仍只Agent。OSC改用共享安全门，
+  缺少可信actual/独立heartbeat时保持关闭；带独立保护字段的示例采用v2配置，旧v1原shape不变。
 - [ ] M3：共享surface_远程合同；保留旧get_state/set_parameter/agent_primary。
 
 用户本轮明确授权同一开发线程负责必要的PanelSnapshot/PanelIntents、适配器和视图调整；

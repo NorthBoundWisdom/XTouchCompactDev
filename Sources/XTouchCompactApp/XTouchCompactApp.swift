@@ -1,5 +1,6 @@
 #if os(macOS)
     import SwiftUI
+    import XTouchCompactCore
 
     @main
     enum XTouchLauncher {
@@ -25,6 +26,22 @@
             let defaults = isolated ? UserDefaults(suiteName: "XTouchCompactDev.tests.\(UUID().uuidString)")! : .standard
             _language = StateObject(wrappedValue: LanguageSettings(defaults: defaults))
             let model = ConsoleModel(startsMIDI: !isolated, storageRoot: root, isolated: isolated)
+            var selection = Set<OptionalBusinessPlugin>()
+            if arguments.contains("--robot-plugin") {
+                selection.insert(.robot)
+            }
+            if arguments.contains("--chassis-plugin") {
+                selection.insert(.chassis)
+            }
+            if arguments.contains("--output-plugin") {
+                selection.insert(.output)
+            }
+            if !selection.isEmpty {
+                model.installOptionalPlugins(selection)
+            }
+            if arguments.contains("--reference-arm-example") {
+                model.loadReferenceArmExample()
+            }
             model.startRuntime()
             if observing {
                 model.beginHardwareObservation()

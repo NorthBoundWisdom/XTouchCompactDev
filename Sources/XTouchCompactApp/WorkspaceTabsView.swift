@@ -54,6 +54,16 @@
                 switch tab {
                 case .agents:
                     VStack {
+                        ForEach(snapshot.businessPlugins) { plugin in
+                            HStack {
+                                Text(l.text(plugin.title))
+                                Text(l.text(plugin.state)).foregroundStyle(.secondary)
+                                Spacer()
+                                if let detail = plugin.detail {
+                                    Text(detail).font(.caption.monospacedDigit())
+                                }
+                            }
+                        }
                         ForEach(snapshot.agents) { slot in
                             HStack {
                                 Text("Agent \(slot.id)")

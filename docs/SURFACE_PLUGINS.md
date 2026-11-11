@@ -51,3 +51,16 @@ Plugin updates, startup, reconfiguration, layer selection and reconnection never
 recall faders. Touch protection remains at the final motor-send boundary. None of
 the software checks qualifies physical firmware behavior or completes a hardware
 bring-up checklist.
+
+
+Optional robot/chassis/output bindings share the same registry and epoch as Agent.
+The simulations each receive a fresh host lifetime ID. Explicit launch flags and
+the reference-arm example are described in [software workflows](SOFTWARE_WORKFLOWS.md).
+The output module's stricter fresh-actual/independent-heartbeat requirement applies
+to the existing OSC settings too; no private scalar safety implementation remains.
+The compatibility scalar API forwards every decision to the shared gate.
+
+Protected examples use configuration version 2. Old version-1 files keep their
+original fields; ordinary exports do not add the optional protection field.
+Version 1 with a protection field is rejected. This version fence prevents older
+applications from ignoring a new protection flag and weakening write policy.

@@ -299,6 +299,7 @@
         var oscParameter = ""
         var oscOutput = 0.0
         var agents: [AgentSlot] = []
+        var businessPlugins: [BusinessPluginPresentation] = []
         var parameterValues: [String: Double] = [:]
 
         func fader(_ index: Int) -> FaderPresentation? {

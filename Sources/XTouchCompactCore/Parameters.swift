@@ -12,14 +12,16 @@ public struct ParameterDefinition: Codable, Equatable, Sendable, Identifiable {
     public var step: Double
     public var isSwitch: Bool
     public var agentWritable: Bool
+    /// Optional for version-1 file compatibility; absent means unprotected.
+    public var externallyProtected: Bool?
 
     public init(id: String, name: String, group: String = "General", unit: String = "", minimum: Double = 0,
                 maximum: Double = 127, defaultValue: Double = 0, step: Double = 1,
-                isSwitch: Bool = false, agentWritable: Bool = true)
+                isSwitch: Bool = false, agentWritable: Bool = true, externallyProtected: Bool? = nil)
     {
         self.id = id; self.name = name; self.group = group; self.unit = unit
         self.minimum = minimum; self.maximum = maximum; self.defaultValue = defaultValue
-        self.step = step; self.isSwitch = isSwitch; self.agentWritable = agentWritable
+        self.step = step; self.isSwitch = isSwitch; self.agentWritable = agentWritable; self.externallyProtected = externallyProtected
     }
 
     public func normalized(_ raw: Double) throws -> Double {
@@ -34,7 +36,7 @@ public struct ParameterDefinition: Codable, Equatable, Sendable, Identifiable {
             guard step.isFinite, step >= 0 else { throw ParameterError.invalidDefinition(id) }
             return try .init(id: .init(rawValue: id), nameKey: name, group: group, unit: unit,
                              minimum: minimum, maximum: maximum, defaultValue: defaultValue,
-                             kind: isSwitch ? .toggle : .continuous, agentWritable: agentWritable,
+                             kind: isSwitch ? .toggle : .continuous, agentWritable: agentWritable, externallyProtected: externallyProtected ?? false,
                              step: step == 0 ? nil : step)
         }
     }
@@ -64,12 +66,14 @@ public struct SurfaceConfiguration: Codable, Equatable, Sendable {
     public var parameters: [ParameterDefinition]
     public var assignments: [ControlAssignment]
 
-    public init(parameters: [ParameterDefinition], assignments: [ControlAssignment]) {
+    public init(parameters: [ParameterDefinition], assignments: [ControlAssignment], version: Int = 1) {
+        self.version = version
         self.parameters = parameters; self.assignments = assignments
     }
 
     public func validate() throws {
-        guard version == 1, device == "X-TOUCH COMPACT" else { throw ParameterError.wrongDeviceOrVersion }
+        guard version == 1 || version == 2, device == "X-TOUCH COMPACT",
+              version != 1 || parameters.allSatisfy({ $0.externallyProtected == nil }) else { throw ParameterError.wrongDeviceOrVersion }
         guard Set(parameters.map(\.id)).count == parameters.count else { throw ParameterError.duplicateParameter }
         let ids = Set(parameters.map(\.id))
         var keys = Set<String>()
@@ -143,7 +147,7 @@ public struct ParameterEngine: Sendable {
 
     @discardableResult public mutating func set(_ id: String, value: Double, fromAgent: Bool = false) throws -> Double {
         guard let definition = definition(id) else { throw ParameterError.unknownParameter(id) }
-        guard !fromAgent || definition.agentWritable else { throw ParameterError.agentDenied(id) }
+        guard !fromAgent || (definition.agentWritable && definition.externallyProtected != true) else { throw ParameterError.agentDenied(id) }
         let normalized = try definition.normalized(value)
         values[id] = normalized
         return normalized
@@ -209,7 +213,7 @@ public extension SurfaceConfiguration {
 extension ParameterError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .wrongDeviceOrVersion: "This configuration is not an X-TOUCH COMPACT version 1 configuration."
+        case .wrongDeviceOrVersion: "This configuration is not a supported X-TOUCH COMPACT version 1 or 2 configuration."
         case .duplicateParameter: "Parameter IDs must be unique."
         case let .invalidDefinition(id): "Invalid parameter definition: \(id). Check its range and step."
         case .invalidAssignment: "Invalid or duplicate control assignment. Check control range and Agent slot."

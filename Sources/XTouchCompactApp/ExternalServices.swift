@@ -2,6 +2,7 @@
     import AppKit
     import Foundation
     import Network
+    import OutputRemoteBinding
     import SurfacePluginContracts
     import XTouchCompactCore
 
@@ -73,8 +74,20 @@
         }
 
         func setOSCEnabled(_ enabled: Bool) {
+            let time = runtimeTime
             if !enabled {
-                oscTransport.stop(); oscGate.setEnabled(false, now: runtimeTime)
+                oscTransport.stop()
+                if var binding = plugins.binding("output", as: OutputRemoteBinding.self) {
+                    do {
+                        try binding.plugin.setEnabled(false)
+                        _ = binding.plugin.evaluate(targets: [:], at: time)
+                        binding.plugin.setConnected(false, at: time)
+                        var next = plugins
+                        try next.replaceBinding(binding, at: time, event: .init(code: "output.disabled"))
+                        try commitPlugins(next)
+                    } catch { serviceError(error) }
+                }
+                clearTrustedOSCTelemetry()
                 if oscEnabled {
                     oscEnabled = false
                 }
@@ -84,13 +97,33 @@
             guard !oscHost.isEmpty, oscPort > 0, session.parameters.definition(oscParameter) != nil else {
                 oscFault("OSC output stopped: destination or parameter is invalid."); return
             }
+            guard let actual = trustedOSCActual, actual.value.isFinite,
+                  let heartbeat = trustedOSCHeartbeat, time >= actual.time, time - actual.time < 0.3,
+                  time >= heartbeat, time - heartbeat < 0.3
+            else {
+                oscFault("OSC output stopped: trusted actual state and an independent heartbeat are required."); return
+            }
+            if plugins.binding("output", as: OutputRemoteBinding.self) == nil {
+                installOptionalPlugins([.output])
+            }
+            guard var binding = plugins.binding("output", as: OutputRemoteBinding.self) else { return }
             do {
                 try oscTransport.start(host: oscHost, port: oscPort) { [weak self] error in
                     self?.oscFault("OSC output stopped: transport failure."); self?.serviceError(error)
                 }
-                let time = runtimeTime
-                oscGate.setEnabled(false, now: time)
-                oscGate.setEnabled(true, now: time)
+                binding.plugin.setConnected(true, at: time)
+                binding.plugin.receiveHeartbeat(at: heartbeat)
+                binding.plugin.receiveActual([.init(id: "output.value", value: actual.value, receivedAt: actual.time)])
+                try binding.plugin.setEnabled(false)
+                _ = binding.plugin.evaluate(targets: [:], at: time)
+                try binding.plugin.setEnabled(true)
+                let decision = binding.plugin.evaluate(targets: ["output.value": actual.value], at: time)
+                guard decision.command?.enabled == true else {
+                    oscFault("OSC output stopped: trusted actual state and an independent heartbeat are required."); return
+                }
+                var next = plugins
+                try next.replaceBinding(binding, at: time, event: .init(code: "output.enabled"))
+                try commitPlugins(next)
                 oscEnabled = true
             } catch { oscFault("OSC output stopped: transport failure."); serviceError(error) }
         }
@@ -98,16 +131,19 @@
         func tickOSC() {
             guard oscEnabled else { return }
             let time = runtimeTime
-            guard let value = session.parameters.values[oscParameter], let definition = session.parameters.definition(oscParameter) else {
+            guard let value = session.parameters.values[oscParameter], let definition = session.parameters.definition(oscParameter),
+                  var binding = plugins.binding("output", as: OutputRemoteBinding.self)
+            else {
                 oscFault("OSC output stopped: destination or parameter is invalid."); return
             }
-            guard let output = oscGate.sample((value - definition.minimum) / (definition.maximum - definition.minimum), now: time) else {
-                oscFault("OSC output stopped: scheduler heartbeat expired or safety gate tripped."); return
-            }
-            // sample validates the elapsed interval against the previous heartbeat first.
-            // Only a timely scheduler tick refreshes liveness; a constant value is valid.
-            oscGate.beat(now: time)
+            let decision = binding.plugin.evaluate(targets: ["output.value": (value - definition.minimum) / (definition.maximum - definition.minimum)], at: time)
             do {
+                var next = plugins
+                try next.replaceBinding(binding, at: time, event: .init(code: "output.evaluated"))
+                try commitPlugins(next)
+                guard let command = decision.command, command.enabled, let output = command.values["output.value"] else {
+                    oscFault("OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming."); return
+                }
                 try oscTransport.send(OSCCodec.encode(address: "/xtouch/value", value: Float(output)))
                 if oscOutput != output {
                     oscOutput = output

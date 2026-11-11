@@ -47,63 +47,23 @@ public struct CompactPluginHost: Sendable {
 
     public mutating func registerBindings(_ candidates: [any RemoteBinding], at time: PluginTime) throws {
         var next = self
-        var surfaces: [PluginID: SurfaceDescriptor] = [:]
-        for id in instanceIDs {
-            if let manifest = installed[id], let surface = registry.surface(instanceID: id) {
-                surfaces[manifest.id] = surface
-            }
-        }
-        var candidateInstanceIDs = Set(installed.keys)
-        var parameters = Set(surfaces.values.flatMap { $0.parameters.map(\.id) })
-        var actions = Set(surfaces.values.flatMap { $0.actions.map(\.id) })
-        var indicators = Set(surfaces.values.flatMap { $0.indicators.map(\.id) })
+        var instances = Set(installed.keys)
         for binding in candidates {
-            let manifest = binding.manifest
-            guard !binding.instanceID.isEmpty, candidateInstanceIDs.insert(binding.instanceID).inserted else { throw PluginHostError.duplicatePlugin }
-            guard manifest.contractVersion == "1.0" else { throw PluginHostError.invalidContract }
-            let surface = binding.surface
-            let prefix = manifest.id.rawValue + "."
-            func validName(_ name: String) -> Bool {
-                name.hasPrefix(prefix) && name.count > prefix.count && Self.validIdentifier(name)
-            }
-            guard Self.validIdentifier(manifest.id.rawValue),
-                  Set(surface.parameters.map(\.id)).count == surface.parameters.count,
-                  Set(surface.actions.map(\.id)).count == surface.actions.count,
-                  Set(surface.indicators.map(\.id)).count == surface.indicators.count,
-                  surface.parameters.allSatisfy({ validName($0.id.rawValue) }),
-                  surface.actions.allSatisfy({ validName($0.id.rawValue) && ($0.indexCount.map { $0 > 0 } ?? true) }),
-                  surface.indicators.allSatisfy({ validName($0.id.rawValue) }) else { throw PluginHostError.invalidDescriptor }
-            if let existing = surfaces[manifest.id] {
-                guard existing == surface else { throw PluginHostError.invalidDescriptor }
-            } else {
-                for p in surface.parameters {
-                    guard parameters.insert(p.id).inserted else { throw PluginHostError.invalidDescriptor }
-                }
-                for a in surface.actions {
-                    guard actions.insert(a.id).inserted else { throw PluginHostError.invalidDescriptor }
-                }
-                for i in surface.indicators {
-                    guard indicators.insert(i.id).inserted else { throw PluginHostError.invalidDescriptor }
-                }
-                surfaces[manifest.id] = surface
-            }
+            guard !binding.instanceID.isEmpty, instances.insert(binding.instanceID).inserted else { throw PluginHostError.duplicatePlugin }
+            guard binding.manifest.contractVersion == "1.0" else { throw PluginHostError.invalidContract }
         }
-        // Every descriptor passed before any candidate receives .start.
-        for var binding in candidates {
+        // The shared registry validates all declarations atomically before any .start.
+        // This also keeps namespace and collision rules identical between both hosts.
+        do { try next.registry.install(candidates) }
+        catch { throw PluginHostError.invalidDescriptor }
+        for binding in candidates {
             let id = binding.instanceID
             next.parameterValues[id] = try Dictionary(uniqueKeysWithValues: binding.surface.parameters.map { try ($0.id, $0.clamp($0.defaultValue)) })
-            let update = try binding.handle(.start, at: time)
-            try next.registry.install(binding)
             next.installed[id] = binding.manifest
+            let update = try next.registry.handle(instanceID: id, input: .start, at: time)
             try next.accept(update, from: id)
         }
         self = next
-    }
-
-    private static func validIdentifier(_ id: String) -> Bool {
-        !id.isEmpty && id.split(separator: ".", omittingEmptySubsequences: false).allSatisfy { part in
-            !part.isEmpty && part.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || $0 == "_" || $0 == "-" }
-        }
     }
 
     @discardableResult public mutating func handle(_ input: PluginInput, pluginID: PluginID, at time: PluginTime) throws -> PluginUpdate {
@@ -141,6 +101,12 @@ public struct CompactPluginHost: Sendable {
             guard let p = surface.parameters.first(where: { $0.id == write.id }) else { throw PluginHostError.invalidUpdate }
             parameterValues[id, default: [:]][write.id] = try p.clamp(write.value)
         }
+    }
+
+    public mutating func replaceBinding(_ binding: any RemoteBinding, at time: PluginTime, event: PluginEvent) throws {
+        var next = self
+        try next.registry.replace(binding, at: time, event: event)
+        self = next
     }
 
     public static func agent(at time: PluginTime = 0) throws -> Self {

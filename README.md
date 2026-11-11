@@ -23,8 +23,8 @@ from the hardware, from the on-screen panel, or from a local AI agent over MCP.
   shown on button LEDs. These are simulated; no external agent process is launched.
 - **Local MCP endpoint** (off by default) so an agent on the same Mac can read state and write
   permitted parameters.
-- **OSC output** (off by default) that sends one parameter to a destination you choose, rate-limited
-  and stopped automatically on faults.
+- **OSC output safety** (off by default) for one parameter, using shared limits and a 0.3-second
+  heartbeat. It stays closed until a trusted actual-state/heartbeat source is integrated.
 - **MIDI monitor and capture** for inspecting traffic and saving it to a file.
 - **Hardware observation and nonmotor tests.** Inspect A/B input coverage, export fingerprinted
   evidence, and prepare single LED/ring/layer tests. Output starts locked and requires recorded

@@ -129,3 +129,42 @@ private func parameterMotors(_ messages: [MIDIMessage]) -> [MIDIMessage] {
     #expect(try SurfaceConfiguration.neutral.parameters[0].normalized(12.5) == 12)
     #expect(try SurfaceConfiguration.audioExample.parameters[0].normalized(-12.25) == -12.5)
 }
+
+@Test func legacyFilesOmitOptionalProtectionAndNewProtectionSurvivesRoundTrip() throws {
+    let original = ParameterDefinition(id: "legacy", name: "Legacy")
+    let bytes = try JSONEncoder().encode(original)
+    let text = String(decoding: bytes, as: UTF8.self)
+    #expect(!text.contains("externallyProtected"))
+    #expect(try JSONDecoder().decode(ParameterDefinition.self, from: bytes).externallyProtected == nil)
+    var protected = original
+    protected.externallyProtected = true
+    let decoded = try JSONDecoder().decode(ParameterDefinition.self, from: JSONEncoder().encode(protected))
+    #expect(try decoded.sharedDefinition.externallyProtected)
+    var engine = try ParameterEngine(configuration: .init(parameters: [decoded], assignments: [], version: 2))
+    #expect(throws: ParameterError.agentDenied("legacy")) { try engine.set("legacy", value: 1, fromAgent: true) }
+}
+
+@Test func protectedConfigurationsUseVersionTwoAndRejectVersionOneDisguise() throws {
+    var protected = ParameterDefinition(id: "p", name: "P", externallyProtected: true)
+    var configuration = SurfaceConfiguration(parameters: [protected], assignments: [], version: 2)
+    try configuration.validate()
+    let bytes = try JSONEncoder().encode(configuration)
+    let roundTrip = try JSONDecoder().decode(SurfaceConfiguration.self, from: bytes)
+    #expect(roundTrip == configuration)
+    // The prior application's version==1 fence rejects this even if it ignores unknown keys.
+    let exported = try #require(try JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    #expect(exported["version"] as? Int == 2)
+    #expect(roundTrip.version != 1)
+    configuration.version = 1
+    #expect(throws: ParameterError.wrongDeviceOrVersion) { try configuration.validate() }
+    protected.externallyProtected = false
+    configuration.parameters = [protected]
+    #expect(throws: ParameterError.wrongDeviceOrVersion) { try configuration.validate() }
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    let before = session.parameters.values
+    #expect(throws: ParameterError.wrongDeviceOrVersion) { try session.loadConfiguration(configuration) }
+    #expect(session.parameters.values == before)
+    let legacy = SurfaceConfiguration.neutral
+    #expect(legacy.version == 1)
+    #expect(try JSONDecoder().decode(SurfaceConfiguration.self, from: JSONEncoder().encode(legacy)) == legacy)
+}

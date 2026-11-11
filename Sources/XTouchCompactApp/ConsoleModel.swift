@@ -3,6 +3,7 @@
     import AppKit
     import Foundation
     import Network
+    import OutputRemoteBinding
     import SurfacePluginContracts
     import SwiftUI
     import UniformTypeIdentifiers
@@ -73,11 +74,13 @@
         @Published var oscParameter = "a.Fader.1"
         @Published var oscEnabled = false
         @Published var oscOutput = 0.0
-        var oscGate = try! MotionSafetyGate()
+        /// Authenticated telemetry facts are independent from requests and sent packets.
+        private(set) var trustedOSCActual: (value: Double, time: Double)?
+        private(set) var trustedOSCHeartbeat: Double?
         let oscTransport: any OSCTransport
         private var runtimeTask: Task<Void, Never>?
         var runtimeTime: TimeInterval {
-            now().timeIntervalSince1970
+            runtimeClock()
         }
 
         private var agentOutput = false
@@ -87,16 +90,18 @@
         private var appliedOutputID: Int32?
         private let store: ProtectedWorkspaceStore?
         private let now: () -> Date
+        private let runtimeClock: () -> TimeInterval
         private let evidenceWriterFactory: (URL) throws -> any EvidenceWriting
         private(set) var session: CompactSession
         private(set) var mock: MockXTouchCompact
 
-        init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: @escaping () -> Date = Date.init, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil,
+        init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: (() -> Date)? = nil, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil,
              evidenceWriterFactory: @escaping (URL) throws -> any EvidenceWriting = { try ExclusiveEvidenceFile(url: $0) })
         {
             self.midi = midi ?? CoreMIDIService()
             self.oscTransport = oscTransport ?? NetworkOSCTransport()
-            self.now = now
+            self.now = now ?? Date.init
+            runtimeClock = now.map { injected in { injected().timeIntervalSince1970 } } ?? { ProcessInfo.processInfo.systemUptime }
             self.evidenceWriterFactory = evidenceWriterFactory
             self.isolated = isolated
             store = storageRoot.map(ProtectedWorkspaceStore.init(directory:))
@@ -117,7 +122,7 @@
                     }
                     observationInputID = newInput
                 }
-                appendEvent(MonitorEvent(timestamp: now(), direction: nil, source: .application, message: nil,
+                appendEvent(MonitorEvent(timestamp: self.now(), direction: nil, source: .application, message: nil,
                                          control: nil, hostLayer: layer, ignored: false, text: LocalizedMessage("MIDI connection changed"), connection: snapshot))
                 if hardwareMode, snapshot.isConnected, !wasConnected {
                     if listenOnly {
@@ -337,6 +342,57 @@
             } catch { self.error = error }
         }
 
+        func loadReferenceArmExample() {
+            do { try loadPreset(SurfaceConfiguration(parameters: CompactPluginHost.referenceArmParameters(), assignments: [], version: 2)) }
+            catch { self.error = error }
+        }
+
+        func installOptionalPlugins(_ selection: Set<OptionalBusinessPlugin>) {
+            do {
+                var next = plugins
+                try next.installOptional(selection, lifetimeID: UUID().uuidString, at: runtimeTime)
+                try commitPlugins(next)
+            } catch { self.error = error }
+        }
+
+        /// Only a trusted host telemetry adapter may deliver destination measurements.
+        /// There is deliberately no UI or MCP operation for manufacturing these facts.
+        func receiveTrustedOSCActual(_ value: Double, at time: Double) {
+            guard time.isFinite else {
+                setOSCEnabled(false)
+                notificationsForOSC("OSC output stopped: telemetry timestamp is invalid.")
+                return
+            }
+            trustedOSCActual = (value, time)
+            guard var binding = plugins.binding("output", as: OutputRemoteBinding.self) else { return }
+            binding.plugin.receiveActual([.init(id: "output.value", value: value, receivedAt: time)])
+            do {
+                var next = plugins
+                try next.replaceBinding(binding, at: runtimeTime, event: .init(code: "output.actual.received"))
+                try commitPlugins(next)
+            } catch { self.error = error }
+        }
+
+        func receiveTrustedOSCHeartbeat(at time: Double) {
+            guard time.isFinite else {
+                setOSCEnabled(false)
+                notificationsForOSC("OSC output stopped: telemetry timestamp is invalid.")
+                return
+            }
+            trustedOSCHeartbeat = time
+            guard var binding = plugins.binding("output", as: OutputRemoteBinding.self) else { return }
+            binding.plugin.receiveHeartbeat(at: time)
+            do {
+                var next = plugins
+                try next.replaceBinding(binding, at: runtimeTime, event: .init(code: "output.heartbeat.received"))
+                try commitPlugins(next)
+            } catch { self.error = error }
+        }
+
+        func clearTrustedOSCTelemetry() {
+            trustedOSCActual = nil; trustedOSCHeartbeat = nil
+        }
+
         func agentPrimary(_ slot: Int, fromAgent: Bool = false) {
             invokePluginAction(PluginConfigurationAdapter.agentAction(slot), origin: fromAgent ? .remote : .interface)
         }
@@ -354,8 +410,8 @@
             try commitPlugins(next)
         }
 
-        private func commitPlugins(_ next: CompactPluginHost) throws {
-            let changed = next.snapshots != plugins.snapshots
+        func commitPlugins(_ next: CompactPluginHost) throws {
+            let changed = next.snapshots != plugins.snapshots || next.businessPresentations != plugins.businessPresentations
             if changed {
                 objectWillChange.send()
             }
@@ -688,7 +744,7 @@
                 }
             case let failure as ParameterError:
                 switch failure {
-                case .wrongDeviceOrVersion: return l.text("Only X-TOUCH COMPACT version 1 configurations are supported.")
+                case .wrongDeviceOrVersion: return l.text("Only X-TOUCH COMPACT version 1 or 2 configurations are supported; protection fields require version 2.")
                 case .duplicateParameter: return l.text("Parameter IDs must be unique.")
                 case let .invalidDefinition(id): return l.text("Invalid parameter range or step: %@", id)
                 case .invalidAssignment: return l.text("Invalid control assignment. Check control numbers and Agent slots.")

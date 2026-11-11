@@ -32,7 +32,7 @@ let package = Package(
     ],
     dependencies: [surfacePlugins],
     targets: [
-        .target(name: "XTouchCompactCore", dependencies: [.product(name: "SurfacePluginContracts", package: "SurfacePlugins"), .product(name: "AgentPlugin", package: "SurfacePlugins"), .product(name: "RemoteToolContracts", package: "SurfacePlugins"), .product(name: "AgentRemoteBinding", package: "SurfacePlugins")]),
+        .target(name: "XTouchCompactCore", dependencies: [.product(name: "SurfacePluginContracts", package: "SurfacePlugins"), .product(name: "AgentPlugin", package: "SurfacePlugins"), .product(name: "RemoteToolContracts", package: "SurfacePlugins"), .product(name: "AgentRemoteBinding", package: "SurfacePlugins"), .product(name: "RobotPlugin", package: "SurfacePlugins"), .product(name: "RobotRemoteBinding", package: "SurfacePlugins"), .product(name: "ChassisPlugin", package: "SurfacePlugins"), .product(name: "ChassisRemoteBinding", package: "SurfacePlugins"), .product(name: "ParameterOutputPlugin", package: "SurfacePlugins"), .product(name: "OutputRemoteBinding", package: "SurfacePlugins"), .product(name: "ExampleParameterSets", package: "SurfacePlugins")]),
         .target(name: "XTouchCompactLocalization", resources: [.process("Resources")]),
         .executableTarget(name: "XTouchCompactApp", dependencies: ["XTouchCompactCore", "XTouchCompactLocalization"],
                           linkerSettings: [.linkedFramework("CoreMIDI", .when(platforms: [.macOS]))]),

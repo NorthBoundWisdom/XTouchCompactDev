@@ -26,31 +26,36 @@
         let clock = TestClock()
         let transport = FakeOSC()
         let model = ConsoleModel(startsMIDI: false, now: { clock.date }, oscTransport: transport)
+        telemetry(model, clock)
         model.setOSCEnabled(true)
         model.setOSCEnabled(true)
         #expect(transport.starts == 1)
-        clock.time += 0.5
+        clock.time += 0.25
         model.setParameter(model.oscParameter, value: 127)
+        telemetry(model, clock)
         model.tickOSC()
-        #expect(model.oscOutput == 0.125)
+        #expect(model.oscOutput == 0.0625)
         #expect(transport.packets.count == 1)
         for _ in 0 ..< 40 {
             clock.time += 0.25
+            telemetry(model, clock) // Independent trusted destination telemetry fixture.
             model.tickOSC() // No new parameter writes for ten seconds.
             #expect(model.oscEnabled)
         }
         #expect(transport.packets.count == 41)
-        clock.time += 1.1 // An actual scheduler pause must trip before refreshing.
+        clock.time += 0.31 // An actual scheduler pause must trip before refreshing.
         model.tickOSC()
         #expect(!model.oscEnabled)
         #expect(transport.stops == 1)
         #expect(model.notifications.contains { $0.id == "osc" })
+        telemetry(model, clock)
         model.setOSCEnabled(true)
         model.oscParameter = "missing"
         model.tickOSC()
         #expect(!model.oscEnabled)
         #expect(model.notifications.first(where: { $0.id == "osc" })?.message?.key.contains("invalid") == true)
         model.oscParameter = "a.Fader.1"
+        telemetry(model, clock)
         model.setOSCEnabled(true)
         transport.failure?(OSCError.invalidAddress)
         #expect(!model.oscEnabled)
@@ -67,14 +72,72 @@
         let clock = TestClock()
         let transport = FakeOSC()
         let model = ConsoleModel(startsMIDI: false, now: { clock.date }, oscTransport: transport)
+        telemetry(model, clock)
         model.setOSCEnabled(true)
         for _ in 0 ..< 60 {
             clock.time += 0.25
+            telemetry(model, clock)
             model.tickOSC()
         }
         #expect(model.oscEnabled)
         #expect(transport.packets.count == 60)
         #expect(model.oscOutput == 0)
         #expect(!model.notifications.contains { $0.id == "osc" })
+    }
+
+    @MainActor private func telemetry(_ model: ConsoleModel, _: TestClock) {
+        model.receiveTrustedOSCActual(0, at: model.runtimeTime)
+        model.receiveTrustedOSCHeartbeat(at: model.runtimeTime)
+    }
+
+    @Test @MainActor func requestsAndSchedulerDoNotManufactureActualFeedback() {
+        let clock = TestClock()
+        let transport = FakeOSC()
+        let model = ConsoleModel(startsMIDI: false, now: { clock.date }, oscTransport: transport)
+        model.setParameter(model.oscParameter, value: 127)
+        model.setOSCEnabled(true)
+        #expect(!model.oscEnabled && transport.starts == 0 && transport.packets.isEmpty)
+        #expect(model.notifications.first(where: { $0.id == "osc" })?.message?.key.contains("trusted actual") == true)
+        model.receiveTrustedOSCActual(0, at: model.runtimeTime)
+        #expect(model.trustedOSCActual?.time == model.runtimeTime)
+        #expect(model.trustedOSCHeartbeat == nil)
+        model.setOSCEnabled(true)
+        #expect(!model.oscEnabled && transport.packets.isEmpty)
+        model.receiveTrustedOSCHeartbeat(at: model.runtimeTime)
+        #expect(model.trustedOSCActual == nil)
+        model.setOSCEnabled(true)
+        #expect(!model.oscEnabled && transport.packets.isEmpty)
+        telemetry(model, clock)
+        model.setOSCEnabled(true)
+        clock.time += 0.31
+        model.receiveTrustedOSCActual(0, at: model.runtimeTime) // Actual alone cannot refresh heartbeat.
+        #expect(model.runtimeTime - (model.trustedOSCActual?.time ?? -.infinity) < 0.3)
+        #expect(model.runtimeTime - (model.trustedOSCHeartbeat ?? .infinity) >= 0.3)
+        model.tickOSC()
+        #expect(!model.oscEnabled && transport.packets.isEmpty)
+    }
+
+    @Test @MainActor func invalidTelemetryTimestampClosesReadyOutputImmediately() {
+        for invalidHeartbeat in [true, false] {
+            let clock = TestClock()
+            let transport = FakeOSC()
+            let model = ConsoleModel(startsMIDI: false, now: { clock.date }, oscTransport: transport)
+            telemetry(model, clock)
+            model.setOSCEnabled(true)
+            clock.time += 0.25
+            telemetry(model, clock)
+            model.tickOSC()
+            #expect(model.oscEnabled && transport.packets.count == 1)
+            if invalidHeartbeat {
+                model.receiveTrustedOSCHeartbeat(at: .nan)
+            } else {
+                model.receiveTrustedOSCActual(0, at: .infinity)
+            }
+            #expect(!model.oscEnabled)
+            clock.time += 0.1
+            model.tickOSC()
+            #expect(transport.packets.count == 1)
+            #expect(model.notifications.first(where: { $0.id == "osc" })?.message?.key.contains("timestamp") == true)
+        }
     }
 #endif

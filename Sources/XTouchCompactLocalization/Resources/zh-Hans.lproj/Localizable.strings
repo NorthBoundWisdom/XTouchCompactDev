@@ -410,3 +410,41 @@
 
 "queued" = "排队中";
 "error" = "错误";
+
+"Reference robot (simulation)" = "参考机器人（模拟）";
+
+"Ackermann chassis (simulation)" = "Ackermann 底盘（模拟）";
+
+"Parameter output" = "参数输出";
+
+"uninitialized" = "未初始化";
+
+"disconnected" = "未连接";
+
+"disabled" = "已停用";
+
+"waitingHeartbeat" = "等待独立心跳";
+
+"heartbeatExpired" = "心跳已过期";
+
+"waitingActual" = "等待实际状态反馈";
+
+"waitingRearm" = "需要重新关闭再启用";
+
+"ready" = "就绪";
+
+"invalidTarget" = "目标无效";
+
+"invalidActual" = "实际状态无效";
+
+"actualOutOfLimits" = "实际状态超出限位";
+
+"clockError" = "时钟错误";
+
+"Only X-TOUCH COMPACT version 1 or 2 configurations are supported; protection fields require version 2." = "仅支持 X-TOUCH COMPACT 版本 1 或 2 配置；保护字段要求版本 2。";
+
+"OSC output stopped: trusted actual state and an independent heartbeat are required." = "OSC 输出保持关闭：缺少可信的实际状态反馈或独立心跳。";
+
+"OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming." = "OSC 输出已停止：实际反馈或独立心跳缺失、过期，或需要先关闭再重新启用。";
+
+"OSC output stopped: telemetry timestamp is invalid." = "OSC 输出已停止：实际反馈或心跳的时间戳无效。";

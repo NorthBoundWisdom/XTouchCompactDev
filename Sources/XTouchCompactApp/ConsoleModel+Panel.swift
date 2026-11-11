@@ -44,7 +44,7 @@
                 mcpEnabled: mcpEnabled, mcpWritesAllowed: mcpWritesAllowed,
                 oscEnabled: oscEnabled, oscHost: oscHost, oscPort: oscPort,
                 oscParameter: oscParameter, oscOutput: oscOutput,
-                agents: agents.slots,
+                agents: agents.slots, businessPlugins: plugins.businessPresentations,
                 parameterValues: session.parameters.values
             )
         }

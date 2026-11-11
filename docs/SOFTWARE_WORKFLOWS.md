@@ -31,9 +31,13 @@ creates a two-value cycle (0 and the entered value); imported configurations can
 specify longer cycles. Shared parameter bindings synchronize their feedback;
 touched faders defer motor commands and reconcile after release.
 
-Configuration JSON carries version 1 and device `X-TOUCH COMPACT`. BCR2000 or
-unknown-version configurations are rejected before mutating the current session.
-Import/export is explicit. Neutral and audio presets are available from Load preset.
+Ordinary configuration JSON remains version 1 with device `X-TOUCH COMPACT`.
+Version 2 is required when a definition carries the independent
+`externallyProtected` flag. The new app reads both versions; a version-1 file
+carrying that field is rejected, including an explicit false value. Earlier app
+versions reject version 2 rather than silently dropping the protection. Neutral
+and audio presets retain their version-1 shape. BCR2000 and unknown-version
+configurations are rejected before changing session state. Import/export is explicit.
 
 ## Persistence and diagnostics
 
@@ -98,21 +102,45 @@ not an Internet service or a full OAuth/SSE server.
 
 ## OSC
 
-OSC starts disabled, and its destination is not restored automatically. Choose a
-parameter and destination in Settings, Apply output destination, then explicitly
-enable output. Packets use address `/xtouch/value` and type `,f`, normalized to
-0…1, limited to 0.25 units/second. The model owns the 250 ms output scheduler, independent of window lifetime.
-Each output tick first validates the elapsed interval against the previous
-one-second scheduler heartbeat, then refreshes it only if still timely. Stationary
-values are valid indefinitely; no new parameter writes or physical movement are
-required. A stalled scheduler, invalid value, changed destination or transport
-failure disables output and posts a visible notification;
-re-enabling performs the explicit off/on arm sequence. The core gate rejects
-arming without a preceding disable and requires rearming after a trip.
+OSC starts disabled. Its codec and motion safety decisions now come from the
+same SurfacePlugins output module used by the other host. The destination and
+one-parameter `/xtouch/value` float packet remain unchanged; normalization is
+0…1 with a maximum velocity of 0.25 units/second and a 0.1 per-cycle cap.
+Float32 rounding stays inside the permitted interval.
 
-There is deliberately no incoming OSC-to-motor route: no physical feedback model
-has been characterized. External equipment must implement its own deadman/limits;
-stopping packets cannot stop equipment that ignores connection liveness.
+Enabling requires a fresh destination actual-state sample and an independent
+heartbeat supplied by a trusted host adapter. Both expire after 0.3 seconds.
+There is currently no production telemetry receiver in this app, so an ordinary
+launch keeps output closed with a visible reason. Setting a parameter, sending a
+packet or running the 250 ms scheduler cannot create measured actual state or
+refresh the destination heartbeat. Tests supply explicit trusted telemetry fixtures.
+
+Each emitted packet must be allowed by the shared gate. Missing/stale telemetry,
+a scheduler pause, invalid target or transport failure closes output and posts a
+notification. Re-enabling requires an explicit off/on sequence and fresh facts;
+a late heartbeat cannot silently rearm output. The existing settings and stored
+destination shape are retained, with this deliberate safety tightening.
+
+No incoming data drives fader motors. Trusted external samples only inform the
+OSC safety gate; last transmitted commands are never physical observations.
+
+## Optional shared business modules
+
+The default composition installs only Agent. Launch flags explicitly add modules:
+
+```sh
+swift run XTouchCompactApp --robot-plugin --chassis-plugin --output-plugin
+```
+
+Each module can be selected alone. Reference robot and Ackermann chassis are
+simulations with independent lifetime IDs, initially uninitialized and disabled.
+Their status appears in the Agents workspace. Installation does not add device
+bindings or move faders. Parameter output starts disconnected and disabled.
+
+`--reference-arm-example` explicitly loads a version-2 reference-arm parameter
+set with no control assignments. The enable parameter retains both independent
+protection flags; no simulator, output destination or physical actuator is
+implicitly enabled by this data preset.
 
 ## Isolated native checks and screenshots
 

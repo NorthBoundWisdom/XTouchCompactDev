@@ -38,7 +38,7 @@ import Testing
         #expect(host.binding("agent", as: AgentRemoteBinding.self)?.plugin.slots == reference.slots)
     }
     for origin in [InputOrigin.remote] {
-        #expect(throws: PluginError(code: .permissionDenied, fields: ["requiredOrigin": .string("interface")])) {
+        #expect(throws: PluginError(code: .permissionDenied, fields: ["allowedOrigins": .array([.string("hardware"), .string("interface")])])) {
             try host.handle(.invoke(action, origin: origin), pluginID: AgentPlugin.pluginID, at: 4)
         }
         #expect(host.snapshots["agent"] == reference.snapshot())

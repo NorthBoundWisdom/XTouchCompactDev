@@ -410,3 +410,41 @@
 
 "queued" = "Queued";
 "error" = "Error";
+
+"Reference robot (simulation)" = "Reference robot (simulation)";
+
+"Ackermann chassis (simulation)" = "Ackermann chassis (simulation)";
+
+"Parameter output" = "Parameter output";
+
+"uninitialized" = "Not initialized";
+
+"disconnected" = "Disconnected";
+
+"disabled" = "Disabled";
+
+"waitingHeartbeat" = "Waiting for heartbeat";
+
+"heartbeatExpired" = "Heartbeat expired";
+
+"waitingActual" = "Waiting for actual state";
+
+"waitingRearm" = "Explicit rearm required";
+
+"ready" = "Ready";
+
+"invalidTarget" = "Invalid target";
+
+"invalidActual" = "Invalid actual state";
+
+"actualOutOfLimits" = "Actual state outside limits";
+
+"clockError" = "Clock error";
+
+"Only X-TOUCH COMPACT version 1 or 2 configurations are supported; protection fields require version 2." = "Only X-TOUCH COMPACT version 1 or 2 configurations are supported; protection fields require version 2.";
+
+"OSC output stopped: trusted actual state and an independent heartbeat are required." = "OSC output stopped: trusted actual state and an independent heartbeat are required.";
+
+"OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming." = "OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming.";
+
+"OSC output stopped: telemetry timestamp is invalid." = "OSC output stopped: telemetry timestamp is invalid.";
