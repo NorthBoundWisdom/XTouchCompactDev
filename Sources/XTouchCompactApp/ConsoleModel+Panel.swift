@@ -20,6 +20,8 @@
 
         var panelSnapshot: PanelSnapshot {
             PanelSnapshot(
+                listenOnly: listenOnly, capturePath: capturePath,
+                notifications: notifications, runtimeError: error.map { localizedError($0) } ?? connection.error,
                 events: events, connection: connection, inputChoice: inputChoice, outputChoice: outputChoice,
                 transmitChannel: transmitChannel, feedbackChannel: feedbackChannel, observedLEDVariant: observedLEDVariant,
                 layer: layer,
@@ -62,6 +64,14 @@
 
         var panelIntents: PanelIntents {
             PanelIntents(
+                setListenOnly: { [weak self] in self?.setListenOnly($0) },
+                startCapture: { [weak self] in self?.chooseStartCapture() },
+                stopCapture: { [weak self] in self?.stopCapture() },
+                selectLayer: { [weak self] in self?.setLayer($0) },
+                useHardware: { [weak self] in self?.useHardware($0) },
+                recallMotors: { [weak self] in self?.recallMotors() },
+                retrySave: { [weak self] in self?.retryWorkspaceSave() },
+                dismissNotification: { [weak self] in self?.dismissNotification($0) },
                 clearMonitor: { [weak self] in self?.clearMonitor() },
                 selectPorts: { [weak self] input, output in
                     guard let self else { return }

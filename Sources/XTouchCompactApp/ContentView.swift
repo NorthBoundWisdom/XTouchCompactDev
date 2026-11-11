@@ -9,21 +9,20 @@
             language.localizer
         }
 
-        @ObservedObject var model: ConsoleModel
+        let snapshot: PanelSnapshot
+        let intents: PanelIntents
         @State private var selection: CompactControl? = .fader(1)
 
         var body: some View {
-            let snapshot = model.panelSnapshot
-            let intents = model.panelIntents
             VStack(spacing: 0) {
-                HeaderBar(model: model)
-                ForEach(model.notifications) { notification in
+                HeaderBar(snapshot: snapshot, intents: intents)
+                ForEach(snapshot.notifications) { notification in
                     HStack {
-                        ErrorBanner(text: notification.message.map { l.text($0) } ?? model.errorText(using: l), level: notification.level)
+                        ErrorBanner(text: notification.message.map { l.text($0) } ?? snapshot.runtimeError.map { l.text($0) } ?? "", level: notification.level)
                         if notification.persistent {
-                            Button(l.text("Retry save")) { model.retryWorkspaceSave() }
+                            Button(l.text("Retry save")) { intents.retrySave?() }
                         } else {
-                            Button(l.text("Dismiss")) { model.dismissNotification(notification.id) }
+                            Button(l.text("Dismiss")) { intents.dismissNotification?(notification.id) }
                         }
                     }
                     .padding(.horizontal, 18)
@@ -33,7 +32,7 @@
                 GeometryReader { proxy in
                     let inspectorWidth = min(max(proxy.size.width * 0.24, 300), 380)
                     HStack(spacing: 0) {
-                        SurfaceArea(model: model, snapshot: snapshot, intents: intents, selection: $selection)
+                        SurfaceArea(snapshot: snapshot, intents: intents, selection: $selection)
                         Divider()
                         ControlInspectorView(snapshot: snapshot, intents: intents, selection: selection)
                             .frame(width: inspectorWidth)
@@ -99,7 +98,6 @@
             language.localizer
         }
 
-        @ObservedObject var model: ConsoleModel
         let snapshot: PanelSnapshot
         let intents: PanelIntents
         @Binding var selection: CompactControl?
@@ -125,7 +123,7 @@
         @ViewBuilder
         private func content(_ layout: ConsoleLayout) -> some View {
             SurfacePanelView(snapshot: snapshot, intents: intents, selection: $selection,
-                             onSelectLayer: { model.setLayer($0) })
+                             onSelectLayer: { intents.selectLayer?($0) })
                 .environment(\.panelMetrics, PanelMetrics(scale: layout.scale))
             WorkspaceTabsView(snapshot: snapshot, intents: intents, selection: $selection)
                 .frame(width: layout.workspaceWidth)
@@ -138,7 +136,8 @@
             language.localizer
         }
 
-        @ObservedObject var model: ConsoleModel
+        let snapshot: PanelSnapshot
+        let intents: PanelIntents
         @State private var confirmsRecall = false
 
         var body: some View {
@@ -147,12 +146,15 @@
                     Text("X-TOUCH CONSOLE")
                         .font(.system(size: 20, weight: .black, design: .rounded))
                         .tracking(1.6)
-                    Text("Standard MIDI · Layer \(model.layer.rawValue.uppercased())")
+                    if !snapshot.isMock, snapshot.listenOnly {
+                        Text(l.text("Listen only — send no MIDI")).font(.caption).foregroundStyle(Theme.touch)
+                    }
+                    Text("Standard MIDI · Layer \(snapshot.layer.rawValue.uppercased())")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
 
-                Picker(l.text("设备"), selection: Binding(get: { model.hardwareMode }, set: { model.useHardware($0) })) {
+                Picker(l.text("设备"), selection: Binding(get: { !snapshot.isMock }, set: { intents.useHardware?($0) })) {
                     Text(l.text("Mock 设备")).tag(false)
                     Text(l.text("实体 X-TOUCH")).tag(true)
                 }
@@ -166,10 +168,10 @@
                     Label(l.text("电机归位…"), systemImage: "arrow.up.and.down.and.sparkles")
                 }
                 .controlSize(.small)
-                .disabled(!model.hardwareMode || !model.connection.isConnected)
+                .disabled(snapshot.isMock || snapshot.listenOnly || !snapshot.connection.isConnected)
                 .help(l.text("把九个电动推子移动到当前层的软件数值；只在你确认后执行"))
                 .confirmationDialog(l.text("移动全部九个实体推子？"), isPresented: $confirmsRecall) {
-                    Button(l.text("移动九个电动推子")) { model.recallMotors() }
+                    Button(l.text("移动九个电动推子")) { intents.recallMotors?() }
                     Button(l.text("取消"), role: .cancel) {}
                 } message: {
                     Text(l.text("连接或换层后不会自动移动电机。请确认推子行程内没有遮挡；被触摸的推子不会移动。"))
@@ -177,7 +179,7 @@
 
                 SettingsLink { Label(l.text("Settings"), systemImage: "gearshape") }
                     .labelStyle(.iconOnly).help(l.text("Settings"))
-                DeviceStatus(model: model)
+                DeviceStatus(snapshot: snapshot)
             }
             .padding(.horizontal, 18)
             .padding(.top, 14)
@@ -191,13 +193,13 @@
             language.localizer
         }
 
-        @ObservedObject var model: ConsoleModel
+        let snapshot: PanelSnapshot
 
         var body: some View {
-            let connected = model.connection.isConnected
-            let color: Color = model.hardwareMode ? (connected ? .green : .orange) : Theme.value
+            let connected = snapshot.connection.isConnected
+            let color: Color = !snapshot.isMock ? (connected ? .green : .orange) : Theme.value
             HStack(spacing: 10) {
-                Image(systemName: model.hardwareMode
+                Image(systemName: !snapshot.isMock
                     ? (connected ? "cable.connector.horizontal" : "cable.connector.slash") : "cpu")
                     .foregroundStyle(color)
                 VStack(alignment: .leading, spacing: 1) {
@@ -213,15 +215,15 @@
         }
 
         private var title: String {
-            guard model.hardwareMode else { return l.text("Mock 设备运行中") }
-            return model.connection.isConnected ? l.text("X-TOUCH COMPACT 已连接") : l.text("X-TOUCH COMPACT 未连接")
+            guard !snapshot.isMock else { return l.text("Mock 设备运行中") }
+            return snapshot.connection.isConnected ? l.text("X-TOUCH COMPACT 已连接") : l.text("X-TOUCH COMPACT 未连接")
         }
 
         private var detail: String {
-            let hardware = model.connection.isConnected
-                ? "\(model.connection.connectedInput?.name ?? "—") → \(model.connection.connectedOutput?.name ?? "—")"
-                : (model.connection.error.map { l.text($0) } ?? l.text("未找到完整的输入 / 输出端口"))
-            return model.hardwareMode ? hardware : l.text("实体：%@", String(hardware))
+            let hardware = snapshot.connection.isConnected
+                ? "\(snapshot.connection.connectedInput?.name ?? "—") → \(snapshot.connection.connectedOutput?.name ?? "—")"
+                : (snapshot.connection.error.map { l.text($0) } ?? l.text("未找到完整的输入 / 输出端口"))
+            return !snapshot.isMock ? hardware : l.text("实体：%@", String(hardware))
         }
     }
 

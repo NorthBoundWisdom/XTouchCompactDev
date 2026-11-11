@@ -237,3 +237,13 @@
 "OSC keeps stationary values active. A scheduler pause over 1 s stops output." = "OSC keeps stationary values active. A scheduler pause over 1 s stops output.";
 "Realign current layer" = "Realign current layer";
 "Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset." = "Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset.";
+
+"Listen only — send no MIDI" = "Listen only — send no MIDI";
+
+"Hardware starts passively. Turning listening off sends nothing; realign explicitly before output tests." = "Hardware starts passively. Turning listening off sends nothing; realign explicitly before output tests.";
+
+"Start capture…" = "Start capture…";
+
+"Stop capture" = "Stop capture";
+
+"Capture saves every event to JSONL; the screen retains only 120 events." = "Capture saves every event to JSONL; the screen retains only 120 events.";

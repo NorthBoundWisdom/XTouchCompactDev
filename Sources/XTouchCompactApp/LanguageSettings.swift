@@ -25,7 +25,8 @@
     }
 
     struct LanguageSettingsView: View {
-        @EnvironmentObject private var model: ConsoleModel
+        let snapshot: PanelSnapshot
+        let intents: PanelIntents
         @EnvironmentObject private var language: LanguageSettings
         var body: some View {
             let l = language.localizer
@@ -36,7 +37,7 @@
                     Text("简体中文").tag(AppLanguage.simplifiedChinese)
                     Text("繁體中文").tag(AppLanguage.traditionalChinese)
                 }
-                ExternalServicesSettings(snapshot: model.panelSnapshot, intents: model.panelIntents)
+                ExternalServicesSettings(snapshot: snapshot, intents: intents)
                 Text(l.text("Language changes apply immediately and are saved automatically."))
                     .font(.caption).foregroundStyle(.secondary)
             }

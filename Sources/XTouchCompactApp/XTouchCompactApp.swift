@@ -29,7 +29,7 @@
 
         var body: some Scene {
             WindowGroup {
-                ContentView(model: model)
+                ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents)
                     .environmentObject(language)
                     .environment(\.locale, Locale(identifier: language.localizer.language.rawValue))
                     .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
@@ -55,9 +55,8 @@
                 }
             }
             Settings {
-                LanguageSettingsView()
+                LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents)
                     .environmentObject(language)
-                    .environmentObject(model)
                     .environment(\.locale, Locale(identifier: language.localizer.language.rawValue))
             }
         }

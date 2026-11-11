@@ -87,6 +87,10 @@
     }
 
     struct PanelSnapshot: Equatable, Sendable {
+        var listenOnly = true
+        var capturePath: String?
+        var notifications: [ConsoleNotification] = []
+        var runtimeError: LocalizedMessage?
         var events: [MonitorEvent] = []
         var connection = CompactMIDIConnection()
         var inputChoice: Int32 = 0
@@ -131,6 +135,14 @@
     /// while a software write is a host command that may move a motor. An optional intent that is
     /// nil is not supported by the backend yet and its affordance is disabled.
     struct PanelIntents {
+        var setListenOnly: ((Bool) -> Void)?
+        var startCapture: (() -> Void)?
+        var stopCapture: (() -> Void)?
+        var selectLayer: ((CompactLayer) -> Void)?
+        var useHardware: ((Bool) -> Void)?
+        var recallMotors: (() -> Void)?
+        var retrySave: (() -> Void)?
+        var dismissNotification: ((String) -> Void)?
         var clearMonitor: (() -> Void)?
         var selectPorts: ((Int32, Int32) -> Void)?
         var configureDevice: ((Int, Int, Bool) -> Void)?

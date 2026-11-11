@@ -171,3 +171,21 @@ automatically recall the old target. Realign is not a way to bypass this latch.
 The UI/runtime error formatter marks operation and control names as localized
 arguments. They are translated when rendered, so switching language also updates
 existing errors; user names, MIDI data and file paths remain literal.
+
+## Passive hardware capture
+
+Hardware output is blocked by default on every launch. Connection's Listen only
+switch gates the single MIDI send boundary, including connect/reconnect assertions,
+LED sync, gestures, software/Agent writes and recall. Suppressed commands are marked
+explicitly and never treated as accepted transport writes. Disabling listening sends
+nothing and clears withheld motor writes without discarding touch/layer evidence;
+realignment and a new explicit motor write remain separate actions.
+
+MIDI monitor's Start capture…/Stop capture stream JSONL v1 to a user-selected file.
+The screen remains bounded at 120 events; capture has no event-count truncation and
+survives Clear monitor. Rows include canonical MIDI 1 bytes, decoder fields, host
+and device layer, independent channel settings and received/sent/suppressed/failed
+status. Writes are synchronous and errors close capture with a visible notification.
+Stop capture flushes and writes an end marker. This does not capture unsupported
+SysEx/realtime/UMP packet types. See HARDWARE_BRINGUP.md for exact scope and record
+forms. None of this constitutes physical verification or N5 mouse acceptance.

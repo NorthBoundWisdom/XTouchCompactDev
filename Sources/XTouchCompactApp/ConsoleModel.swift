@@ -26,6 +26,10 @@
 
         @Published private(set) var notifications: [ConsoleNotification] = []
         @Published private(set) var hardwareMode = false
+        /// Session-only safety choice: every launch starts passively. Never rewrites a device profile.
+        @Published private(set) var listenOnly = true
+        @Published private(set) var capturePath: String?
+        private var monitorCapture: MonitorCapture?
         @Published var transmitChannel = 1
         @Published var feedbackChannel = 1
         @Published var inputChoice: Int32 = 0
@@ -89,7 +93,11 @@
                 let wasConnected = connection.isConnected
                 connection = snapshot
                 if hardwareMode, snapshot.isConnected, !wasConnected {
-                    apply { try $0.connect() }
+                    if listenOnly {
+                        session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
+                    } else {
+                        apply { try $0.connect() }
+                    }
                 }
                 if hardwareMode, !snapshot.isConnected {
                     session.invalidateTransportFeedback()
@@ -132,12 +140,23 @@
                     return
                 }
                 session.setInputTouches([])
-                apply { try $0.selectLayer(layer) }
+                if !listenOnly {
+                    apply { try $0.selectLayer(layer) }
+                }
             } else {
                 error = nil
                 session.setInputTouches(mock.touchedFaders)
                 apply { try $0.selectLayer(layer) }
                 log(LocalizedMessage("Switched to deterministic mock surface"))
+            }
+        }
+
+        func setListenOnly(_ enabled: Bool) {
+            guard listenOnly != enabled else { return }
+            listenOnly = enabled
+            // No replay or layer assertion on either transition. Preserve hardware touch/layer evidence.
+            if hardwareMode {
+                session.discardPendingMotorWrites(); session.invalidateTransportFeedback(); updateBank()
             }
         }
 
@@ -376,18 +395,26 @@
         }
 
         private func send(_ messages: [MIDIMessage]) {
+            let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
+            if hardwareMode, listenOnly {
+                session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
+                for message in messages {
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed)
+                }
+                return
+            }
             for message in messages {
-                record(message, direction: .output, source: agentOutput ? .agent : (hardwareMode ? .hardware : .mock))
                 guard hardwareMode else {
                     mock.receive(message)
+                    record(message, direction: .output, source: source, delivery: .sent)
                     continue
                 }
-                do { try midi.send(message) }
-                catch {
+                do {
+                    try midi.send(message)
+                    record(message, direction: .output, source: source, delivery: .sent)
+                } catch {
                     self.error = error
-                    if !events.isEmpty {
-                        events[0].ignored = true
-                    }
+                    record(message, direction: .output, source: source, ignored: true, delivery: .failed)
                     session.invalidateTransportFeedback()
                     break
                 }
@@ -412,9 +439,8 @@
         }
 
         func logAgentCall(_ name: String) {
-            events.insert(MonitorEvent(timestamp: now(), direction: nil, source: .agent, message: nil, control: nil,
-                                       ignored: false, text: LocalizedMessage("Agent call: %@", name)), at: 0)
-            trimEvents()
+            appendEvent(MonitorEvent(timestamp: now(), direction: nil, source: .agent, message: nil, control: nil,
+                                     hostLayer: layer, ignored: false, text: LocalizedMessage("Agent call: %@", name)))
         }
 
         private enum ConsoleError: Error { case noConnection }
@@ -424,7 +450,7 @@
             return l.text(localizedError(error))
         }
 
-        private func localizedError(_ error: any Error) -> LocalizedMessage {
+        func localizedError(_ error: any Error) -> LocalizedMessage {
             let l = ErrorMessageBuilder()
             switch error {
             case is ConsoleError:
@@ -529,11 +555,11 @@
         }
 
         private func record(_ message: MIDIMessage, direction: MonitorEvent.Direction,
-                            source: MonitorEvent.Source, ignored: Bool = false)
+                            source: MonitorEvent.Source, ignored: Bool = false, delivery: MonitorEvent.Delivery? = nil)
         {
             let control: CompactControl?
             if direction == .input {
-                control = session.state.map.decode(message, layer: layer)?.control
+                control = session.state.map.decode(message)?.control
             } else {
                 let candidates = (1 ... 9).map(CompactControl.fader) + (1 ... 16).map(CompactControl.encoder)
                     + (1 ... 39).map(CompactControl.button)
@@ -555,9 +581,44 @@
             }
             let key = direction == .input ? (source == .mock ? "IN %@ [MOCK]" : "IN %@")
                 : (!hardwareMode ? "OUT %@ [MOCK]" : "OUT %@")
-            events.insert(MonitorEvent(timestamp: now(), direction: direction, source: source, message: message,
-                                       control: control, ignored: ignored, text: LocalizedMessage(key, message.description)), at: 0)
-            trimEvents()
+            appendEvent(MonitorEvent(timestamp: now(), direction: direction, source: source, message: message,
+                                     control: control, hostLayer: layer,
+                                     deviceLayer: direction == .input ? session.state.map.decode(message)?.layer : nil,
+                                     delivery: delivery ?? (direction == .input ? .received : nil),
+                                     ignored: ignored, text: LocalizedMessage(key, message.description)))
+        }
+
+        private func appendEvent(_ event: MonitorEvent) {
+            events.insert(event, at: 0); trimEvents()
+            do {
+                try monitorCapture?.append(event, map: session.state.map,
+                                           lightProtocol: session.state.lightProtocol,
+                                           hardwareMode: hardwareMode, listenOnly: listenOnly)
+            } catch {
+                monitorCapture = nil; capturePath = nil; self.error = error
+            }
+        }
+
+        func chooseStartCapture() {
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = "XTouchCompact-capture.jsonl"
+            if panel.runModal() == .OK, let url = panel.url {
+                startCapture(url)
+            }
+        }
+
+        func startCapture(_ url: URL) {
+            guard monitorCapture == nil else { return }
+            do {
+                monitorCapture = try MonitorCapture(url: url, started: now())
+                capturePath = url.path
+            } catch { self.error = error }
+        }
+
+        func stopCapture() {
+            defer { monitorCapture = nil; capturePath = nil }
+            do { try monitorCapture?.finish(at: now()) }
+            catch { self.error = error }
         }
 
         private func trimEvents() {
@@ -577,9 +638,8 @@
         }
 
         private func log(_ entry: LocalizedMessage) {
-            events.insert(MonitorEvent(timestamp: now(), direction: nil, source: .application, message: nil,
-                                       control: nil, ignored: false, text: entry), at: 0)
-            trimEvents()
+            appendEvent(MonitorEvent(timestamp: now(), direction: nil, source: .application, message: nil,
+                                     control: nil, hostLayer: layer, ignored: false, text: entry))
         }
     }
 #endif

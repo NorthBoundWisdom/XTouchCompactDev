@@ -185,8 +185,13 @@ public struct CompactState: Sendable {
     }
 
     public mutating func cancelMotorIntents() {
-        pendingMotor.removeAll(); desiredFader.removeAll(); invalidateMotorCommandHistory()
+        discardPendingMotorWrites()
         observedFaders.removeAll(); observedLayer = nil
+    }
+
+    /// Discard withheld writes without inventing a layer assertion or losing physical evidence.
+    public mutating func discardPendingMotorWrites() {
+        pendingMotor.removeAll(); desiredFader.removeAll(); invalidateMotorCommandHistory()
     }
 
     public mutating func setInputTouches(_ touches: Set<Int>) {

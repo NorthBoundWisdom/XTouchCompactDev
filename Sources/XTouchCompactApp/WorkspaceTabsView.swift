@@ -67,7 +67,7 @@
                     }
                 case .parameters: ParameterWorkspace(snapshot: snapshot, intents: intents)
                 case .values: ValueListView(snapshot: snapshot, intents: intents, selection: $selection)
-                case .monitor: MIDIMonitorView(entries: snapshot.events, clear: { intents.clearMonitor?() })
+                case .monitor: MIDIMonitorView(snapshot: snapshot, intents: intents)
                 case .connection: ConnectionSettingsView(snapshot: snapshot, intents: intents)
                 }
             }
@@ -162,23 +162,33 @@
             language.localizer
         }
 
-        let entries: [MonitorEvent]
-        let clear: () -> Void
+        let snapshot: PanelSnapshot
+        let intents: PanelIntents
 
         var body: some View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(l.text("IN = 设备 → 软件，OUT = 软件 → 设备；[MOCK] 表示未发往实体。最新在上。"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button(l.text("Clear monitor"), action: clear)
-                if entries.isEmpty {
+                HStack {
+                    Button(l.text("Clear monitor")) { intents.clearMonitor?() }
+                    if let path = snapshot.capturePath {
+                        Button(l.text("Stop capture")) { intents.stopCapture?() }
+                        Text(path).font(.caption).textSelection(.enabled)
+                    } else {
+                        Button(l.text("Start capture…")) { intents.startCapture?() }
+                    }
+                }
+                Text(l.text("Capture saves every event to JSONL; the screen retains only 120 events."))
+                    .font(.caption).foregroundStyle(.secondary)
+                if snapshot.events.isEmpty {
                     Text(l.text("还没有 MIDI 事件。"))
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, minHeight: 80)
                 } else {
                     VStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(entries.prefix(40).enumerated()), id: \.offset) { _, entry in
-                            Text("\(entry.timestamp.formatted(date: .omitted, time: .standard)) [\(l.text(entry.source.rawValue))] \(l.text(entry.text)) \(entry.control?.shortName ?? "")\(entry.ignored ? " [" + l.text("ignored") + "]" : "")")
+                        ForEach(Array(snapshot.events.prefix(40).enumerated()), id: \.offset) { _, entry in
+                            Text("\(entry.timestamp.formatted(date: .omitted, time: .standard)) [\(l.text(entry.source.rawValue))] \(l.text(entry.text)) \(entry.control?.shortName ?? "") [\(entry.hostLayer.rawValue.uppercased())] \(entry.delivery?.rawValue ?? "")\(entry.ignored ? " [" + l.text("ignored") + "]" : "")")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(entry.direction == .input ? Theme.value : Theme.selection)
                                 .lineLimit(1)
@@ -211,7 +221,13 @@
                 Text(l.text("仅支持出厂 Standard MIDI 模式。应用不会改写设备预设，也不会自动切换 MC 模式。"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Toggle(l.text("Listen only — send no MIDI"), isOn: Binding(
+                    get: { snapshot.listenOnly }, set: { intents.setListenOnly?($0) }
+                ))
+                Text(l.text("Hardware starts passively. Turning listening off sends nothing; realign explicitly before output tests."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Button(l.text("Realign current layer"), action: { intents.realignLayer?() })
+                    .disabled(!snapshot.isMock && snapshot.listenOnly)
                     .help(l.text("Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset."))
                 VStack(alignment: .leading, spacing: 8) {
                     Text(l.text("端口")).font(.subheadline.bold())

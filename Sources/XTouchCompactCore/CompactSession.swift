@@ -74,6 +74,10 @@ public struct CompactSession: Sendable {
         state.cancelMotorIntents(); state.setInputTouches(inputTouches)
     }
 
+    public mutating func discardPendingMotorWrites() {
+        state.discardPendingMotorWrites()
+    }
+
     public mutating func setInputTouches(_ touches: Set<Int>) {
         state.setInputTouches(touches)
     }

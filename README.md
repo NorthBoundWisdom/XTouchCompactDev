@@ -37,7 +37,7 @@ data remain unchanged. Unsupported system languages fall back to English.
 ## First physical connection
 
 1. Use the **factory Standard MIDI** mapping on the hardware, not MC mode, and connect USB. Do not flash firmware.
-2. Start in **Mock** mode, then switch to **Hardware** only after verifying both CoreMIDI source/destination endpoints. If discovery fails, select the exact source and destination.
+2. Start in **Mock** mode, verify **Listen only — send no MIDI** in Connection (on at every launch), then switch to **Hardware** after selecting the correct CoreMIDI endpoints. Use MIDI monitor → Start capture… to stream evidence to JSONL. Follow [physical bring-up](docs/HARDWARE_BRINGUP.md) before explicitly enabling output; turning listening off itself sends nothing.
 3. Set the separately configured **Global RX channel** to match the hardware. The default is channel 1; that is a starting assumption, not auto-detection.
 4. Keep all nine faders unobstructed. Connecting/reconnecting or changing layer **does not automatically move motors**. Use **Recall motors…** to confirm and move them deliberately.
 5. Validate which button LED velocity encoding works on the actual unit (official manual vs firmware-1.14 observation). See `docs/MIDI_PROTOCOL.md`.

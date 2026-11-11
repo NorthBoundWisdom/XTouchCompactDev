@@ -54,13 +54,13 @@
         switch scene {
         case "settings":
             width = 650; height = 760
-            content = AnyView(LanguageSettingsView().environmentObject(model))
+            content = AnyView(LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents))
         case "parameters":
             width = 700; height = 1000
             content = AnyView(ParameterWorkspace(snapshot: model.panelSnapshot, intents: model.panelIntents).padding())
         default:
             width = 1600; height = 1000
-            content = AnyView(ContentView(model: model))
+            content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents))
         }
         let rendered = content.environmentObject(language)
             .environment(\.locale, Locale(identifier: language.localizer.language.rawValue))

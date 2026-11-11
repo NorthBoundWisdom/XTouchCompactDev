@@ -109,3 +109,19 @@ import Testing
     #expect(session.bank(.b).faders[0] == 0)
     #expect(try session.recallFaders().contains(.controlChange(channel: 0, number: 1, value: 0)))
 }
+
+@Test func discardingPassiveMotorWritesPreservesPhysicalEvidence() throws {
+    var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = state.receive(.controlChange(channel: 0, number: 101, value: 127))
+    _ = state.receive(.controlChange(channel: 0, number: 1, value: 31))
+    _ = try state.setFader(1, value: 90)
+    #expect(state.isMotorPending(1))
+    _ = state.receive(.controlChange(channel: 0, number: 37, value: 64))
+    state.discardPendingMotorWrites()
+    #expect(state.isTouched(1))
+    #expect(state.layerMismatch)
+    #expect(state.observedFader(1) == 31)
+    #expect(!state.isMotorPending(1))
+    _ = state.receive(.controlChange(channel: 0, number: 111, value: 0))
+    #expect(try state.reconcileReleasedFader(1).isEmpty)
+}

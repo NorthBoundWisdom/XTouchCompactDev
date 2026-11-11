@@ -32,7 +32,7 @@
         let service = FakeMIDIService()
         let model = ConsoleModel(midi: service, now: { Date(timeIntervalSince1970: 123) })
         #expect(service.starts == 1)
-        model.useHardware(true)
+        model.setListenOnly(false); model.useHardware(true)
         #expect(model.error != nil)
         model.dismissNotification("runtime")
         #expect(model.error == nil)
@@ -122,7 +122,7 @@
         #expect(model.session.state.isTouched(1))
         #expect(model.events.first?.ignored == false)
         model.faderChanged(1, value: 80) // Never command even the mock motor against known hardware touch.
-        model.useHardware(true)
+        model.setListenOnly(false); model.useHardware(true)
         midi.sent.removeAll()
         model.faderChanged(1, value: 90)
         #expect(!midi.sent.contains {
@@ -148,7 +148,7 @@
         midi.onMessages?([.controlChange(channel: 0, number: 101, value: 127)])
         model.faderChanged(1, value: 100)
         #expect(model.session.state.isMotorPending(1))
-        model.useHardware(true)
+        model.setListenOnly(false); model.useHardware(true)
         midi.sent.removeAll()
         midi.onMessages?([.controlChange(channel: 0, number: 101, value: 0)])
         #expect(!midi.sent.contains {
@@ -171,7 +171,7 @@
     @Test @MainActor func explicitRealignmentReassertsCurrentLayerWithoutMotorOrTouchReset() throws {
         let midi = FakeMIDIService()
         let model = ConsoleModel(startsMIDI: false, midi: midi)
-        midi.connect(); model.useHardware(true)
+        midi.connect(); model.setListenOnly(false); model.useHardware(true)
         model.faderChanged(1, value: 90)
         midi.onMessages?([.controlChange(channel: 0, number: 111, value: 127)])
         #expect(model.session.state.layerMismatch)

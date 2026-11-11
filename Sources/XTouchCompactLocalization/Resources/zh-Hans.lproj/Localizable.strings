@@ -237,3 +237,13 @@
 "OSC keeps stationary values active. A scheduler pause over 1 s stops output." = "OSC 可持续输出静止值；排程停顿超过 1 秒才停止输出。";
 "Realign current layer" = "重新对齐当前层";
 "Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset." = "重发当前层并清除旧的层不一致记录；不召回电机，也不清除触摸状态。";
+
+"Listen only — send no MIDI" = "只听不发 MIDI";
+
+"Hardware starts passively. Turning listening off sends nothing; realign explicitly before output tests." = "实体模式启动时只听不发。关闭监听不会发送消息；输出测试前请明确重新对齐。";
+
+"Start capture…" = "开始抓取…";
+
+"Stop capture" = "停止抓取";
+
+"Capture saves every event to JSONL; the screen retains only 120 events." = "抓取将每条事件保存到 JSONL；屏幕仅保留最近 120 条。";
