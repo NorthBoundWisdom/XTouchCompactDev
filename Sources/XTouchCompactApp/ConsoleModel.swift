@@ -29,7 +29,7 @@
         /// Session-only safety choice: every launch starts passively. Never rewrites a device profile.
         @Published private(set) var listenOnly = true
         @Published private(set) var isObservingHardware = false
-        @Published private(set) var hardwareObserver = HardwareInputObserver()
+        @Published private(set) var hardwareObserver = CompactInputObserver()
         @Published private(set) var capturePath: String?
         private var monitorCapture: MonitorCapture?
         @Published var transmitChannel = 1
@@ -169,7 +169,7 @@
             setListenOnly(true)
             session.prepareTransportSwitch(inputTouches: [])
             hardwareMode = true
-            hardwareObserver = HardwareInputObserver()
+            hardwareObserver = CompactInputObserver()
             isObservingHardware = true
             if oscEnabled {
                 setOSCEnabled(false)
@@ -182,7 +182,7 @@
         }
 
         func resetHardwareObservation() {
-            hardwareObserver = HardwareInputObserver()
+            hardwareObserver = CompactInputObserver()
         }
 
         func configure() {

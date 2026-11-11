@@ -148,7 +148,7 @@
                         HStack {
                             Text("E\(index)").font(.title2.bold())
                             Spacer()
-                            Text(observation.encoderValues[observation.inputLayer ?? snapshot.layer]?[index].map { String($0) } ?? "—")
+                            Text(observation.encoderValue(index).map { String($0) } ?? "—")
                                 .font(.system(size: 40, design: .monospaced)).foregroundStyle(Theme.value)
                         }
                         stateBadge(observation.encoderPushes[index], down: "Pressed", up: "Released")
@@ -159,7 +159,7 @@
                 } else {
                     Text(l.text("No physical state reported yet")).foregroundStyle(.secondary)
                 }
-                let held = observation.faderTouches.filter(\.value).keys.sorted()
+                let held = observation.touchedFaders
                 if !held.isEmpty {
                     Label(l.text("Touching: %@", held.map { "F\($0)" }.joined(separator: ", ")), systemImage: "hand.raised.fill")
                         .font(.caption.bold()).foregroundStyle(Theme.touch)
@@ -200,11 +200,9 @@
 
         private var coverage: some View {
             HStack(spacing: 16) {
-                coverageItem("Faders", count: (1 ... 9).filter { observation.seenControls.contains(.fader($0)) }.count, total: 9)
-                coverageItem("Touches", count: (1 ... 9).filter { observation.seenControls.contains(.faderTouch($0)) }.count, total: 9)
-                coverageItem("Encoders", count: (1 ... 16).filter { observation.seenControls.contains(.encoder($0)) }.count, total: 16)
-                coverageItem("Pushes", count: (1 ... 16).filter { observation.seenControls.contains(.encoderPush($0)) }.count, total: 16)
-                coverageItem("Buttons", count: (1 ... 39).filter { observation.seenControls.contains(.button($0)) }.count, total: 39)
+                ForEach(observation.coverage) { item in
+                    coverageItem(item.title, count: item.count, total: item.total)
+                }
             }
             .frame(maxWidth: .infinity).panelStyle()
         }

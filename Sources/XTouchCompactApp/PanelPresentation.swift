@@ -89,6 +89,101 @@
         var feedback: String?
     }
 
+    /// Physical-input facts for the observation workspace; nil readings remain unknown.
+    /// The adapter converts core channels to display numbers without changing a profile.
+    struct HardwareObservationPresentation: Equatable, Sendable {
+        var messageCount = 0
+        var recent: [ObservedHardwareInput] = []
+        var faderPositions: [Int: UInt8] = [:]
+        var faderTouches: [Int: Bool] = [:]
+        var encoderValues: [CompactLayer: [Int: UInt8]] = [:]
+        var encoderPushes: [Int: Bool] = [:]
+        var buttonPresses: [Int: Bool] = [:]
+        var seenControls: Set<CompactControl> = []
+        var inputLayer: CompactLayer?
+        var isPreview = false
+
+        var latest: ObservedHardwareInput? {
+            recent.first
+        }
+
+        var touchedFaders: [Int] {
+            faderTouches.filter(\.value).keys.sorted()
+        }
+
+        func encoderValue(_ index: Int) -> UInt8? {
+            guard let inputLayer else { return nil }
+            return encoderValues[inputLayer]?[index]
+        }
+
+        var coverage: [ObservationCoveragePresentation] {
+            [
+                .init(title: "Faders", count: seenControls.filter {
+                    if case .fader = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                }.count, total: CompactGeometry.faderCount),
+                .init(title: "Touches", count: seenControls.filter {
+                    if case .faderTouch = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                }.count, total: CompactGeometry.faderCount),
+                .init(title: "Encoders", count: seenControls.filter {
+                    if case .encoder = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                }.count, total: CompactGeometry.encoderCount),
+                .init(title: "Pushes", count: seenControls.filter {
+                    if case .encoderPush = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                }.count, total: CompactGeometry.encoderCount),
+                .init(title: "Buttons", count: seenControls.filter {
+                    if case .button = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                }.count, total: CompactGeometry.buttonCount),
+            ]
+        }
+    }
+
+    struct ObservationCoveragePresentation: Equatable, Identifiable, Sendable {
+        let title: String
+        let count: Int
+        let total: Int
+        var id: String {
+            title
+        }
+    }
+
+    struct ObservedHardwareInput: Equatable, Identifiable, Sendable {
+        let id: Int
+        let timestamp: Date
+        let message: MIDIMessage
+        let input: CompactInput?
+        /// Human-facing MIDI channel, 1...16.
+        let channel: Int
+        let matchesConfiguredChannel: Bool
+
+        var panelControl: CompactControl? {
+            switch input?.control {
+            case let .faderTouch(index): .fader(index)
+            case let .encoderPush(index): .encoder(index)
+            default: input?.control
+            }
+        }
+    }
+
     struct PanelSnapshot: Equatable, Sendable {
         var hardwareObservation: HardwareObservationPresentation?
         var listenOnly = true

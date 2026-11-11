@@ -157,4 +157,37 @@
         #expect(!rows.contains { $0["direction"] as? String == "OUT" })
         #expect(midi.sent.isEmpty)
     }
+
+    @Test @MainActor func observationAdapterPreservesUnknownsAndConvertsOnlyDisplayChannels() throws {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi)
+        model.transmitChannel = 5; model.feedbackChannel = 12; model.configure()
+        midi.connect(); model.beginHardwareObservation()
+        midi.onMessages?([.controlChange(channel: 4, number: 101, value: 127),
+                          .controlChange(channel: 4, number: 37, value: 99)])
+        let snapshot = model.panelSnapshot
+        let observation = try #require(snapshot.hardwareObservation)
+        #expect(model.hardwareObserver.recent.first?.channel == 4)
+        #expect(observation.latest?.channel == 5)
+        #expect(snapshot.feedbackChannel == 12)
+        #expect(observation.touchedFaders == [1])
+        #expect(observation.coverage.map(\.count) == [0, 1, 1, 0, 0])
+        #expect(observation.coverage.map(\.total) == [9, 9, 16, 16, 39])
+        #expect(snapshot.fader(1)?.observed == nil)
+        #expect(snapshot.fader(1)?.isTouched == true)
+        #expect(snapshot.fader(2)?.isTouched == nil)
+        #expect(snapshot.encoder(1)?.observedValue == 99)
+        #expect(snapshot.encoder(1)?.isPushed == nil)
+        #expect(snapshot.button(1)?.isDown == nil)
+        #expect(snapshot.layer == .a)
+        #expect(observation.inputLayer == .b)
+        midi.onMessages?([.controlChange(channel: 4, number: 10, value: 12)])
+        #expect(model.panelSnapshot.encoder(1)?.observedValue == 12)
+        #expect(model.panelSnapshot.hardwareObservation?.encoderValues[.b]?[1] == 99)
+        model.endHardwareObservation()
+        #expect(model.panelSnapshot.encoder(1)?.observedValue == nil)
+        #expect(model.panelSnapshot.encoder(1)?.observesInput == false)
+        #expect(model.panelSnapshot.fader(1)?.isTouched == true)
+        #expect(midi.sent.isEmpty)
+    }
 #endif

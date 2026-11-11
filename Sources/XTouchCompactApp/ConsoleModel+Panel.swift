@@ -19,8 +19,9 @@
         }
 
         var panelSnapshot: PanelSnapshot {
-            PanelSnapshot(
-                hardwareObservation: isObservingHardware ? hardwareObserver.presentation : nil,
+            let observation = observationPresentation
+            return PanelSnapshot(
+                hardwareObservation: observation,
                 listenOnly: listenOnly, capturePath: capturePath,
                 notifications: notifications, runtimeError: error.map { localizedError($0) } ?? connection.error,
                 events: events, connection: connection, inputChoice: inputChoice, outputChoice: outputChoice,
@@ -28,34 +29,13 @@
                 layer: layer,
                 isMock: !hardwareMode,
                 faders: (1 ... CompactGeometry.faderCount).map { index in
-                    FaderPresentation(
-                        index: index, target: bank.faders[index - 1],
-                        observed: isObservingHardware ? hardwareObserver.presentation.faderPositions[index] : session.state.observedFader(index),
-                        isTouched: isObservingHardware ? hardwareObserver.presentation.faderTouches[index] : session.state.isTouched(index),
-                        isMotorPending: session.state.isMotorPending(index),
-                        label: isObservingHardware ? "F\(index)" : parameterLabel(.fader(index)),
-                        detail: isObservingHardware ? nil : parameterDetail(.fader(index)),
-                        followsObservedPosition: isObservingHardware
-                    )
+                    faderPresentation(index, observation: observation)
                 },
                 encoders: (1 ... CompactGeometry.encoderCount).compactMap { index in
-                    // The connected session owns desired feedback. Omit an uninitialized
-                    // control rather than inventing a command from its parameter value.
-                    guard let ring = session.state.desiredRing(index) else { return nil }
-                    let value = bank.encoders[index - 1]
-                    return EncoderPresentation(
-                        index: index, value: value,
-                        ring: ring, style: session.state.desiredRingStyle(index),
-                        isPushed: isObservingHardware ? hardwareObserver.presentation.encoderPushes[index] : session.state.isEncoderPushed(index),
-                        label: isObservingHardware ? "E\(index)" : parameterLabel(.encoder(index)),
-                        detail: isObservingHardware ? nil : parameterDetail(.encoder(index)),
-                        observedValue: hardwareObserver.presentation.encoderValues[hardwareObserver.presentation.inputLayer ?? layer]?[index],
-                        observesInput: isObservingHardware
-                    )
+                    encoderPresentation(index, observation: observation)
                 },
                 buttons: (1 ... CompactGeometry.buttonCount).compactMap { index in
-                    guard let light = session.state.desiredButton(index) else { return nil }
-                    return ButtonPresentation(index: index, light: light, isDown: isObservingHardware ? hardwareObserver.presentation.buttonPresses[index] : session.state.isButtonDown(index))
+                    buttonPresentation(index, observation: observation)
                 },
                 pendingPreset: pendingPreset,
                 configuration: session.parameters.configuration,
@@ -66,6 +46,70 @@
                 agents: agents.slots,
                 parameterValues: session.parameters.values
             )
+        }
+
+        private var observationPresentation: HardwareObservationPresentation? {
+            guard isObservingHardware else { return nil }
+            return HardwareObservationPresentation(
+                messageCount: hardwareObserver.messageCount,
+                recent: hardwareObserver.recent.map {
+                    ObservedHardwareInput(id: $0.id, timestamp: $0.timestamp, message: $0.message,
+                                          input: $0.input, channel: Int($0.channel) + 1,
+                                          matchesConfiguredChannel: $0.matchesConfiguredChannel)
+                },
+                faderPositions: hardwareObserver.faderPositions, faderTouches: hardwareObserver.faderTouches,
+                encoderValues: hardwareObserver.encoderValues, encoderPushes: hardwareObserver.encoderPushes,
+                buttonPresses: hardwareObserver.buttonPresses, seenControls: hardwareObserver.seenControls,
+                inputLayer: hardwareObserver.inputLayer
+            )
+        }
+
+        private func faderPresentation(_ index: Int, observation: HardwareObservationPresentation?) -> FaderPresentation {
+            var result = FaderPresentation(
+                index: index, target: bank.faders[index - 1], observed: session.state.observedFader(index),
+                isTouched: session.state.isTouched(index), isMotorPending: session.state.isMotorPending(index)
+            )
+            if let observation {
+                result.observed = observation.faderPositions[index]
+                result.isTouched = observation.faderTouches[index]
+                result.label = "F\(index)"
+                result.detail = nil
+                result.followsObservedPosition = true
+            } else {
+                result.label = parameterLabel(.fader(index))
+                result.detail = parameterDetail(.fader(index))
+            }
+            return result
+        }
+
+        private func encoderPresentation(_ index: Int, observation: HardwareObservationPresentation?) -> EncoderPresentation? {
+            // Rings describe host intent; they are never inferred from physical input.
+            guard let ring = session.state.desiredRing(index) else { return nil }
+            var result = EncoderPresentation(
+                index: index, value: bank.encoders[index - 1], ring: ring,
+                style: session.state.desiredRingStyle(index), isPushed: session.state.isEncoderPushed(index)
+            )
+            if let observation {
+                result.isPushed = observation.encoderPushes[index]
+                result.label = "E\(index)"
+                result.detail = nil
+                result.observedValue = observation.encoderValue(index)
+                result.observesInput = true
+            } else {
+                result.label = parameterLabel(.encoder(index))
+                result.detail = parameterDetail(.encoder(index))
+            }
+            return result
+        }
+
+        private func buttonPresentation(_ index: Int, observation: HardwareObservationPresentation?) -> ButtonPresentation? {
+            guard let light = session.state.desiredButton(index) else { return nil }
+            let isDown: Bool? = if let observation {
+                observation.buttonPresses[index]
+            } else {
+                session.state.isButtonDown(index)
+            }
+            return ButtonPresentation(index: index, light: light, isDown: isDown)
         }
 
         var panelIntents: PanelIntents {
