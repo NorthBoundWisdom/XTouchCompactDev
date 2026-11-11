@@ -5,21 +5,25 @@
     /// Streaming JSON Lines is independent of the bounded on-screen monitor.
     /// Bytes are canonical MIDI 1 bytes from the decoded CoreMIDI message, not a UMP packet dump.
     final class MonitorCapture {
-        private let handle: FileHandle
+        private let writer: any EvidenceWriting
         private var sequence = 0
         private var closed = false
 
-        init(url: URL, started: Date) throws {
-            guard (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) == nil else {
-                throw StoreError.symbolicLink
+        init(url: URL, started: Date, metadata: CaptureSessionMetadata = .init(),
+             writerFactory: (URL) throws -> any EvidenceWriting = { try ExclusiveEvidenceFile(url: $0) }) throws
+        {
+            writer = try writerFactory(url)
+            do {
+                try write(["kind": "capture-start", "schemaVersion": 1, "timestamp": timestamp(started),
+                           "session": metadata.json,
+                           "byteFormat": "canonical MIDI 1; unsupported UMP/SysEx/realtime are not captured"])
+            } catch {
+                try? writer.close()
+                throw error
             }
-            try Data().write(to: url, options: .atomic)
-            handle = try FileHandle(forWritingTo: url)
-            try write(["kind": "capture-start", "schemaVersion": 1, "timestamp": timestamp(started),
-                       "byteFormat": "canonical MIDI 1; unsupported UMP/SysEx/realtime are not captured"])
         }
 
-        deinit { try? handle.close() }
+        deinit { try? writer.close() }
 
         func append(_ event: MonitorEvent, map: FactoryStandardMap, lightProtocol: ButtonLightProtocol,
                     hardwareMode: Bool, listenOnly: Bool) throws
@@ -51,8 +55,15 @@
 
         func finish(at time: Date) throws {
             guard !closed else { return }
-            try write(["kind": "capture-end", "timestamp": timestamp(time), "eventCount": sequence])
-            try handle.synchronize(); try handle.close(); closed = true
+            // Flush events before writing the completion marker. A failed event write
+            // or flush must not be turned into a completed capture by a later stop.
+            do {
+                try writer.synchronize()
+                try write(["kind": "capture-end", "timestamp": timestamp(time), "eventCount": sequence])
+                try writer.synchronize(); try writer.close(); closed = true
+            } catch {
+                closed = true; try? writer.close(); throw error
+            }
         }
 
         private func timestamp(_ date: Date) -> String {
@@ -62,7 +73,8 @@
         private func write(_ row: [String: Any]) throws {
             var data = try JSONSerialization.data(withJSONObject: row, options: [.sortedKeys])
             data.append(0x0A)
-            try handle.write(contentsOf: data)
+            do { try writer.write(data) }
+            catch { closed = true; try? writer.close(); throw error }
         }
     }
 #endif

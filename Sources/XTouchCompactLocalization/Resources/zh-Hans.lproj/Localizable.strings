@@ -287,3 +287,5 @@
 "Value %@" = "数值 %@";
 "INPUT OBSERVER" = "实体输入观察";
 "Highlights show input, not device LEDs" = "高亮代表收到操作，不代表设备灯光状态";
+"Evidence already exists. Choose a new filename." = "证据文件已存在，请选择新文件名。";
+"Evidence writer is closed." = "证据写入已关闭。";

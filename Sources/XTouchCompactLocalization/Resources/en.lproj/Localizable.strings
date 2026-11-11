@@ -287,3 +287,5 @@
 "Value %@" = "Value %@";
 "INPUT OBSERVER" = "INPUT OBSERVER";
 "Highlights show input, not device LEDs" = "Highlights show input, not device LEDs";
+"Evidence already exists. Choose a new filename." = "Evidence already exists. Choose a new filename.";
+"Evidence writer is closed." = "Evidence writer is closed.";

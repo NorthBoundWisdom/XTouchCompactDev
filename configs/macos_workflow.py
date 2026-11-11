@@ -9,6 +9,7 @@ import json
 import os
 import platform
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -99,12 +100,29 @@ def build(configuration: str) -> Path:
         "NSHighResolutionCapable": True,
         "NSPrincipalClass": "NSApplication",
     }
+    info.update(source_metadata())
     (bundle / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
     (bundle / "Contents/PkgInfo").write_bytes(b"APPL????")
     run(["codesign", "--force", "--sign", "-", "--timestamp=none", bundle])
     verify_bundle(bundle)
     print(f"Built {bundle.relative_to(REPO_ROOT)}")
     return bundle
+
+
+def source_metadata() -> dict[str, str | bool]:
+    """Unknown build provenance stays absent instead of inventing a clean revision."""
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=5, check=True
+        ).stdout.strip()
+        if not re.fullmatch(r"[a-f0-9]{40,64}", revision):
+            return {}
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=5, check=True
+        ).stdout
+        return {"XTouchSourceRevision": revision, "XTouchSourceTreeDirty": bool(status.strip())}
+    except (OSError, subprocess.SubprocessError):
+        return {}
 
 
 def verify_bundle(bundle: Path) -> None:

@@ -26,6 +26,20 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_source_metadata_distinguishes_dirty_builds_and_unknown_provenance(self):
+        revision = "a" * 40
+        for status, dirty in (("", False), (" M Sources/file.swift\n", True)):
+            responses = [
+                subprocess.CompletedProcess([], 0, revision + "\n"),
+                subprocess.CompletedProcess([], 0, status),
+            ]
+            with patch.object(macos_workflow.subprocess, "run", side_effect=responses):
+                self.assertEqual(
+                    macos_workflow.source_metadata(), {"XTouchSourceRevision": revision, "XTouchSourceTreeDirty": dirty}
+                )
+        with patch.object(macos_workflow.subprocess, "run", side_effect=OSError("no git")):
+            self.assertEqual(macos_workflow.source_metadata(), {})
+
     def test_manifest_and_broken_config_reference(self):
         summary = validate_repo_command_manifest(ROOT)
         self.assertEqual(summary.configuration_count, 2)

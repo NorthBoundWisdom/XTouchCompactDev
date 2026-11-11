@@ -287,3 +287,5 @@
 "Value %@" = "數值 %@";
 "INPUT OBSERVER" = "實體輸入觀察";
 "Highlights show input, not device LEDs" = "高亮代表收到操作，不代表裝置燈光狀態";
+"Evidence already exists. Choose a new filename." = "證據檔案已存在，請選擇新檔名。";
+"Evidence writer is closed." = "證據寫入已關閉。";

@@ -283,6 +283,10 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 | C4 | `feat(bringup): add single-fader motor acceptance` | 单推子小步、触摸阻断与松手一次对位、层不一致、重连和无回路验收；需要新鲜实测位置与明确操作，不自动移动、不使用全体归位 | Stage 2 及固件假设 1/2 已成立，再由操作员执行 Stage 3 |
 | C5 | `docs: sign off hardware bringup with scoped evidence` | 按证据更新 HW-1…HW-7、F7、协议与 README；未测内容继续保留未知。N5 五项单独填写实际结果 | 对应现场项目完成，不按代码测试推定通过 |
 
+- [x] C1 软件实现：描述符独占创建证据文件、拒绝覆盖/符号链接，失败可见且不补写成功结束标记；
+  录制头记录构建提交/脏工作区、已连接和手选端口、已应用 TX/RX，实际 Global RX 与固件保留未知。
+  工作流将可核验的构建来源嵌入应用；Swift 与工作流测试覆盖写入/刷新失败及元数据边界。
+
 后续需要推送时先核对远端 main，保持正常提交历史，观察现有 Linux/两条 macOS CI；没有新需求就不修改 CI 配置。
 本轮不发布版本，不改硬件档案，不提前实现 D1–D5；实机结论齐备后再确认参数数值持久化与真实 Agent 的产品方向。
 

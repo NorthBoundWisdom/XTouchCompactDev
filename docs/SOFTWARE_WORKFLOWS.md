@@ -225,6 +225,13 @@ nothing and clears withheld motor writes without discarding touch/layer evidence
 realignment and a new explicit motor write remain separate actions.
 
 MIDI monitor's Start capture…/Stop capture stream JSONL v1 to a user-selected file.
+Evidence filenames are exclusively created: existing files and final-component
+symbolic links are refused, including when another process wins creation. The
+start marker includes session metadata, connected/selected endpoints, applied
+channel settings and packaged build revision/dirty status. Unavailable build
+identity, firmware and actual Global RX stay null; configured RX is not a hardware
+observation. Write/flush failure closes capture with a visible error; incomplete
+files are retained rather than replaced or labeled successful on a later stop.
 The screen remains bounded at 120 events; capture has no event-count truncation and
 survives Clear monitor. Rows include canonical MIDI 1 bytes, decoder fields, host
 and device layer, independent channel settings and received/sent/suppressed/failed

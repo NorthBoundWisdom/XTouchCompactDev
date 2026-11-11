@@ -77,13 +77,17 @@
         private var appliedOutputID: Int32?
         private let store: ProtectedWorkspaceStore?
         private let now: () -> Date
+        private let evidenceWriterFactory: (URL) throws -> any EvidenceWriting
         private(set) var session: CompactSession
         private(set) var mock: MockXTouchCompact
 
-        init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: @escaping () -> Date = Date.init, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil) {
+        init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: @escaping () -> Date = Date.init, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil,
+             evidenceWriterFactory: @escaping (URL) throws -> any EvidenceWriting = { try ExclusiveEvidenceFile(url: $0) })
+        {
             self.midi = midi ?? CoreMIDIService()
             self.oscTransport = oscTransport ?? NetworkOSCTransport()
             self.now = now
+            self.evidenceWriterFactory = evidenceWriterFactory
             self.isolated = isolated
             store = storageRoot.map(ProtectedWorkspaceStore.init(directory:))
             let map = try! FactoryStandardMap() // Constant channels are valid by construction.
@@ -485,6 +489,11 @@
         func localizedError(_ error: any Error) -> LocalizedMessage {
             let l = ErrorMessageBuilder()
             switch error {
+            case let failure as EvidenceError:
+                switch failure {
+                case .fileExists: return l.text("Evidence already exists. Choose a new filename.")
+                case .closed: return l.text("Evidence writer is closed.")
+                }
             case is ConsoleError:
                 return l.text("No complete Compact MIDI input/output connection; select endpoints or connect hardware.")
             case let error as CompactMIDIError:
@@ -642,9 +651,23 @@
         func startCapture(_ url: URL) {
             guard monitorCapture == nil else { return }
             do {
-                monitorCapture = try MonitorCapture(url: url, started: now())
+                monitorCapture = try MonitorCapture(url: url, started: now(), metadata: captureMetadata(), writerFactory: evidenceWriterFactory)
                 capturePath = url.path
             } catch { self.error = error }
+        }
+
+        func captureMetadata() -> CaptureSessionMetadata {
+            let info = Bundle.main.infoDictionary ?? [:]
+            return CaptureSessionMetadata(
+                applicationVersion: info["CFBundleShortVersionString"] as? String,
+                sourceRevision: info["XTouchSourceRevision"] as? String,
+                sourceTreeDirty: info["XTouchSourceTreeDirty"] as? Bool,
+                connectedInput: connection.connectedInput, connectedOutput: connection.connectedOutput,
+                selectedInputID: appliedInputID, selectedOutputID: appliedOutputID,
+                configuredTX: Int(session.state.map.transmitChannel) + 1,
+                configuredGlobalRX: Int(session.state.map.globalReceiveChannel) + 1,
+                ledProtocol: session.state.lightProtocol.rawValue, hardwareMode: hardwareMode, listenOnly: listenOnly
+            )
         }
 
         func stopCapture() {
