@@ -72,6 +72,10 @@
         #expect(observation.encoderValues[.a]?[16] == 16)
         #expect(observation.encoderValues[.b]?[16] == 66)
         #expect(observation.recent.count == 12)
+        for layerReview in observation.reviewLayers {
+            #expect(layerReview.observedCount == 89)
+            #expect(layerReview.coveredCount == 64) // Pairs observed; one value never proves full travel.
+        }
         #expect(model.events.count == 120)
         #expect(midi.sent.isEmpty)
     }

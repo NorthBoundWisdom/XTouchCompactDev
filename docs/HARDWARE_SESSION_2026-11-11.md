@@ -157,3 +157,30 @@ waiting/touch/release previews and startup smoke. The new Core tests are runnabl
 on Linux, but this refactor has not yet been pushed through Linux CI. The
 operator's accepted `ea812d5` app and live recording were left running; these
 software checks are separate from the physical results above.
+
+## C1/C2 handoff — software complete, Stage 1 operator work pending
+
+The subsequent development pass implemented exclusive evidence creation and build/
+endpoint/channel metadata (`7b05211`), then the native A/B input-review workspace.
+The latter retains per-layer ranges, momentary pairs, duplicates/unmatched releases,
+actual received addresses and cross-layer release context. It also handles a release
+using the original layer address after another layer was positively observed.
+
+The review exports JSON, a SHA-256 checksum and (when recording exists) a frozen
+raw snapshot with independent scope/integrity information. Connection events retain
+late asynchronous endpoint identity; changing input identity or applied TX starts
+new coverage without clearing touch safety. There is no LED/ring/motor test output
+path in this delivery. All observation output remains locked.
+
+Local validation passed 57 Core, 55 App and 3 localization tests (115 total),
+14 workflow tests, repository-command validation, build, SwiftFormat/Ruff and
+native observation/review previews. These are software results. Physical data
+reviewed so far is still the 56-event prefix described above.
+
+The separate acceptance bundle and live-session manifest are documented in
+[the current handoff](HARDWARE_BRINGUP.md#current-handoff--visual-stage-1-input-acceptance).
+The existing accepted app and original capture were preserved. The next required
+operator work is full A/B input coverage, physical-identity checks and cross-layer
+touch release. Stage 2/3 remain blocked on those recorded firmware facts and an
+independent actual Global RX confirmation; they are not inferred from software
+coverage or simulated tests.

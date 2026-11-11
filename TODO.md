@@ -41,7 +41,7 @@
 - 契约：视图只读 `PanelSnapshot`、只发 `PanelIntents`。未获得位置输入时 `observed` 为 `nil`，
   未发送过灯环样式时 `style` 为 `nil`，未绑定控件的 `label` / `detail` 为 `nil`。
 - 最近一次本地验证：macOS Swift 6.4.2 上 `swift test --build-path build/swiftpm --jobs 2`
-  （51 项 Core + 44 项 App + 3 项本地化）、`swift build` 与 SwiftFormat/Ruff 检查通过。
+  （57 项 Core + 55 项 App + 3 项本地化）、`swift build` 与 SwiftFormat/Ruff 检查通过。
   此前原生打包、签名、启动冒烟、13 项工作流测试通过；观察页面三种隔离预览已生成并检查。
   [远端运行 43007338487](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43007338487)
   的 Linux、旧 macOS 和 Xcode 26.6 / Swift 6.3.3 新 macOS 三条作业均通过（未包含尚未推送的观察功能与重构）。
@@ -277,7 +277,7 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 | 顺序 | 建议提交 | 范围与验收 | 前置 |
 | --- | --- | --- | --- |
-| C1 | `fix(capture): preserve existing evidence and record session metadata` | 当前录制初始化会覆盖同名文件；改为拒绝覆盖，记录应用提交、端口、已配置通道与未知硬件字段。测试已存在文件、写入失败、正常结束及缺失结束标记；原始证据不进 Git | 可直接做，无需硬件输出 |
+| C1 | `fix(capture): preserve existing evidence and record session metadata` | 已实现：拒绝覆盖，记录应用提交、端口、已配置通道与未知硬件字段。测试已存在文件、写入失败、正常结束及缺失结束标记；原始证据不进 Git | `7b05211`，无需硬件输出 |
 | C2 | `feat(bringup): add per-layer input coverage review` | A/B 分层显示位置范围、触摸/松手配对、编码器/按键覆盖；导出带指纹的检查摘要。补 F6、全部位置、16 编码器及按下、39 按键、跨层松手证据；覆盖计数不自动等同验收通过 | C1；操作员在观察页面操作设备 |
 | C3 | `feat(bringup): add explicit nonmotor test controls` | 只提供单个按键 off/on/blink、单个灯环及显式层断言；两种 LED 编码分开，保存实际响应。白名单测试保证不产生推子电机指令 | Stage 1 记录审查完成；独立确认 Global RX，不能从 TX 推断 |
 | C4 | `feat(bringup): add single-fader motor acceptance` | 单推子小步、触摸阻断与松手一次对位、层不一致、重连和无回路验收；需要新鲜实测位置与明确操作，不自动移动、不使用全体归位 | Stage 2 及固件假设 1/2 已成立，再由操作员执行 Stage 3 |
@@ -286,6 +286,14 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 - [x] C1 软件实现：描述符独占创建证据文件、拒绝覆盖/符号链接，失败可见且不补写成功结束标记；
   录制头记录构建提交/脏工作区、已连接和手选端口、已应用 TX/RX，实际 Global RX 与固件保留未知。
   工作流将可核验的构建来源嵌入应用；Swift 与工作流测试覆盖写入/刷新失败及元数据边界。
+- [x] C2 软件实现：A/B 分层 89 个输入动作的范围、按下/松手配对、异常与实际地址；
+  记录按下层、保持期间另一层的输入及松手地址层（包括松手仍沿用旧层地址）。
+  导出 JSON、SHA-256 校验和与原始录制快照；显式区分实时前缀、完整录制和无原始录制。
+  连接变化写入录制；输入身份切换或应用 TX 改变会重新累计覆盖，安全触摸所有权仍保留。
+- [ ] C2 实体验收：在新版 **A/B 覆盖检查** 中完成两层全部控件及跨层松手，停止录制并导出摘要。
+  当前仅有已确认的观察 UI 和旧录制的 56 条 A 层触摸输入，不能据此签收其他控件/层/固件假设。
+- [ ] C3/C4 等待现场前置：必须先完成 Stage 1 记录、确定实际跨层松手行为及独立确认 Global RX；
+  若实机推翻固件假设，先修 Core 与回归测试，再开发/启用下一阶段输出验机流程。
 
 后续需要推送时先核对远端 main，保持正常提交历史，观察现有 Linux/两条 macOS CI；没有新需求就不修改 CI 配置。
 本轮不发布版本，不改硬件档案，不提前实现 D1–D5；实机结论齐备后再确认参数数值持久化与真实 Agent 的产品方向。

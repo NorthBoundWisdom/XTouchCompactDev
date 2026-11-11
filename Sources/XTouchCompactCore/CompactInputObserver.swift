@@ -24,6 +24,10 @@ public struct CompactInputObserver: Equatable, Sendable {
     public private(set) var buttonPresses: [Int: Bool] = [:]
     public private(set) var seenControls: Set<CompactControl> = []
     public private(set) var inputLayer: CompactLayer?
+    public private(set) var reviews: [CompactLayer: [CompactControl: ControlInputReview]] = [:]
+    public private(set) var crossLayerReleases: [CrossLayerRelease: Int] = [:]
+    private var heldOrigins: [CompactControl: CompactLayer] = [:]
+    private var heldOtherLayers: [CompactControl: CompactLayer] = [:]
 
     public init() {}
 
@@ -44,6 +48,7 @@ public struct CompactInputObserver: Equatable, Sendable {
         guard let input else { return }
         inputLayer = input.layer
         seenControls.insert(input.control)
+        recordReview(input, message: message, at: time)
         switch input.control {
         case let .fader(i): faderPositions[i] = input.value
         case let .faderTouch(i): faderTouches[i] = input.isPressed
@@ -51,5 +56,47 @@ public struct CompactInputObserver: Equatable, Sendable {
         case let .encoderPush(i): encoderPushes[i] = input.isPressed
         case let .button(i): buttonPresses[i] = input.isPressed
         }
+    }
+
+    private mutating func recordReview(_ input: CompactInput, message: MIDIMessage, at time: Date) {
+        // Preserve positive layer evidence while a control is held. A release may
+        // use the original layer's address even after another-layer rotation report.
+        for (control, origin) in heldOrigins where origin != input.layer {
+            if control != input.control || input.isPressed != false {
+                heldOtherLayers[control] = input.layer
+            }
+        }
+        let address: MIDIAddress
+        switch message {
+        case let .controlChange(channel, number, _): address = MIDIAddress(messageType: .controlChange, channel: channel, number: number)
+        case let .noteOn(channel, number, _), let .noteOff(channel, number, _): address = MIDIAddress(messageType: .note, channel: channel, number: number)
+        default: return
+        }
+        var review = reviews[input.layer]?[input.control] ?? .init()
+        review.record(input, address: address, at: time)
+        if let pressed = input.isPressed {
+            if pressed {
+                if heldOrigins[input.control] != nil {
+                    review.recordDuplicatePress()
+                } else {
+                    heldOrigins[input.control] = input.layer
+                }
+            } else if let origin = heldOrigins.removeValue(forKey: input.control) {
+                let interveningLayer = heldOtherLayers.removeValue(forKey: input.control)
+                if origin == input.layer {
+                    review.recordPair()
+                } else {
+                    var originReview = reviews[origin]?[input.control] ?? .init()
+                    originReview.recordPair()
+                    reviews[origin, default: [:]][input.control] = originReview
+                }
+                if origin != input.layer || interveningLayer != nil {
+                    crossLayerReleases[CrossLayerRelease(control: input.control, pressedLayer: origin, releasedLayer: input.layer, interveningLayer: interveningLayer), default: 0] += 1
+                }
+            } else {
+                review.recordUnmatchedRelease()
+            }
+        }
+        reviews[input.layer, default: [:]][input.control] = review
     }
 }

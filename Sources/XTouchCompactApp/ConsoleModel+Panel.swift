@@ -60,7 +60,20 @@
                 faderPositions: hardwareObserver.faderPositions, faderTouches: hardwareObserver.faderTouches,
                 encoderValues: hardwareObserver.encoderValues, encoderPushes: hardwareObserver.encoderPushes,
                 buttonPresses: hardwareObserver.buttonPresses, seenControls: hardwareObserver.seenControls,
-                inputLayer: hardwareObserver.inputLayer
+                inputLayer: hardwareObserver.inputLayer,
+                reviewLayers: CompactLayer.allCases.map { layer in
+                    LayerInputReviewPresentation(layer: layer, rows: CompactInputGroup.allCases.flatMap { group in
+                        group.controls.map { control in
+                            InputReviewRowPresentation(control: control, group: group,
+                                                       review: hardwareObserver.reviews[layer]?[control] ?? .init())
+                        }
+                    })
+                },
+                crossLayerReleases: hardwareObserver.crossLayerReleases.map { transition, count in
+                    CrossLayerReleasePresentation(control: transition.control, pressedLayer: transition.pressedLayer,
+                                                  releasedLayer: transition.releasedLayer, interveningLayer: transition.interveningLayer, count: count)
+                }.sorted { $0.id < $1.id },
+                exportedReview: lastReviewExport.map { EvidenceExportPresentation(path: $0.path, sha256: $0.sha256, captureSnapshotPath: $0.captureSnapshotPath) }
             )
         }
 
@@ -117,6 +130,7 @@
                 beginHardwareObservation: { [weak self] in self?.beginHardwareObservation() },
                 endHardwareObservation: { [weak self] in self?.endHardwareObservation() },
                 resetHardwareObservation: { [weak self] in self?.resetHardwareObservation() },
+                exportInputReview: { [weak self] in self?.chooseExportInputReview() },
                 setListenOnly: { [weak self] in self?.setListenOnly($0) },
                 startCapture: { [weak self] in self?.chooseStartCapture() },
                 stopCapture: { [weak self] in self?.stopCapture() },

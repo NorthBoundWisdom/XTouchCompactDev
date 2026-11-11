@@ -30,7 +30,11 @@
         @Published private(set) var listenOnly = true
         @Published private(set) var isObservingHardware = false
         @Published private(set) var hardwareObserver = CompactInputObserver()
+        @Published private(set) var observationStartedAt: Date?
+        @Published private(set) var lastReviewExport: InputReviewExportReceipt?
         @Published private(set) var capturePath: String?
+        private var lastCaptureURL: URL?
+        private var observationInputID: Int32?
         private var monitorCapture: MonitorCapture?
         @Published var transmitChannel = 1
         @Published var feedbackChannel = 1
@@ -98,6 +102,14 @@
                 guard let self else { return }
                 let wasConnected = connection.isConnected
                 connection = snapshot
+                if isObservingHardware, let newInput = snapshot.connectedInput?.id {
+                    if let observationInputID, observationInputID != newInput {
+                        resetHardwareObservation()
+                    }
+                    observationInputID = newInput
+                }
+                appendEvent(MonitorEvent(timestamp: now(), direction: nil, source: .application, message: nil,
+                                         control: nil, hostLayer: layer, ignored: false, text: LocalizedMessage("MIDI connection changed"), connection: snapshot))
                 if hardwareMode, snapshot.isConnected, !wasConnected {
                     if listenOnly {
                         session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
@@ -174,6 +186,11 @@
             session.prepareTransportSwitch(inputTouches: [])
             hardwareMode = true
             hardwareObserver = CompactInputObserver()
+            observationInputID = connection.connectedInput?.id
+            observationStartedAt = now(); lastReviewExport = nil
+            if capturePath == nil {
+                lastCaptureURL = nil
+            }
             isObservingHardware = true
             if oscEnabled {
                 setOSCEnabled(false)
@@ -187,6 +204,10 @@
 
         func resetHardwareObservation() {
             hardwareObserver = CompactInputObserver()
+            observationStartedAt = now(); lastReviewExport = nil
+            if capturePath == nil {
+                lastCaptureURL = nil
+            }
         }
 
         func configure() {
@@ -200,8 +221,12 @@
                 )
 
                 let variant: ButtonLightProtocol = observedLEDVariant ? .observed114 : .manual
+                let inputChannelChanged = session.state.map.transmitChannel != map.transmitChannel
                 mock = mock.reconfigured(map: map, lightProtocol: variant)
                 apply { try $0.reconfigure(map: map, lightProtocol: variant) }
+                if isObservingHardware, inputChannelChanged {
+                    resetHardwareObservation()
+                }
                 log(LocalizedMessage("Profile applied; parameter values preserved"))
                 saveWorkspace()
             } catch { self.error = error }
@@ -494,6 +519,8 @@
                 case .fileExists: return l.text("Evidence already exists. Choose a new filename.")
                 case .closed: return l.text("Evidence writer is closed.")
                 }
+            case is CaptureReviewError:
+                return l.text("Capture evidence is malformed; the original was preserved.")
             case is ConsoleError:
                 return l.text("No complete Compact MIDI input/output connection; select endpoints or connect hardware.")
             case let error as CompactMIDIError:
@@ -642,7 +669,7 @@
 
         func chooseStartCapture() {
             let panel = NSSavePanel()
-            panel.nameFieldStringValue = "XTouchCompact-capture.jsonl"
+            panel.nameFieldStringValue = "XTouchCompact-capture-\(Int(now().timeIntervalSince1970)).jsonl"
             if panel.runModal() == .OK, let url = panel.url {
                 startCapture(url)
             }
@@ -653,6 +680,8 @@
             do {
                 monitorCapture = try MonitorCapture(url: url, started: now(), metadata: captureMetadata(), writerFactory: evidenceWriterFactory)
                 capturePath = url.path
+                lastCaptureURL = url
+                error = nil
             } catch { self.error = error }
         }
 
@@ -674,6 +703,26 @@
             defer { monitorCapture = nil; capturePath = nil }
             do { try monitorCapture?.finish(at: now()) }
             catch { self.error = error }
+        }
+
+        func chooseExportInputReview() {
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.directoryURL = lastCaptureURL?.deletingLastPathComponent()
+            panel.nameFieldStringValue = "XTouchCompact-input-review-\(Int(now().timeIntervalSince1970)).json"
+            if panel.runModal() == .OK, let url = panel.url {
+                exportInputReview(url)
+            }
+        }
+
+        func exportInputReview(_ url: URL) {
+            lastReviewExport = nil
+            do {
+                lastReviewExport = try InputReviewExporter.export(to: url, observer: hardwareObserver,
+                                                                  observationStarted: observationStartedAt, captureURL: lastCaptureURL,
+                                                                  metadata: captureMetadata(), at: now())
+                error = nil
+            } catch { self.error = error }
         }
 
         private func trimEvents() {

@@ -102,6 +102,9 @@
         var seenControls: Set<CompactControl> = []
         var inputLayer: CompactLayer?
         var isPreview = false
+        var reviewLayers: [LayerInputReviewPresentation] = []
+        var crossLayerReleases: [CrossLayerReleasePresentation] = []
+        var exportedReview: EvidenceExportPresentation?
 
         var latest: ObservedHardwareInput? {
             recent.first
@@ -154,6 +157,86 @@
                     }
                 }.count, total: CompactGeometry.buttonCount),
             ]
+        }
+    }
+
+    struct InputReviewRowPresentation: Equatable, Identifiable, Sendable {
+        let control: CompactControl
+        let group: CompactInputGroup
+        let review: ControlInputReview
+        var id: CompactControl {
+            control
+        }
+
+        var hasInputCoverage: Bool {
+            group.requiresPressRelease ? review.pairCount > 0 : review.minimum == 0 && review.maximum == 127
+        }
+
+        var hasAnomalies: Bool {
+            review.duplicatePressCount > 0 || review.unmatchedReleaseCount > 0
+        }
+
+        var rangeText: String {
+            guard let minimum = review.minimum, let maximum = review.maximum else { return "—" }
+            return "\(minimum)–\(maximum)"
+        }
+
+        var statusKey: String {
+            if review.eventCount == 0 {
+                return "No input yet"
+            }
+            if hasAnomalies {
+                return "Review pairing"
+            }
+            if hasInputCoverage {
+                return group.requiresPressRelease ? "Paired" : "0–127 received"
+            }
+            return group.requiresPressRelease ? "Press/release needed" : "Range incomplete"
+        }
+    }
+
+    struct LayerInputReviewPresentation: Equatable, Identifiable, Sendable {
+        let layer: CompactLayer
+        let rows: [InputReviewRowPresentation]
+        var id: CompactLayer {
+            layer
+        }
+
+        var observedCount: Int {
+            rows.filter { $0.review.eventCount > 0 }.count
+        }
+
+        var coveredCount: Int {
+            rows.filter(\.hasInputCoverage).count
+        }
+    }
+
+    struct CrossLayerReleasePresentation: Equatable, Identifiable, Sendable {
+        let control: CompactControl
+        let pressedLayer: CompactLayer
+        let releasedLayer: CompactLayer
+        let interveningLayer: CompactLayer?
+        let count: Int
+        var id: String {
+            control.description + pressedLayer.rawValue + releasedLayer.rawValue + (interveningLayer?.rawValue ?? "-")
+        }
+    }
+
+    struct EvidenceExportPresentation: Equatable, Sendable {
+        let path: String
+        let sha256: String
+        let captureSnapshotPath: String?
+    }
+
+    extension CompactInputGroup {
+        var titleKey: String {
+            switch self {
+            case .faders: "Faders"
+            case .touches: "Touches"
+            case .encoders: "Encoders"
+            case .pushes: "Pushes"
+            case .buttons: "Buttons"
+            }
         }
     }
 
@@ -237,6 +320,7 @@
         var beginHardwareObservation: (() -> Void)?
         var endHardwareObservation: (() -> Void)?
         var resetHardwareObservation: (() -> Void)?
+        var exportInputReview: (() -> Void)?
         var setListenOnly: ((Bool) -> Void)?
         var startCapture: (() -> Void)?
         var stopCapture: (() -> Void)?

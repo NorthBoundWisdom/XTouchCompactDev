@@ -18,6 +18,7 @@
         var delivery: Delivery?
         var ignored: Bool
         var text: LocalizedMessage
+        var connection: CompactMIDIConnection?
     }
 
     struct ConsoleNotification: Identifiable, Equatable, Sendable {

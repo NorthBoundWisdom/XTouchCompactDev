@@ -217,6 +217,44 @@ hardware-isolated. App-owned snapshot scenes `observation-waiting`, `observation
 and `observation-release` use clearly labeled synthetic preview data and never
 open hardware ports.
 
+#### A/B input review and export
+
+Use the **A/B input review** tab, or add `--input-review` to the observation
+launch. Each layer has 89 separate physical input actions. Fader/encoder range
+coverage requires received 0 and 127; touch, encoder push and button coverage
+requires a real press/release pair. These are evidence counters, never automatic
+hardware sign-off. The viewer's A/B choice sends no MIDI; it can follow input
+addresses or remain on a manually selected review layer.
+
+Cross-layer review retains the press layer, another layer observed while held,
+and the release message's layer. The UI asks the operator to turn E1 after
+pressing the physical other-layer selector while touching F1. That establishes
+intervening input-layer evidence even if release uses the original address.
+The release pairs with its original press, not a fabricated press in the other
+layer. Repeated presses and unpaired releases remain visible. Counters/history
+are independent; clearing observations preserves safety touch ownership and raw
+capture. Changing input identity (including through a disconnect) or applying
+a different TX channel starts new coverage rather than mixing interpretations.
+
+**Export input review…** exclusively creates a JSON report and `.json.sha256`
+checksum. When the current observation has an associated recording, it also
+creates a `.capture.jsonl` byte-for-byte snapshot with its own SHA-256 in the
+report. A valid recording without an end marker is explicitly incomplete;
+sequence gaps, malformed/partial lines, duplicate endings or post-end events
+are rejected. Reports without raw recording say so, including in the UI.
+Observer counters cover the current reset scope, while a raw capture snapshot
+can include earlier events or omit later unrecorded inputs. Both scopes are
+recorded; they are not silently equated. Firmware, actual Global RX and hardware
+acceptance remain unknown. No file is overwritten to recover an export failure.
+
+Connection observations are additive JSONL v1 application events containing
+connected endpoint IDs/names. They retain identity when the initial asynchronous
+connection arrives after the capture start header, and preserve reconnect/source
+changes without inventing a MIDI message or physical acknowledgement.
+
+The app-owned `observation-review` preview uses labeled synthetic inputs. It
+does not satisfy Stage 1; see the acceptance handoff in HARDWARE_BRINGUP.md.
+
 Hardware output is blocked by default on every launch. Connection's Listen only
 switch gates the single MIDI send boundary, including connect/reconnect assertions,
 LED sync, gestures, software/Agent writes and recall. Suppressed commands are marked

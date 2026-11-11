@@ -9,6 +9,7 @@
         let intents: PanelIntents
         @EnvironmentObject private var language: LanguageSettings
         @State private var inputChoice: Int32 = 0
+        @State private var reviewTab = ProcessInfo.processInfo.arguments.contains("--input-review") || ProcessInfo.processInfo.arguments.contains("observation-review")
         private var l: Localizer {
             language.localizer
         }
@@ -24,37 +25,67 @@
         var body: some View {
             VStack(spacing: 0) {
                 header
-                Divider()
-                GeometryReader { geometry in
-                    let scale = min(1.4, max(1, min((geometry.size.width - 380) / PanelMetrics.naturalSize.width,
-                                                    (geometry.size.height - 210) / PanelMetrics.naturalSize.height)))
-                    ScrollView([.horizontal, .vertical]) {
-                        HStack(alignment: .top, spacing: 18) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                liveStatus
-                                SurfacePanelView(snapshot: snapshot, intents: intents,
-                                                 selection: .constant(observation.latest?.panelControl), onSelectLayer: { _ in })
-                                    .environment(\.panelMetrics, PanelMetrics(scale: scale))
-                                    .allowsHitTesting(false)
-                                    .disabled(true)
-                                    .accessibilityHint(l.text("Operate the physical device to update this panel"))
-                                coverage
-                            }
-                            .frame(width: PanelMetrics.naturalSize.width * scale)
-                            VStack(spacing: 14) {
-                                latestInput
-                                selectedReadout
-                                recentInputs
-                                connectionControls
-                            }
-                            .frame(width: 300)
-                        }
-                        .padding(18)
-                        .frame(minWidth: geometry.size.width, alignment: .top)
+                HStack {
+                    Picker(l.text("Observation workspace"), selection: $reviewTab) {
+                        Text(l.text("Live panel")).tag(false)
+                        Text(l.text("A/B input review")).tag(true)
+                    }.pickerStyle(.segmented).frame(width: 300)
+                    Spacer()
+                    if snapshot.capturePath != nil {
+                        Label(l.text("Recording inputs"), systemImage: "record.circle.fill")
+                            .font(.caption).foregroundStyle(Theme.value)
+                        Button(l.text("Stop capture")) { intents.stopCapture?() }
+                    } else {
+                        Button(l.text("Start capture…")) { intents.startCapture?() }
                     }
+                    Button(l.text("Export input review…")) { intents.exportInputReview?() }
+                        .disabled(observation.messageCount == 0)
+                }.padding(.horizontal, 20).padding(.bottom, 12)
+                if let error = snapshot.runtimeError {
+                    Label(l.text(error), systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20).padding(.bottom, 10)
+                }
+                Divider()
+                if reviewTab {
+                    HardwareInputReviewView(snapshot: snapshot, intents: intents)
+                } else {
+                    livePanel
                 }
             }
             .onAppear { inputChoice = snapshot.inputChoice }
+        }
+
+        private var livePanel: some View {
+            GeometryReader { geometry in
+                let scale = min(1.4, max(1, min((geometry.size.width - 380) / PanelMetrics.naturalSize.width,
+                                                (geometry.size.height - 210) / PanelMetrics.naturalSize.height)))
+                ScrollView([.horizontal, .vertical]) {
+                    HStack(alignment: .top, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            liveStatus
+                            SurfacePanelView(snapshot: snapshot, intents: intents,
+                                             selection: .constant(observation.latest?.panelControl), onSelectLayer: { _ in })
+                                .environment(\.panelMetrics, PanelMetrics(scale: scale))
+                                .allowsHitTesting(false)
+                                .disabled(true)
+                                .accessibilityHint(l.text("Operate the physical device to update this panel"))
+                            coverage
+                        }
+                        .frame(width: PanelMetrics.naturalSize.width * scale)
+                        VStack(spacing: 14) {
+                            latestInput
+                            selectedReadout
+                            recentInputs
+                            connectionControls
+                        }
+                        .frame(width: 300)
+                    }
+                    .padding(18)
+                    .frame(minWidth: geometry.size.width, alignment: .top)
+                }
+            }
         }
 
         private var header: some View {

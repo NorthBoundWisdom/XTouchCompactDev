@@ -53,7 +53,7 @@
         let width: CGFloat
         let height: CGFloat
         switch scene {
-        case "observation", "observation-waiting", "observation-release":
+        case "observation", "observation-waiting", "observation-release", "observation-review":
             width = 1260; height = 980
             let service = ObservationPreviewService()
             let preview = ConsoleModel(startsMIDI: false, midi: service, isolated: true)
@@ -65,6 +65,16 @@
                     .noteOn(channel: 0, number: 16, velocity: 127),
                     .noteOff(channel: 0, number: 16, velocity: 0),
                     .controlChange(channel: 0, number: 101, value: scene == "observation-release" ? 0 : 127),
+                ])
+            }
+            if scene == "observation-review" {
+                service.onMessages?([
+                    .controlChange(channel: 0, number: 1, value: 0),
+                    .controlChange(channel: 0, number: 1, value: 127),
+                    .controlChange(channel: 0, number: 101, value: 0),
+                    .controlChange(channel: 0, number: 101, value: 127),
+                    .controlChange(channel: 0, number: 37, value: 42),
+                    .controlChange(channel: 0, number: 111, value: 0),
                 ])
             }
             var snapshot = preview.panelSnapshot

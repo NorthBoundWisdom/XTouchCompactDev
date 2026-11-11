@@ -15,6 +15,35 @@ Input/output endpoint names and stable IDs: __________
 
 ## Capture procedure and stage gates
 
+### Current handoff — visual Stage 1 input acceptance
+
+The C1/C2 software is ready. The new acceptance app is under
+`build/hardware-bringup/InputReviewAcceptance.app`; its live capture/log paths
+are recorded in `build/hardware-bringup/active-input-review-session.json`.
+It opens **Hardware observation → A/B input review** with output locked and a
+fresh observation scope. Earlier evidence stays unchanged in its original files.
+
+1. Use physical Layer A, then B. For each layer, operate all nine faders to both
+   ends, touch/release each cap, turn all sixteen encoders to 0 and 127 and
+   push/release each, then press/release all 39 buttons. Use the control-group
+   selector and incomplete filter to see missing items; also verify physical
+   positions and printed legends match the panel. Viewer layer selection sends
+   nothing to the hardware.
+2. For cross-layer release, touch F1's metal cap on A and keep touching it;
+   press physical B once, turn E1 a little to establish B input evidence, then
+   release F1. Repeat B → A. Review the three layer fields, including a release
+   that still reports the original layer. Record any missing release or mismatch.
+3. Stop capture, then export the review. Keep the JSON, checksum and capture
+   snapshot together. Report anything that does not match the physical unit.
+
+This is the point that requires the operator. Stage 2 cannot be finalized from
+synthetic tests: actual cross-layer release semantics and an independently
+confirmed Global RX are prerequisites. No LED/ring/motor output has been enabled
+by these changes. C3/C4 remain next-stage work; full HW sign-off and the separate
+N5 console cases remain open.
+
+### Full capture procedure
+
 1. Launch app (listening defaults on at every launch). In Mock mode, open Connection
    and confirm **Listen only — send no MIDI** is on before selecting Physical X-TOUCH.
    Select input/output endpoints explicitly. Confirm the passive indicator remains visible.

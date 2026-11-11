@@ -43,6 +43,12 @@
             row["control"] = event.control?.description
             row["rawMIDI1Bytes"] = event.message?.midi1Bytes
             row["message"] = event.message?.description
+            if let connection = event.connection {
+                row["connection"] = [
+                    "connectedInput": CaptureSessionMetadata.endpointJSON(connection.connectedInput),
+                    "connectedOutput": CaptureSessionMetadata.endpointJSON(connection.connectedOutput),
+                ]
+            }
             if event.direction == .input, let message = event.message, let decoded = map.decode(message) {
                 var input: [String: Any] = ["control": decoded.control.description,
                                             "layer": decoded.layer.rawValue, "value": Int(decoded.value)]
