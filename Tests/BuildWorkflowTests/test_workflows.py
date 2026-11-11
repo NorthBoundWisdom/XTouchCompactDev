@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from configs import macos_workflow, setup_local_project, source_root_workflow
+from configs import check_swift_toolchain, macos_workflow, setup_local_project, source_root_workflow
 from configs._vendor.freecm.errors import RepoCommandManifestError
 from configs._vendor.freecm.repo_commands import (
     validate_repo_command_manifest,
@@ -196,6 +196,17 @@ class WorkflowTests(unittest.TestCase):
             output.write_bytes(b"invalid")
             with self.assertRaises(ValueError):
                 capture_readme_screenshots.validate_png(output)
+
+    def test_modern_swift_lane_rejects_older_or_unidentifiable_toolchains(self):
+        self.assertEqual(
+            check_swift_toolchain.validate_swift_version("Apple Swift version 6.4.2 (swiftlang-test)"), (6, 4, 2)
+        )
+        self.assertEqual(
+            check_swift_toolchain.validate_swift_version("Swift version 6.2 (swift-6.2-RELEASE)"), (6, 2, 0)
+        )
+        for output in ("Apple Swift version 6.1.2", "Swift version 5.10", "unknown"):
+            with self.assertRaises(ValueError):
+                check_swift_toolchain.validate_swift_version(output)
 
     def test_plugin_initialization_flags(self):
         with patch.object(source_root_workflow, "setup_main", return_value=0) as setup:

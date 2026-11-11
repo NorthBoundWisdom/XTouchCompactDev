@@ -245,7 +245,7 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 可延后，不挡实机：
 
 - [x] N6 远端截图诊断超时的原因（手动运行 `capture_previews` 时仍会失败）。README 截图继续由本地脚本生成。
-- [ ] N8 编译器版本不一致：本机 Swift 6.4.2、macOS runner 6.1.2、Linux 容器 6.2，并发诊断结果不同。
+- [x] N8 编译器版本不一致：本机 Swift 6.4.2、macOS runner 6.1.2、Linux 容器 6.2，并发诊断结果不同。
   决定是否加一条较新工具链的 CI 作业，或接受偶尔在 runner 上才暴露的编译错误。
 
 ### 阶段二：实机到货后

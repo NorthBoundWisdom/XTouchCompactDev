@@ -47,3 +47,27 @@ jobs:
           path: build/screenshots/
           if-no-files-found: warn
           retention-days: 7
+  app-macos-modern:
+    # Retain macos-15 / Swift 6.1 compatibility above; also exercise newer diagnostics.
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: xcodebuild -version
+      - run: python3 configs/check_swift_toolchain.py
+      - run: python3 configs/setup_local_project.py
+      - run: python3 -m unittest discover -s Tests/BuildWorkflowTests -v
+      - run: swift build
+      - run: swift test --jobs 2
+      - run: python3 configs/macos_workflow.py build
+      - name: Isolated modern-toolchain native startup
+        run: |
+          python3 - <<'PY'
+          from configs.macos_workflow import REPO_ROOT, run, validate_smoke
+          executable = REPO_ROOT / "build/app/debug/XTouchCompactApp.app/Contents/MacOS/XTouchCompactApp"
+          output = run([executable, "--startup-smoke"], capture=True, timeout=30)
+          validate_smoke(output)
+          print(output)
+          PY

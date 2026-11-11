@@ -41,3 +41,17 @@ Preview runs retain per-scene traces and fresh PNGs in `build/screenshots/`. A t
 adds an owned-process sample before killing/reaping that process; the manual CI job
 uploads these diagnostics on success or failure. See `docs/reviews/N2-N8.md` for the
 remote before/after evidence. Offscreen rendering does not count as mouse acceptance.
+
+The compiler policy deliberately keeps three validation lanes: Linux Swift 6.2,
+macOS 15's older Swift compiler for compatibility, and `app-macos-modern` on
+`macos-26` with `DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer`.
+The modern lane runs all Swift tests/build plus signed native bundle/startup smoke.
+It prints Xcode and Swift versions and explicitly rejects Swift older than 6.2;
+there is no silent toolchain fallback or continue-on-error. The pinned Xcode path
+is listed in the [official runner inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md).
+When that image retires the pinned version, update this lane explicitly after
+review. Swift 6 language mode and the macOS 14 deployment target stay unchanged.
+The development machine may still be newer than CI; this broadens diagnostics
+coverage without claiming identical compilers. Prefer assigning macro-returned
+closures to locals before calling them: direct `#require(closure)(...)` triggered
+a Swift 6.4.2 compiler assertion during N2 and is avoided in tests.
