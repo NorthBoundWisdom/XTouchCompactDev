@@ -3,9 +3,9 @@
     import XTouchCompactCore
     import XTouchCompactLocalization
 
-    struct MonitorEvent: Identifiable {
-        enum Direction: String { case input = "IN", output = "OUT" }
-        enum Source: String { case mock, hardware, agent, application }
+    struct MonitorEvent: Identifiable, Equatable, Sendable {
+        enum Direction: String, Sendable { case input = "IN", output = "OUT" }
+        enum Source: String, Sendable { case mock, hardware, agent, application }
         let id = UUID()
         var timestamp: Date
         var direction: Direction?

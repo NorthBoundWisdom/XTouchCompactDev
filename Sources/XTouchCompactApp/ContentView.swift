@@ -127,7 +127,7 @@
             SurfacePanelView(snapshot: snapshot, intents: intents, selection: $selection,
                              onSelectLayer: { model.setLayer($0) })
                 .environment(\.panelMetrics, PanelMetrics(scale: layout.scale))
-            WorkspaceTabsView(model: model, snapshot: snapshot, intents: intents, selection: $selection)
+            WorkspaceTabsView(snapshot: snapshot, intents: intents, selection: $selection)
                 .frame(width: layout.workspaceWidth)
         }
     }

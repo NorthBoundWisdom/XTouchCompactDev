@@ -1,4 +1,5 @@
 #if os(macOS)
+    import Testing
     import XCTest
     @testable import XTouchCompactApp
     import XTouchCompactCore
@@ -187,5 +188,28 @@
             XCTAssertNil(model.panelIntents.pushEncoder)
             XCTAssertNil(model.panelIntents.releaseButton)
         }
+    }
+#endif
+#if os(macOS)
+    @Test @MainActor func workspaceContractUsesAppliedConnectionAndExplicitIntents() throws {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi)
+        midi.connect()
+        let intents = model.panelIntents
+        let configure = try #require(intents.configureDevice)
+        configure(3, 8, true)
+        let select = try #require(intents.selectPorts)
+        select(123, 456)
+        let snapshot = model.panelSnapshot
+        #expect(snapshot.connection.isConnected)
+        #expect(snapshot.transmitChannel == 3)
+        #expect(snapshot.feedbackChannel == 8)
+        #expect(snapshot.observedLEDVariant)
+        #expect(snapshot.inputChoice == 123)
+        #expect(snapshot.outputChoice == 456)
+        #expect(!snapshot.events.isEmpty)
+        let clear = try #require(intents.clearMonitor)
+        clear()
+        #expect(model.panelSnapshot.events.isEmpty)
     }
 #endif

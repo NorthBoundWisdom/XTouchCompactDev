@@ -228,7 +228,7 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 按顺序做，N2–N5 是进入实机阶段前的门槛：
 
-- [ ] N2 **前端作者审视契约与视图改动**：`PanelSnapshot.pendingPreset`、`mcpPort`；`PanelIntents.realignLayer`、
+- [x] N2 **前端作者审视契约与视图改动**：`PanelSnapshot.pendingPreset`、`mcpPort`；`PanelIntents.realignLayer`、
   `resetParameters`、`applyConfiguration`（取代 `loadConfiguration`）、`loadPreset`、`confirmLoadPreset`、
   `cancelLoadPreset`；视图 `ParameterWorkspace`、`WorkspaceTabsView`、`ExternalServicesSettings`。
 - [ ] N3 `confirmLoadPreset` 改为无参数，由模型使用自己的 `pendingPreset`（契约改动，前端做；随 N2 一起）。

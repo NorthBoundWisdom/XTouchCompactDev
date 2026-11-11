@@ -7,7 +7,13 @@
         let snapshot: PanelSnapshot
         let intents: PanelIntents
         @EnvironmentObject private var language: LanguageSettings
-        @State private var draft = SurfaceConfiguration.neutral
+        @State private var draft: SurfaceConfiguration
+
+        init(snapshot: PanelSnapshot, intents: PanelIntents) {
+            self.snapshot = snapshot; self.intents = intents
+            _draft = State(initialValue: snapshot.configuration)
+        }
+
         @State private var confirmsReset = false
         @State private var target = ""
         @State private var kind = "fader"
@@ -29,7 +35,6 @@
                             Button(l.text("Audio example")) { intents.loadPreset?(.audioExample) }
                             Button(l.text("Neutral preset")) { intents.loadPreset?(.neutral) }
                         }
-                        Button(l.text("Neutral preset")) { intents.loadPreset?(.neutral) }
                     }
                     HStack {
                         Button(l.text("Import configuration…")) { intents.importConfiguration?() }
@@ -65,11 +70,13 @@
                                 TextField(l.text("Maximum"), value: $draft.parameters[index].maximum, format: .number)
                                 TextField(l.text("Step"), value: $draft.parameters[index].step, format: .number)
                             }
-                            if definition.minimum < definition.maximum {
-                                Slider(value: Binding(get: { snapshot.parameterValues[definition.id] ?? definition.defaultValue },
+                            if let applied = snapshot.configuration.parameters.first(where: { $0.id == definition.id }),
+                               let value = snapshot.parameterValues[definition.id], applied.minimum < applied.maximum
+                            {
+                                Slider(value: Binding(get: { value },
                                                       set: { intents.setParameter?(definition.id, $0) }),
-                                       in: definition.minimum ... definition.maximum)
-                                Text("\(snapshot.parameterValues[definition.id] ?? definition.defaultValue) \(definition.unit)")
+                                       in: applied.minimum ... applied.maximum)
+                                Text("\(value) \(definition.unit)")
                                     .font(.caption.monospaced())
                             }
                         }.padding(8).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
@@ -98,7 +105,6 @@
             }
             .preferredColorScheme(.dark)
             .background(Theme.background)
-            .onAppear { draft = snapshot.configuration }
             .onChange(of: snapshot.configuration) { _, configuration in draft = configuration }
             .confirmationDialog(l.text("Reset all parameter values to defaults?"), isPresented: Binding(
                 get: { snapshot.pendingPreset != nil },

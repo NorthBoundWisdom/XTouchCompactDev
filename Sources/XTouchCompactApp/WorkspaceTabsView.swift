@@ -37,7 +37,6 @@
             language.localizer
         }
 
-        @ObservedObject var model: ConsoleModel
         let snapshot: PanelSnapshot
         let intents: PanelIntents
         @Binding var selection: CompactControl?
@@ -68,8 +67,8 @@
                     }
                 case .parameters: ParameterWorkspace(snapshot: snapshot, intents: intents)
                 case .values: ValueListView(snapshot: snapshot, intents: intents, selection: $selection)
-                case .monitor: MIDIMonitorView(entries: model.events, clear: model.clearMonitor)
-                case .connection: ConnectionSettingsView(model: model, realign: { intents.realignLayer?() })
+                case .monitor: MIDIMonitorView(entries: snapshot.events, clear: { intents.clearMonitor?() })
+                case .connection: ConnectionSettingsView(snapshot: snapshot, intents: intents)
                 }
             }
             .panelStyle()
@@ -199,28 +198,33 @@
             language.localizer
         }
 
-        @ObservedObject var model: ConsoleModel
-        let realign: () -> Void
+        let snapshot: PanelSnapshot
+        let intents: PanelIntents
+        @State private var input: Int32 = 0
+        @State private var output: Int32 = 0
+        @State private var tx = 1
+        @State private var rx = 1
+        @State private var observed = false
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(l.text("仅支持出厂 Standard MIDI 模式。应用不会改写设备预设，也不会自动切换 MC 模式。"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button(l.text("Realign current layer"), action: realign)
+                Button(l.text("Realign current layer"), action: { intents.realignLayer?() })
                     .help(l.text("Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset."))
                 VStack(alignment: .leading, spacing: 8) {
                     Text(l.text("端口")).font(.subheadline.bold())
-                    Picker(l.text("输入"), selection: $model.inputChoice) {
+                    Picker(l.text("输入"), selection: $input) {
                         Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
-                        ForEach(model.connection.inputs) { Text($0.name).tag($0.id) }
+                        ForEach(snapshot.connection.inputs) { Text($0.name).tag($0.id) }
                     }
-                    Picker(l.text("输出"), selection: $model.outputChoice) {
+                    Picker(l.text("输出"), selection: $output) {
                         Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
-                        ForEach(model.connection.outputs) { Text($0.name).tag($0.id) }
+                        ForEach(snapshot.connection.outputs) { Text($0.name).tag($0.id) }
                     }
                     HStack {
-                        Button(l.text("连接所选端口")) { model.selectPorts() }
+                        Button(l.text("连接所选端口")) { intents.selectPorts?(input, output) }
                             .help(l.text("按上面的选择重新连接 MIDI 输入与输出"))
                         Text(connectionSummary).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -230,13 +234,13 @@
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(l.text("设备配置")).font(.subheadline.bold())
-                    Stepper(l.text("发送通道（设备 → 软件）：%@", String(model.transmitChannel)), value: $model.transmitChannel, in: 1 ... 16)
-                    Stepper(l.text("Global 接收通道（软件 → 设备）：%@", String(model.feedbackChannel)), value: $model.feedbackChannel,
+                    Stepper(l.text("发送通道（设备 → 软件）：%@", String(tx)), value: $tx, in: 1 ... 16)
+                    Stepper(l.text("Global 接收通道（软件 → 设备）：%@", String(rx)), value: $rx,
                             in: 1 ... 16)
-                    Toggle(l.text("按键 LED 使用固件 1.14 实测值（0 / 2 / 3）"), isOn: $model.observedLEDVariant)
+                    Toggle(l.text("按键 LED 使用固件 1.14 实测值（0 / 2 / 3）"), isOn: $observed)
                         .help(l.text("关闭时按官方手册发送 0 / 1 / 2"))
                     HStack {
-                        Button(l.text("应用配置")) { model.configure() }
+                        Button(l.text("应用配置")) { intents.configureDevice?(tx, rx, observed) }
                             .help(l.text("Profile applied; parameter values preserved"))
                         Text(l.text("Profile applied; parameter values preserved"))
                             .font(.caption)
@@ -246,11 +250,15 @@
                 .padding(10)
                 .background(Color.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 9))
             }
+            .onAppear {
+                input = snapshot.inputChoice; output = snapshot.outputChoice
+                tx = snapshot.transmitChannel; rx = snapshot.feedbackChannel; observed = snapshot.observedLEDVariant
+            }
         }
 
         private var connectionSummary: String {
-            let input = model.connection.connectedInput?.name ?? "—"
-            let output = model.connection.connectedOutput?.name ?? "—"
+            let input = snapshot.connection.connectedInput?.name ?? "—"
+            let output = snapshot.connection.connectedOutput?.name ?? "—"
             return "\(input) → App → \(output)"
         }
     }

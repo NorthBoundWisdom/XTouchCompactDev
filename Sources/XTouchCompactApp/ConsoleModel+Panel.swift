@@ -20,6 +20,8 @@
 
         var panelSnapshot: PanelSnapshot {
             PanelSnapshot(
+                events: events, connection: connection, inputChoice: inputChoice, outputChoice: outputChoice,
+                transmitChannel: transmitChannel, feedbackChannel: feedbackChannel, observedLEDVariant: observedLEDVariant,
                 layer: layer,
                 isMock: !hardwareMode,
                 faders: (1 ... CompactGeometry.faderCount).map { index in
@@ -60,6 +62,15 @@
 
         var panelIntents: PanelIntents {
             PanelIntents(
+                clearMonitor: { [weak self] in self?.clearMonitor() },
+                selectPorts: { [weak self] input, output in
+                    guard let self else { return }
+                    inputChoice = input; outputChoice = output; selectPorts()
+                },
+                configureDevice: { [weak self] tx, rx, observed in
+                    guard let self else { return }
+                    transmitChannel = tx; feedbackChannel = rx; observedLEDVariant = observed; configure()
+                },
                 moveFader: { [weak self] index, value in self?.moveFader(index, value: value) },
                 touchFader: hardwareMode ? nil : { [weak self] index, touched in
                     self?.touchFader(index, isTouched: touched)

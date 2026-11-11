@@ -10,6 +10,24 @@
     // "the backend does not report this yet": the UI hides the corresponding readout instead of
     // inventing a value. See TODO.md for the backend work that fills each optional.
 
+    /// CoreMIDI endpoint identity; never use transient port indices as persistence keys.
+    struct CompactMIDIEndpoint: Equatable, Sendable, Identifiable {
+        var id: Int32
+        var name: String
+    }
+
+    struct CompactMIDIConnection: Equatable, Sendable {
+        var inputs: [CompactMIDIEndpoint] = []
+        var outputs: [CompactMIDIEndpoint] = []
+        var connectedInput: CompactMIDIEndpoint?
+        var connectedOutput: CompactMIDIEndpoint?
+        var error: LocalizedMessage?
+
+        var isConnected: Bool {
+            connectedInput != nil && connectedOutput != nil
+        }
+    }
+
     struct FaderPresentation: Equatable, Identifiable, Sendable {
         let index: Int
         /// Host-desired position (the application parameter), 0...127.
@@ -69,6 +87,13 @@
     }
 
     struct PanelSnapshot: Equatable, Sendable {
+        var events: [MonitorEvent] = []
+        var connection = CompactMIDIConnection()
+        var inputChoice: Int32 = 0
+        var outputChoice: Int32 = 0
+        var transmitChannel = 1
+        var feedbackChannel = 1
+        var observedLEDVariant = false
         var layer: CompactLayer
         /// True when the panel stands in for the hardware; false when it mirrors a real device.
         var isMock: Bool
@@ -106,6 +131,10 @@
     /// while a software write is a host command that may move a motor. An optional intent that is
     /// nil is not supported by the backend yet and its affordance is disabled.
     struct PanelIntents {
+        var clearMonitor: (() -> Void)?
+        var selectPorts: ((Int32, Int32) -> Void)?
+        var configureDevice: ((Int, Int, Bool) -> Void)?
+
         // Panel gestures (physical input on the mock, mirrored edit on real hardware).
         var moveFader: (_ index: Int, _ value: UInt8) -> Void
         var touchFader: ((_ index: Int, _ isTouched: Bool) -> Void)?
