@@ -44,7 +44,9 @@ This seed provides `XTouchCompactCore`, not the final app. Do not conflate a wor
 - `Quuikz/x-touch-compact-hui-translator`: no verified license; use documented behavior as reference, not source-code redistribution.
 - `lem120/xtouch-compact-fader-resolution`: not a published ready-to-install firmware; keep out of P0.
 
-## Known current limitations of this seed
+## Current status and known limitations
 
-- SwiftUI and CoreMIDI transport are implemented, with a local ad-hoc `.app`/ZIP workflow wired to FreeCM; persistence, MCP/OSC adapters, production signing/notarization and DAW-specific mappings remain pending.
-- Swift tests verify pure-value semantics. True hardware timings, channel settings and state ownership policies still require operator-attended validation.
+- P0 is complete in software: parameter/assignment engine, protected persistence, Mock Agent slots, localhost MCP, guarded OSC output, mock device, native app and local ad-hoc `.app`/ZIP/DMG packaging. See `docs/SOFTWARE_WORKFLOWS.md`; open follow-ups are listed in `TODO.md`.
+- P1 has not started. No behavior in this repository has been verified on a physical unit. Swift tests establish host policies against a deterministic mock, not firmware timing, channel settings or motor behavior.
+- The motor-safety policy depends on three unverified firmware assumptions (other-layer TX addresses after a physical A/B press, Program Change layer selection, and position reports during motor travel). They are listed with the HW checklist in `TODO.md` and must be checked before any wider output test.
+- Production signing/notarization, real external Agent processes, incoming OSC-to-motor feedback and DAW-specific mappings are not implemented.
