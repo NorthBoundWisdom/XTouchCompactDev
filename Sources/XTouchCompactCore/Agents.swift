@@ -1,42 +1,32 @@
+import AgentPlugin
+import AgentRemoteBinding
 import Foundation
 
-public enum AgentPhase: String, Codable, Sendable { case idle, running, waitingApproval, completed, interrupted }
+/// Read-only host presentation. The shared plugin owns every lifecycle transition.
+public typealias AgentPhase = AgentRunState
 public struct AgentSlot: Identifiable, Equatable, Sendable {
     public let id: Int
-    public var phase: AgentPhase = .idle
-    public var changedAt: TimeInterval = 0
-    public var approved = false
+    public let phase: AgentPhase
+    public let progress: Double
+    public let statusKey: String
+    public var primaryActionLabelKey: String {
+        switch phase { case .waitingApproval: "Approve"; case .queued, .running: "Interrupt"; default: "Start" }
+    }
+
     public var light: ButtonLight {
-        switch phase { case .running: .on; case .waitingApproval: .blink; default: .off }
+        IndicatorPresentation.light(.init(semantic: phase.indicatorSemantic))
+    }
+
+    public init(id: Int, phase: AgentPhase, progress: Double = 0, statusKey: String = "") {
+        self.id = id; self.phase = phase; self.progress = progress; self.statusKey = statusKey
     }
 }
 
-public struct MockAgents: Equatable, Sendable {
-    public private(set) var slots = (1 ... 8).map { AgentSlot(id: $0) }
-    public init() {}
-    public mutating func primary(_ slot: Int, now: TimeInterval) {
-        guard (1 ... 8).contains(slot), now.isFinite else { return }
-        let index = slot - 1
-        switch slots[index].phase {
-        case .idle, .completed, .interrupted:
-            slots[index].phase = .running; slots[index].approved = false
-        case .running: slots[index].phase = .interrupted
-        case .waitingApproval: slots[index].phase = .running; slots[index].approved = true
-        }
-        slots[index].changedAt = now
-    }
-
-    public mutating func advance(to now: TimeInterval) {
-        guard now.isFinite else { return }
-        for index in slots.indices where slots[index].phase == .running && now - slots[index].changedAt >= 2 {
-            slots[index].phase = slots[index].approved ? .completed : .waitingApproval
-            slots[index].changedAt = now
-        }
-    }
-}
-
-public extension CompactSession {
-    mutating func agentFeedback(_ agents: MockAgents) throws -> [MIDIMessage] {
-        try updateAgentLights(Dictionary(uniqueKeysWithValues: agents.slots.map { ($0.id, $0.light) }))
+public struct AgentPresentation: Equatable, Sendable {
+    public let slots: [AgentSlot]
+    public init(_ host: CompactPluginHost) {
+        slots = host.binding("agent", as: AgentRemoteBinding.self)?.plugin.slots.map {
+            AgentSlot(id: $0.id, phase: $0.state, progress: $0.progress, statusKey: $0.statusKey)
+        } ?? []
     }
 }

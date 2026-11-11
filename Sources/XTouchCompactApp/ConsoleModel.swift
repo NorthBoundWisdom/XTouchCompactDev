@@ -1,7 +1,9 @@
 #if os(macOS)
+    import AgentPlugin
     import AppKit
     import Foundation
     import Network
+    import SurfacePluginContracts
     import SwiftUI
     import UniformTypeIdentifiers
     import XTouchCompactCore
@@ -51,7 +53,10 @@
             }
         }
 
-        @Published private(set) var agents = MockAgents()
+        private(set) var plugins = try! CompactPluginHost.agent()
+        var agents: AgentPresentation {
+            AgentPresentation(plugins)
+        }
 
         let mcp = LocalMCPServer()
         let mcpPort: UInt16 = 8765
@@ -333,23 +338,40 @@
         }
 
         func agentPrimary(_ slot: Int, fromAgent: Bool = false) {
-            agentOutput = fromAgent
+            invokePluginAction(PluginConfigurationAdapter.agentAction(slot), origin: fromAgent ? .remote : .interface)
+        }
+
+        func invokePluginAction(_ ref: ActionReference, origin: InputOrigin) {
+            do { try performPluginAction(ref, origin: origin) }
+            catch { self.error = error }
+        }
+
+        func performPluginAction(_ ref: ActionReference, origin: InputOrigin) throws {
+            agentOutput = origin == .remote
             defer { agentOutput = false }
-            guard !(fromAgent && (1 ... 8).contains(slot) && agents.slots[slot - 1].phase == .waitingApproval) else { error = MCPError.denied; return }
-            var next = agents
-            next.primary(slot, now: runtimeTime)
-            guard next != agents else { return }
-            agents = next
-            apply { try $0.agentFeedback(next) }
+            var next = plugins
+            try next.handle(.invoke(ref, origin: origin), pluginID: ref.pluginID, at: runtimeTime)
+            try commitPlugins(next)
+        }
+
+        private func commitPlugins(_ next: CompactPluginHost) throws {
+            let changed = next.snapshots != plugins.snapshots
+            if changed {
+                objectWillChange.send()
+            }
+            plugins = next
+            guard changed else { return }
+            let indicators = next.feedbackIndicators
+            apply { try $0.updateIndicators(indicators) }
         }
 
         func advanceAgents() {
             tickOSC()
-            var next = agents
-            next.advance(to: runtimeTime)
-            guard next != agents else { return }
-            agents = next
-            apply { try $0.agentFeedback(next) }
+            do {
+                var next = plugins
+                try next.advance(to: runtimeTime)
+                try commitPlugins(next)
+            } catch { self.error = error }
         }
 
         func startRuntime() {
@@ -466,8 +488,8 @@
             do {
                 let update = try session.activateButton(index)
                 send(update.feedback)
-                for slot in update.agentIntents {
-                    agentPrimary(slot)
+                for ref in update.actionIntents {
+                    invokePluginAction(ref, origin: .interface)
                 }
                 updateBank()
             } catch { self.error = error }
@@ -541,8 +563,8 @@
                 } else if notifications.contains(where: { $0.id == "layer" }) {
                     notifications.removeAll { $0.id == "layer" }
                 }
-                for slot in update.agentIntents {
-                    agentPrimary(slot)
+                for ref in update.actionIntents {
+                    invokePluginAction(ref, origin: fromMock ? .interface : .hardware)
                 }
                 if !update.inputs.isEmpty {
                     updateBank()

@@ -18,7 +18,7 @@
         model.agentPrimary(1)
         clock.time += 3
         model.startRuntime() // No window or view exists in this test.
-        for _ in 0 ..< 100 where model.agents.slots[0].phase == .running {
+        for _ in 0 ..< 100 where model.agents.slots[0].phase != .waitingApproval {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(model.agents.slots[0].phase == .waitingApproval)

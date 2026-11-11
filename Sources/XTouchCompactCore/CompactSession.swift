@@ -1,4 +1,5 @@
 import Foundation
+import SurfacePluginContracts
 
 /// Two independent application banks. The two physical layers select which bank is exposed;
 /// motor travel on bank switch is intentionally opt-in, not a side effect of changing layer.
@@ -13,7 +14,7 @@ public struct CompactParameterBank: Equatable, Sendable {
 public struct CompactSessionUpdate: Equatable, Sendable {
     public var inputs: [CompactInput]
     public var feedback: [MIDIMessage]
-    public var agentIntents: [Int] = []
+    public var actionIntents: [ActionReference] = []
 
     public init(inputs: [CompactInput] = [], feedback: [MIDIMessage] = []) {
         self.inputs = inputs
@@ -26,10 +27,12 @@ public struct CompactSessionUpdate: Equatable, Sendable {
 public struct CompactSession: Sendable {
     public private(set) var state: CompactState
     public private(set) var parameters = try! ParameterEngine()
-    private var agentLights: [Int: ButtonLight] = [:]
+    private var indicators: [IndicatorID: IndicatorState] = [:]
+    private let indicatorBindings: [Int: IndicatorID]
     private var banks: [CompactLayer: CompactParameterBank] = [.a: .init(), .b: .init()]
 
-    public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) {
+    public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol, indicatorBindings: [Int: IndicatorID] = PluginConfigurationAdapter.agentIndicators) {
+        self.indicatorBindings = indicatorBindings
         state = CompactState(map: map, lightProtocol: lightProtocol)
         // Establish software-owned display intent even while disconnected. These fixed
         // indices and ring positions are valid by construction; no transport is involved.
@@ -90,8 +93,8 @@ public struct CompactSession: Sendable {
         }
     }
 
-    public mutating func updateAgentLights(_ lights: [Int: ButtonLight]) throws -> [MIDIMessage] {
-        agentLights = lights
+    public mutating func updateIndicators(_ states: [IndicatorID: IndicatorState]) throws -> [MIDIMessage] {
+        indicators = states
         return try syncVisibleNonMotorFeedback()
     }
 
@@ -196,7 +199,7 @@ public struct CompactSession: Sendable {
         let slot = try parameters.receive(CompactInput(control: .button(index), layer: state.layer, value: 127, isPressed: true))
         var update = try CompactSessionUpdate(feedback: synchronizeParameters(ids: Set(parameters.values.keys.filter { before[$0] != parameters.values[$0] })))
         if let slot {
-            update.agentIntents = [slot]
+            update.actionIntents = [slot]
         }
         return update
     }
@@ -228,7 +231,7 @@ public struct CompactSession: Sendable {
             case let .faderTouch(index):
                 let previous = parameters.values
                 if let slot = try parameters.receive(event) {
-                    result.agentIntents.append(slot)
+                    result.actionIntents.append(slot)
                 }
                 result.feedback += try synchronizeParameters(ids: Set(parameters.values.keys.filter { previous[$0] != parameters.values[$0] }))
                 if event.isPressed == false {
@@ -239,7 +242,7 @@ public struct CompactSession: Sendable {
             case .button:
                 let previous = parameters.values
                 if let slot = try parameters.receive(event) {
-                    result.agentIntents.append(slot)
+                    result.actionIntents.append(slot)
                 }
                 let changed = Set(parameters.values.keys.filter { previous[$0] != parameters.values[$0] })
                 result.feedback += try synchronizeParameters(ids: changed)
@@ -249,7 +252,7 @@ public struct CompactSession: Sendable {
             case .encoderPush:
                 let previous = parameters.values
                 if let slot = try parameters.receive(event) {
-                    result.agentIntents.append(slot)
+                    result.actionIntents.append(slot)
                 }
                 result.feedback += try synchronizeParameters(ids: Set(parameters.values.keys.filter { previous[$0] != parameters.values[$0] }))
             }
@@ -278,7 +281,7 @@ public struct CompactSession: Sendable {
         }
         for i in 1 ... 39 {
             let light: ButtonLight = switch parameters.assignment(.button(i), layer: state.layer) {
-            case let .agent(slot): agentLights[slot] ?? .off
+            case let .agent(slot): indicatorBindings[slot].flatMap { indicators[$0] }.map(IndicatorPresentation.light) ?? .off
             case .parameter: values.buttons[i - 1] ? .on : .off
             default: .off
             }

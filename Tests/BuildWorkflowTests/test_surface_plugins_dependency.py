@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from unittest.mock import patch
 
 from configs import surface_plugins_dependency as dependency
@@ -186,7 +186,8 @@ class SurfacePluginsDependencyTests(unittest.TestCase):
         with self.assertRaises(dependency.DependencyError):
             self.ensure()
         self.environment[dependency.LEGACY_SOURCE_ENV] = str(self.source)
-        self.assertTrue(self.ensure().is_dir())
+        self.environment.pop(dependency.SOURCE_ENV)
+        self.assertEqual(self.ensure(), self.root / dependency.CACHE_PATH)
 
     def test_parallel_initializers_share_one_atomic_materialization(self):
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -194,3 +195,22 @@ class SurfacePluginsDependencyTests(unittest.TestCase):
         self.assertEqual(outputs[0], outputs[1])
         self.assertEqual(self.git(outputs[0], "rev-parse", "HEAD"), self.first)
         self.assertFalse(list(outputs[0].parent.glob(".SurfacePlugins-stage-*")))
+
+    def test_user_changes_during_acquisition_are_preserved_in_place(self):
+        destination = self.ensure()
+        (self.source / "Package.swift").write_text("// second committed package\n")
+        self.spec["revision"] = self.commit("second")
+        self.write_lock()
+        materialize = dependency._materialize
+
+        def acquire(*args):
+            stage = materialize(*args)
+            (destination / "user.txt").write_text("changed while fetching")
+            return stage
+
+        with patch.object(dependency, "_materialize", side_effect=acquire):
+            with self.assertRaises(dependency.DependencyError):
+                self.ensure(update=True)
+        self.assertEqual((destination / "user.txt").read_text(), "changed while fetching")
+        self.assertEqual(self.git(destination, "rev-parse", "HEAD"), self.first)
+        self.assertFalse(list(destination.parent.glob(".SurfacePlugins-stage-*")))

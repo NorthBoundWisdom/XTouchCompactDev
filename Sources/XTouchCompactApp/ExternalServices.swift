@@ -2,6 +2,7 @@
     import AppKit
     import Foundation
     import Network
+    import SurfacePluginContracts
     import XTouchCompactCore
 
     extension ConsoleModel {
@@ -62,8 +63,9 @@
                       CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.rounded() == number.doubleValue,
                       (1 ... 8).contains(number.intValue) else { throw MCPError.denied }
                 let slot = number.intValue
-                guard agents.slots[slot - 1].phase != .waitingApproval else { throw MCPError.denied }
-                agentPrimary(slot, fromAgent: true); result = ["phase": agents.slots[slot - 1].phase.rawValue]
+                do { try performPluginAction(PluginConfigurationAdapter.agentAction(slot), origin: .remote) }
+                catch { throw MCPError.denied }
+                result = ["phase": agents.slots[slot - 1].phase.rawValue]
             default: throw MCPError.unknownTool
             }
             let text = try String(data: JSONSerialization.data(withJSONObject: result, options: .sortedKeys), encoding: .utf8)!

@@ -407,3 +407,6 @@
 "fan" = "fan";
 "spread" = "spread";
 "trim" = "trim";
+
+"queued" = "Queued";
+"error" = "Error";

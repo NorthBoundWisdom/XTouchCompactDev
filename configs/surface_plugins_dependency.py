@@ -130,6 +130,7 @@ def _owned(path: Path, environ: dict[str, str]) -> dict[str, object]:
     if (
         not isinstance(value, dict)
         or set(value) != {"schemaVersion", "remote", "revision"}
+        or type(value.get("schemaVersion")) is not int
         or value.get("schemaVersion") != 1
         or not isinstance(value.get("remote"), str)
         or not isinstance(value.get("revision"), str)
@@ -210,10 +211,14 @@ def ensure_dependency(
         backup = None
         try:
             if previous is not None:
+                if _owned(destination, environment) != previous:
+                    raise DependencyError("Dependency cache changed during acquisition; refusing replacement")
                 # Keep the previous clean materialization until the new one is ready.
                 backup = Path(tempfile.mkdtemp(prefix=".SurfacePlugins-previous-", dir=parent))
                 backup.rmdir()
                 destination.rename(backup)
+            elif destination.exists() or destination.is_symlink():
+                raise DependencyError("A dependency destination appeared during acquisition; preserving it")
             stage.rename(destination)
         except BaseException:
             if backup is not None and backup.exists() and not destination.exists():

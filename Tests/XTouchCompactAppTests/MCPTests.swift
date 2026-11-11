@@ -77,16 +77,16 @@
             ["method": "tools/call", "params": ["name": name, "arguments": args]]
         }
         _ = try model.routeMCP(call("agent_primary", ["slot": 1]))
-        #expect(model.agents.slots[0].phase == .running)
+        #expect(model.agents.slots[0].phase == .queued)
         _ = try model.routeMCP(call("agent_primary", ["slot": 1]))
         #expect(model.agents.slots[0].phase == .interrupted)
         _ = try model.routeMCP(call("agent_primary", ["slot": 1]))
-        time = 12; model.advanceAgents()
+        time = 12.7; model.advanceAgents()
         #expect(model.agents.slots[0].phase == .waitingApproval)
         #expect(throws: MCPError.self) { _ = try model.routeMCP(call("agent_primary", ["slot": 1])) }
         #expect(model.agents.slots[0].phase == .waitingApproval)
         model.agentPrimary(1) // Explicit user-interface approval remains supported.
-        #expect(model.agents.slots[0].approved)
+        #expect(model.agents.slots[0].statusKey == "agent.mock.approved")
         model.touchFader(1, isTouched: true)
         _ = try model.routeMCP(call("set_parameter", ["id": "a.Fader.1", "value": 90]))
         let response = try model.routeMCP(call("get_state"))

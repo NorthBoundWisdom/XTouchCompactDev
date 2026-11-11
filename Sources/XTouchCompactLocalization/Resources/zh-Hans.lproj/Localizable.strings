@@ -407,3 +407,6 @@
 "fan" = "Fan（扇形）";
 "spread" = "Spread（展开）";
 "trim" = "Trim（微调）";
+
+"queued" = "排队中";
+"error" = "错误";

@@ -1,18 +1,20 @@
+import AgentPlugin
+import SurfacePluginContracts
 import Testing
 @testable import XTouchCompactCore
 
 @Test func mockAgentsRequireApprovalAndEncodeBothLEDModes() throws {
-    var agents = MockAgents()
-    agents.primary(1, now: 10)
-    agents.advance(to: 11.9)
-    #expect(agents.slots[0].phase == .running)
-    agents.advance(to: 12)
-    #expect(agents.slots[0].phase == .waitingApproval)
-    agents.advance(to: 100)
-    #expect(agents.slots[0].phase == .waitingApproval)
+    var agents = try CompactPluginHost.agent()
+    try agents.primary(1, now: 10)
+    try agents.advance(to: 11.9)
+    #expect(AgentPresentation(agents).slots[0].phase == .running)
+    try agents.advance(to: 12.65)
+    #expect(AgentPresentation(agents).slots[0].phase == .waitingApproval)
+    try agents.advance(to: 100)
+    #expect(AgentPresentation(agents).slots[0].phase == .waitingApproval)
     for variant in [ButtonLightProtocol.manual, .observed114] {
         var session = try CompactSession(map: FactoryStandardMap(globalReceiveChannel: 3), lightProtocol: variant)
-        let feedback = try session.agentFeedback(agents)
+        let feedback = try session.updateIndicators(#require(agents.snapshots["agent"]?.indicators))
         #expect(feedback.contains(.noteOn(channel: 3, number: 0, velocity: variant.velocity(for: .blink))))
         #expect(!feedback.contains {
             if case let .controlChange(_, n, _) = $0 {
@@ -20,26 +22,27 @@ import Testing
             }; return false
         })
     }
-    agents.primary(1, now: 100)
-    agents.advance(to: 102)
-    #expect(agents.slots[0].phase == .completed)
-    agents.primary(2, now: 103)
-    agents.primary(2, now: 104)
-    #expect(agents.slots[1].phase == .interrupted)
+    try agents.primary(1, now: 100)
+    try agents.advance(to: 102.25)
+    #expect(AgentPresentation(agents).slots[0].phase == .completed)
+    try agents.primary(2, now: 103)
+    try agents.primary(2, now: 104)
+    #expect(AgentPresentation(agents).slots[1].phase == .interrupted)
 }
 
 @Test func actionLEDsNeverLatchAndAgentLightsSurviveBoundaries() throws {
     for variant in [ButtonLightProtocol.manual, .observed114] {
         var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: variant)
-        var agents = MockAgents()
-        agents.primary(1, now: 0)
-        #expect(try session.agentFeedback(agents).contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
-        agents.advance(to: 2)
-        _ = try session.agentFeedback(agents)
+        var agents = try CompactPluginHost.agent()
+        try agents.primary(1, now: 0)
+        try agents.advance(to: 0.45)
+        #expect(try session.updateIndicators(#require(agents.snapshots["agent"]?.indicators)).contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
+        try agents.advance(to: 2.65)
+        _ = try session.updateIndicators(#require(agents.snapshots["agent"]?.indicators))
         let approval = try session.receive([.noteOn(channel: 0, number: 16, velocity: 127)])
         #expect(!approval.feedback.contains(.noteOn(channel: 0, number: 0, velocity: 0)))
-        agents.primary(1, now: 2)
-        #expect(try session.agentFeedback(agents).contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
+        try agents.primary(1, now: 2.65)
+        #expect(try session.updateIndicators(#require(agents.snapshots["agent"]?.indicators)).contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
         for feedback in try [session.selectLayer(.b), session.connect(), session.reconfigure(map: FactoryStandardMap(), lightProtocol: variant), session.loadConfiguration(.neutral)] {
             #expect(feedback.contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
             #expect(!feedback.contains {
@@ -83,7 +86,7 @@ import Testing
         .init(control: .button(23), layer: .b, action: .agent(1)),
     ])
     _ = try session.loadConfiguration(config)
-    let a = try session.updateAgentLights([1: .blink])
+    let a = try session.updateIndicators([AgentPlugin.indicatorID(for: 1): .init(semantic: .attention)])
     #expect(a.contains(.noteOn(channel: 0, number: 11, velocity: 2)))
     #expect(!a.contains(.noteOn(channel: 0, number: 22, velocity: 2)))
     let b = try session.selectLayer(.b)
@@ -91,4 +94,10 @@ import Testing
     config.assignments.removeAll()
     let cleared = try session.loadConfiguration(config)
     #expect(cleared.contains(.noteOn(channel: 0, number: 22, velocity: 0)))
+}
+
+private extension CompactPluginHost {
+    mutating func primary(_ slot: Int, now: Double) throws {
+        try handle(.invoke(PluginConfigurationAdapter.agentAction(slot), origin: .interface), pluginID: AgentPlugin.pluginID, at: now)
+    }
 }

@@ -48,7 +48,7 @@ import Testing
     #expect(engine.values["p"] == 0)
     _ = try engine.receive(.init(control: .button(4), layer: .b, value: 127, isPressed: true))
     #expect(engine.values["p"] == 2)
-    #expect(try engine.receive(.init(control: .button(5), layer: .b, value: 127, isPressed: true)) == 8)
+    #expect(try engine.receive(.init(control: .button(5), layer: .b, value: 127, isPressed: true)) == PluginConfigurationAdapter.agentAction(8))
     #expect(throws: ParameterError.self) { _ = try engine.set("p", value: .nan) }
     var snapped = try ParameterEngine(configuration: SurfaceConfiguration(parameters: [definition], assignments: [
         .init(control: .button(1), layer: .a, action: .cycle("p", [1, 3])),

@@ -59,7 +59,7 @@
                                 Text("Agent \(slot.id)")
                                 Text(l.text(slot.phase.rawValue))
                                 Spacer()
-                                Button(l.text(slot.phase == .waitingApproval ? "Approve" : slot.phase == .running ? "Interrupt" : "Start")) {
+                                Button(l.text(slot.primaryActionLabelKey)) {
                                     intents.agentPrimary?(slot.id)
                                 }
                             }

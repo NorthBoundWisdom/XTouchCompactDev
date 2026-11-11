@@ -125,7 +125,9 @@ public enum ParameterError: Error, Equatable {
 public struct ParameterEngine: Sendable {
     public private(set) var configuration: SurfaceConfiguration
     public private(set) var values: [String: Double]
-    public init(configuration: SurfaceConfiguration = .neutral) throws {
+    private let actionBindings: [Int: ActionReference]
+    public init(configuration: SurfaceConfiguration = .neutral, actionBindings: [Int: ActionReference] = PluginConfigurationAdapter.agentActions) throws {
+        self.actionBindings = actionBindings
         try configuration.validate()
         self.configuration = configuration
         values = try Dictionary(uniqueKeysWithValues: configuration.parameters.map { try ($0.id, $0.normalized($0.defaultValue)) })
@@ -147,8 +149,8 @@ public struct ParameterEngine: Sendable {
         return normalized
     }
 
-    /// Returns an optional Agent slot intent; the host owns its lifecycle.
-    public mutating func receive(_ event: CompactInput) throws -> Int? {
+    /// Returns a neutral action intent; the host owns plugin lifecycle.
+    public mutating func receive(_ event: CompactInput) throws -> ActionReference? {
         guard let action = assignment(event.control, layer: event.layer) else { return nil }
         switch action {
         case let .parameter(id):
@@ -159,7 +161,10 @@ public struct ParameterEngine: Sendable {
             let value = event.isPressed == true ? ((values[id] ?? definition.minimum) == definition.minimum ? definition.maximum : definition.minimum)
                 : definition.minimum + Double(event.value) / 127 * (definition.maximum - definition.minimum)
             try set(id, value: value)
-        case let .agent(slot): return event.isPressed == true ? slot : nil
+        case let .agent(slot):
+            guard event.isPressed == true else { return nil }
+            guard let ref = actionBindings[slot] else { throw ParameterError.invalidAssignment }
+            return ref
         case let .resetGroup(group):
             guard event.isPressed == true else { return nil }
             for p in configuration.parameters where p.group == group {
