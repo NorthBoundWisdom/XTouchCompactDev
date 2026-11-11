@@ -8,6 +8,7 @@
         let intents: PanelIntents
         @EnvironmentObject private var language: LanguageSettings
         @State private var draft = SurfaceConfiguration.neutral
+        @State private var confirmsReset = false
         @State private var target = ""
         @State private var kind = "fader"
         @State private var first = 1
@@ -23,17 +24,24 @@
                 VStack(alignment: .leading) {
                     HStack {
                         Button(l.text("Edit configuration")) { draft = snapshot.configuration }
-                        Button(l.text("Apply configuration")) { intents.loadConfiguration?(draft) }
+                        Button(l.text("Apply configuration")) { intents.applyConfiguration?(draft) }
                         Menu(l.text("Load preset…")) {
-                            Button(l.text("Audio example")) { draft = .audioExample; intents.loadConfiguration?(draft) }
-                            Button(l.text("Neutral preset")) { draft = .neutral; intents.loadConfiguration?(draft) }
+                            Button(l.text("Audio example")) { intents.loadPreset?(.audioExample) }
+                            Button(l.text("Neutral preset")) { intents.loadPreset?(.neutral) }
                         }
-                        Button(l.text("Neutral preset")) { draft = .neutral; intents.loadConfiguration?(draft) }
+                        Button(l.text("Neutral preset")) { intents.loadPreset?(.neutral) }
                     }
                     HStack {
                         Button(l.text("Import configuration…")) { intents.importConfiguration?() }
                         Button(l.text("Export configuration…")) { intents.exportConfiguration?() }
                     }
+                    Button(l.text("Reset parameter values…")) { confirmsReset = true }
+                        .confirmationDialog(l.text("Reset all parameter values to defaults?"), isPresented: $confirmsReset) {
+                            Button(l.text("Reset values"), role: .destructive) { intents.resetParameters?() }
+                            Button(l.text("Cancel"), role: .cancel) {}
+                        }
+                    Text(l.text("Configuration edits preserve values; resetting defaults requires confirmation."))
+                        .font(.caption).foregroundStyle(.secondary)
                     Text(l.text("Loading a configuration does not recall motors."))
                         .font(.caption).foregroundStyle(.secondary)
                     Button(l.text("Add parameter")) {
@@ -91,6 +99,18 @@
             .preferredColorScheme(.dark)
             .background(Theme.background)
             .onAppear { draft = snapshot.configuration }
+            .onChange(of: snapshot.configuration) { _, configuration in draft = configuration }
+            .confirmationDialog(l.text("Reset all parameter values to defaults?"), isPresented: Binding(
+                get: { snapshot.pendingPreset != nil },
+                set: {
+                    if !$0 {
+                        intents.cancelLoadPreset?()
+                    }
+                }
+            ), presenting: snapshot.pendingPreset) { configuration in
+                Button(l.text("Reset values"), role: .destructive) { intents.confirmLoadPreset?(configuration) }
+                Button(l.text("Cancel"), role: .cancel) { intents.cancelLoadPreset?() }
+            }
         }
 
         private func assign() {
@@ -115,7 +135,7 @@
                 draft.assignments.removeAll { $0.control == control && $0.layer == snapshot.layer }
                 draft.assignments.append(.init(control: control, layer: snapshot.layer, action: selected))
             }
-            intents.loadConfiguration?(draft)
+            intents.applyConfiguration?(draft)
         }
     }
 #endif

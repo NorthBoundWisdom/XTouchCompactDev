@@ -87,3 +87,18 @@ Note On/Off number, not a velocity or a LED encoding. Invalid control indices
 return nil. These APIs describe the factory profile only; they do not send MIDI,
 learn a device preset or establish a position observation. The inspector reads
 the applied session profile rather than uncommitted channel edits.
+
+## Cross-layer safety evidence
+
+Factory TX CC and Note ranges identify the sending layer without relying on the
+host's selected bank. The decoder reports that actual address layer, including
+other-layer touch/release. A/B buttons still emit no dedicated layer-change event;
+subsequent factory TX addresses provide evidence of a mismatch. The state tracks
+physical touch independently of bank, and blocks motors during a known mismatch.
+Physical fader reports update observations/parameters but do not echo a quantized
+command to their own motor. Real-unit behavior remains subject to HW-6/HW-7.
+
+Explicit layer realignment can reassert the currently selected layer and discard
+old mismatch evidence without recalling motors or clearing touch. A disconnect
+while touched keeps the latch until a fresh touch/release cycle is received after
+reconnection; neither reassertion nor reconnect fabricates a release observation.

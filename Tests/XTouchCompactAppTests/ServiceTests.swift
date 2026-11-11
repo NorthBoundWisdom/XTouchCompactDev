@@ -96,7 +96,7 @@
         let model = ConsoleModel(startsMIDI: false, storageRoot: root, isolated: true)
         model.inputChoice = 123
         model.outputChoice = 456
-        model.loadConfiguration(.audioExample)
+        model.loadPreset(.audioExample)
         let store = ProtectedWorkspaceStore(directory: root)
         #expect(try store.load()?.profile.inputID == nil)
         model.selectPorts()
@@ -105,6 +105,7 @@
         #expect(restored.inputChoice == 123)
         #expect(restored.outputChoice == 456)
         #expect(restored.session.parameters.configuration == .audioExample)
+        #expect(restored.session.parameters.values["a.Fader.1"] == -60)
         try Data("bad file".utf8).write(to: store.url)
         let damaged = ConsoleModel(startsMIDI: false, storageRoot: root, isolated: true)
         #expect(damaged.notifications.contains { $0.id == "storage" && $0.persistent })

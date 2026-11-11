@@ -58,3 +58,40 @@ import Testing
     _ = try snapped.receive(.init(control: .button(1), layer: .a, value: 127, isPressed: true))
     #expect(snapped.values["p"] == 2)
 }
+
+@Test func editsAndBulkReassignmentPreserveValuesResetIsExplicit() throws {
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = try session.setParameter("a.Fader.1", value: 83)
+    var edited = session.parameters.configuration
+    edited.parameters[0].name = "Edited"
+    edited.assignments.append(.init(control: .button(20), layer: .a, action: .set("a.Fader.1", 42)))
+    #expect(try parameterMotors(session.loadConfiguration(edited)).isEmpty)
+    #expect(session.parameters.values["a.Fader.1"] == 83)
+    _ = try session.loadConfiguration(edited, resetValues: true)
+    #expect(session.parameters.values["a.Fader.1"] == 0)
+}
+
+private func parameterMotors(_ messages: [MIDIMessage]) -> [MIDIMessage] {
+    messages.filter {
+        if case let .controlChange(_, n, _) = $0 {
+            return (1 ... 9).contains(n)
+        }; return false
+    }
+}
+
+@Test func configurationEditsPreserveUnboundTargetsOnBothLayers() throws {
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    let unbound = SurfaceConfiguration(parameters: [], assignments: [])
+    _ = try session.loadConfiguration(unbound)
+    _ = try session.setFader(1, value: 37, layer: .a)
+    _ = try session.setEncoder(2, value: 69, layer: .a)
+    _ = try session.setFader(3, value: 88, layer: .b)
+    _ = try session.setEncoder(4, value: 91, layer: .b)
+    let a = session.bank(.a), b = session.bank(.b)
+    #expect(try parameterMotors(session.loadConfiguration(unbound)).isEmpty)
+    #expect(session.bank(.a) == a)
+    #expect(session.bank(.b) == b)
+    _ = try session.loadConfiguration(unbound, resetValues: true)
+    #expect(session.bank(.a).faders[0] == 0)
+    #expect(session.bank(.b).encoders[3] == 0)
+}

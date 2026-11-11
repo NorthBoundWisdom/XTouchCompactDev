@@ -7,6 +7,12 @@
     import XTouchCompactCore
     import XTouchCompactLocalization
 
+    private struct ErrorMessageBuilder {
+        func text(_ key: String, _ arguments: String..., localizedArgumentIndices: Set<Int> = []) -> LocalizedMessage {
+            LocalizedMessage(key: key, arguments: arguments, localizedArgumentIndices: localizedArgumentIndices)
+        }
+    }
+
     /// SwiftUI state is deliberately separate from the value-only/testable protocol session.
     @MainActor
     final class ConsoleModel: ObservableObject {
@@ -36,10 +42,6 @@
 
         @Published private(set) var agents = MockAgents()
 
-        var runtimeTime: TimeInterval {
-            now().timeIntervalSince1970
-        }
-
         let mcp = LocalMCPServer()
         let mcpPort: UInt16 = 8765
         let isolated: Bool
@@ -58,6 +60,10 @@
         var oscGate = try! MotionSafetyGate()
         let oscTransport: any OSCTransport
         private var runtimeTask: Task<Void, Never>?
+        var runtimeTime: TimeInterval {
+            now().timeIntervalSince1970
+        }
+
         private var agentOutput = false
 
         private let midi: any MIDIService
@@ -101,7 +107,7 @@
                         appliedOutputID = saved.profile.outputID
                         let map = try FactoryStandardMap(transmitChannel: UInt8(transmitChannel - 1), globalReceiveChannel: UInt8(feedbackChannel - 1))
                         _ = try session.reconfigure(map: map, lightProtocol: saved.profile.ledProtocol)
-                        _ = try session.loadConfiguration(saved.configuration)
+                        _ = try session.loadConfiguration(saved.configuration, resetValues: true)
                         mock = MockXTouchCompact(map: map, lightProtocol: saved.profile.ledProtocol)
                     }
                 } catch { storageFailure(error) }
@@ -173,15 +179,70 @@
             apply { try $0.agentFeedback(next) }
         }
 
-        func setParameter(_ id: String, value: Double, fromAgent: Bool = false) {
-            apply { try $0.setParameter(id, value: value, fromAgent: fromAgent) }
+        func startRuntime() {
+            guard runtimeTask == nil else { return }
+            runtimeTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .milliseconds(250)) } catch { break }
+                    self?.advanceAgents()
+                }
+            }
         }
 
-        func loadConfiguration(_ configuration: SurfaceConfiguration) {
+        func stopRuntime() {
+            runtimeTask?.cancel(); runtimeTask = nil; setOSCEnabled(false)
+        }
+
+        deinit { runtimeTask?.cancel() }
+
+        func setParameter(_ id: String, value: Double, fromAgent: Bool = false) {
+            do {
+                let messages = try session.setParameter(id, value: value, fromAgent: fromAgent)
+
+                if fromAgent {
+                    sendAgentFeedback(messages)
+                } else {
+                    send(messages); updateBank()
+                }
+            } catch { self.error = error }
+        }
+
+        @Published private(set) var pendingPreset: SurfaceConfiguration?
+
+        func loadPreset(_ configuration: SurfaceConfiguration) {
+            do {
+                try configuration.validate()
+                if session.hasNonDefaultValues {
+                    pendingPreset = configuration
+                } else {
+                    confirmLoadPreset(configuration)
+                }
+            } catch { self.error = error }
+        }
+
+        func cancelLoadPreset() {
+            pendingPreset = nil
+        }
+
+        /// Only the explicitly confirmed UI action calls this when a replacement is pending.
+        func confirmLoadPreset(_ configuration: SurfaceConfiguration) {
+            do {
+                let messages = try session.loadConfiguration(configuration, resetValues: true)
+                pendingPreset = nil
+                send(messages); updateBank(); saveWorkspace()
+            } catch { self.error = error }
+        }
+
+        func applyConfiguration(_ configuration: SurfaceConfiguration) {
             do {
                 let messages = try session.loadConfiguration(configuration)
                 send(messages); updateBank(); saveWorkspace()
             } catch { self.error = error }
+        }
+
+        func resetParameterValues() {
+            do { try send(session.loadConfiguration(session.parameters.configuration, resetValues: true)); updateBank(); saveWorkspace() }
+            catch { self.error = error }
         }
 
         func selectPorts() {
@@ -190,6 +251,10 @@
             midi.select(inputID: inputChoice == 0 ? nil : inputChoice,
                         outputID: outputChoice == 0 ? nil : outputChoice)
             saveWorkspace()
+        }
+
+        func realignCurrentLayer() {
+            setLayer(layer)
         }
 
         func setLayer(_ next: CompactLayer) {
@@ -327,6 +392,11 @@
             try sendAgentFeedback(session.setParameter(id, value: value, fromAgent: true))
         }
 
+        func notificationsForOSC(_ key: String) {
+            notifications.removeAll { $0.id == "osc" }
+            notifications.append(ConsoleNotification(id: "osc", level: .warning, message: LocalizedMessage(key), persistent: false))
+        }
+
         func serviceError(_ failure: any Error) {
             error = failure; mcpEnabled = mcp.isRunning
         }
@@ -341,41 +411,21 @@
             trimEvents()
         }
 
-        func realignCurrentLayer() {
-            setLayer(layer)
-        }
-
-        func startRuntime() {
-            guard runtimeTask == nil else { return }
-            runtimeTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    do { try await Task.sleep(for: .milliseconds(250)) } catch { break }
-                    self?.advanceAgents()
-                }
-            }
-        }
-
-        func stopRuntime() {
-            runtimeTask?.cancel(); runtimeTask = nil; setOSCEnabled(false)
-        }
-
-        func notificationsForOSC(_ key: String) {
-            notifications.removeAll { $0.id == "osc" }
-            notifications.append(ConsoleNotification(id: "osc", level: .warning, message: LocalizedMessage(key), persistent: false))
-        }
-
-        deinit { runtimeTask?.cancel() }
-
         private enum ConsoleError: Error { case noConnection }
 
         func errorText(using l: Localizer) -> String {
             guard let error else { return connection.error.map { l.text($0) } ?? "" }
+            return l.text(localizedError(error))
+        }
+
+        private func localizedError(_ error: any Error) -> LocalizedMessage {
+            let l = ErrorMessageBuilder()
             switch error {
             case is ConsoleError:
                 return l.text("No complete Compact MIDI input/output connection; select endpoints or connect hardware.")
             case let error as CompactMIDIError:
                 switch error {
-                case let .operation(operation, status): return l.text("%@ (OSStatus %@)", l.text(operation), String(status))
+                case let .operation(operation, status): return l.text("%@ (OSStatus %@)", operation, String(status), localizedArgumentIndices: [0])
                 case .outputUnavailable: return l.text("X-TOUCH COMPACT MIDI output not connected")
                 case .packetOverflow: return l.text("MIDI packet could not be built")
                 }
@@ -396,7 +446,7 @@
             case let error as CompactError:
                 switch error {
                 case let .invalidChannel(channel): return l.text("Invalid MIDI channel: %@", String(channel))
-                case let .invalidIndex(control, index): return l.text("Invalid %@ index: %@", l.text(control), String(index))
+                case let .invalidIndex(control, index): return l.text("Invalid %@ index: %@", control, String(index), localizedArgumentIndices: [0])
                 case let .invalidMIDIValue(value): return l.text("Invalid MIDI value: %@", String(value))
                 case let .invalidDisplayPosition(position): return l.text("Invalid ring position: %@", String(position))
                 }
@@ -421,9 +471,14 @@
         func importConfiguration(_ url: URL) {
             do {
                 let data = try Data(contentsOf: url)
+                guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      header["device"] as? String == "X-TOUCH COMPACT", header["version"] as? Int == 1
+                else {
+                    throw ParameterError.wrongDeviceOrVersion
+                }
                 let configuration = try JSONDecoder().decode(SurfaceConfiguration.self, from: data)
                 try configuration.validate()
-                loadConfiguration(configuration)
+                loadPreset(configuration)
             } catch { self.error = error }
         }
 
@@ -434,7 +489,7 @@
 
         private func storageFailure(_ failure: any Error) {
             notifications.removeAll { $0.id == "storage" }
-            notifications.append(ConsoleNotification(id: "storage", level: .error, message: LocalizedMessage("Storage error: %@", failure.localizedDescription), persistent: true))
+            notifications.append(ConsoleNotification(id: "storage", level: .error, message: localizedError(failure), persistent: true))
         }
 
         func retryWorkspaceSave() {
@@ -462,7 +517,6 @@
         func dismissNotification(_ id: String) {
             guard notifications.first(where: { $0.id == id })?.persistent != true else { return }
             if id == "runtime" {
-                guard !notifications.contains(where: { $0.id == "storage" }) else { return }
                 error = nil
             }
             notifications.removeAll { $0.id == id }

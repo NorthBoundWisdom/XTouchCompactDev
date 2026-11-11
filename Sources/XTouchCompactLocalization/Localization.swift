@@ -33,10 +33,16 @@ public enum AppLanguage: String, CaseIterable, Sendable {
 public struct LocalizedMessage: Equatable, Sendable {
     public let key: String
     public let arguments: [String]
+    public let localizedArgumentIndices: Set<Int>
+
+    public init(key: String, arguments: [String], localizedArgumentIndices: Set<Int> = []) {
+        self.key = key; self.arguments = arguments; self.localizedArgumentIndices = localizedArgumentIndices
+    }
 
     public init(_ key: String, _ arguments: String...) {
         self.key = key
         self.arguments = arguments
+        localizedArgumentIndices = []
     }
 }
 
@@ -51,7 +57,10 @@ public struct Localizer: Sendable {
     }
 
     public func text(_ message: LocalizedMessage) -> String {
-        render(message.key, arguments: message.arguments)
+        let arguments = message.arguments.enumerated().map { index, value in
+            message.localizedArgumentIndices.contains(index) ? render(value, arguments: []) : value
+        }
+        return render(message.key, arguments: arguments)
     }
 
     private func render(_ key: String, arguments: [String]) -> String {

@@ -42,34 +42,6 @@ public struct CompactSession: Sendable {
         return try [map.selectLayer(state.layer)] + syncVisibleNonMotorFeedback()
     }
 
-    public mutating func setSafetyTouch(_ index: Int, touched: Bool) {
-        state.setSafetyTouch(index, touched: touched)
-    }
-
-    public mutating func prepareTransportSwitch(inputTouches: Set<Int>) {
-        state.cancelMotorIntents(); state.setInputTouches(inputTouches)
-    }
-
-    public mutating func setInputTouches(_ touches: Set<Int>) {
-        state.setInputTouches(touches)
-    }
-
-    public mutating func updateAgentLights(_ lights: [Int: ButtonLight]) throws -> [MIDIMessage] {
-        agentLights = lights
-        return try syncVisibleNonMotorFeedback()
-    }
-
-    public mutating func activateButton(_ index: Int) throws -> CompactSessionUpdate {
-        guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
-        let before = parameters.values
-        let slot = try parameters.receive(CompactInput(control: .button(index), layer: state.layer, value: 127, isPressed: true))
-        var update = try CompactSessionUpdate(feedback: synchronizeParameters(ids: Set(parameters.values.keys.filter { before[$0] != parameters.values[$0] })))
-        if let slot {
-            update.agentIntents = [slot]
-        }
-        return update
-    }
-
     public func bank(_ layer: CompactLayer) -> CompactParameterBank {
         banks[layer] ?? .init()
     }
@@ -94,14 +66,60 @@ public struct CompactSession: Sendable {
         return try (1 ... 9).flatMap { try state.setFader($0, value: values[$0 - 1]) }
     }
 
+    public mutating func setSafetyTouch(_ index: Int, touched: Bool) {
+        state.setSafetyTouch(index, touched: touched)
+    }
+
+    public mutating func prepareTransportSwitch(inputTouches: Set<Int>) {
+        state.cancelMotorIntents(); state.setInputTouches(inputTouches)
+    }
+
+    public mutating func setInputTouches(_ touches: Set<Int>) {
+        state.setInputTouches(touches)
+    }
+
+    public mutating func updateAgentLights(_ lights: [Int: ButtonLight]) throws -> [MIDIMessage] {
+        agentLights = lights
+        return try syncVisibleNonMotorFeedback()
+    }
+
     public mutating func setParameter(_ id: String, value: Double, fromAgent: Bool = false) throws -> [MIDIMessage] {
         try parameters.set(id, value: value, fromAgent: fromAgent)
         return try synchronizeParameters(ids: [id])
     }
 
-    public mutating func loadConfiguration(_ configuration: SurfaceConfiguration) throws -> [MIDIMessage] {
-        let next = try ParameterEngine(configuration: configuration)
+    public var hasNonDefaultValues: Bool {
+        for definition in parameters.configuration.parameters {
+            if let value = parameters.values[definition.id], value != (try? definition.normalized(definition.defaultValue)) {
+                return true
+            }
+        }
+        for layer in CompactLayer.allCases {
+            for index in 1 ... 9 where parameters.assignment(.fader(index), layer: layer) == nil {
+                if bank(layer).faders[index - 1] != 0 {
+                    return true
+                }
+            }
+            for index in 1 ... 16 where parameters.assignment(.encoder(index), layer: layer) == nil {
+                if bank(layer).encoders[index - 1] != 0 {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    public mutating func loadConfiguration(_ configuration: SurfaceConfiguration, resetValues: Bool = false) throws -> [MIDIMessage] {
+        var next = try ParameterEngine(configuration: configuration)
+        if !resetValues {
+            for (id, value) in parameters.values where next.definition(id) != nil {
+                try next.set(id, value: value)
+            }
+        }
         parameters = next
+        if resetValues {
+            banks = [.a: .init(), .b: .init()]
+        }
         // Loading a preset is not permission to move motors.
         state = state.reconfigured(map: state.map, lightProtocol: state.lightProtocol)
         return try synchronizeParameters(includeMotors: false) + syncVisibleNonMotorFeedback()
@@ -158,6 +176,17 @@ public struct CompactSession: Sendable {
         banks[target, default: .init()].encoders[index - 1] = value
         guard target == state.layer else { return [] }
         return try state.setRing(index, display: .position(Self.ringSegment(for: value)))
+    }
+
+    public mutating func activateButton(_ index: Int) throws -> CompactSessionUpdate {
+        guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
+        let before = parameters.values
+        let slot = try parameters.receive(CompactInput(control: .button(index), layer: state.layer, value: 127, isPressed: true))
+        var update = try CompactSessionUpdate(feedback: synchronizeParameters(ids: Set(parameters.values.keys.filter { before[$0] != parameters.values[$0] })))
+        if let slot {
+            update.agentIntents = [slot]
+        }
+        return update
     }
 
     /// A MIDI callback may contain many events. Apply all of them before publishing UI state.

@@ -75,6 +75,7 @@
         var faders: [FaderPresentation]
         var encoders: [EncoderPresentation]
         var buttons: [ButtonPresentation]
+        var pendingPreset: SurfaceConfiguration?
         var configuration: SurfaceConfiguration = .neutral
         var mcpPort: UInt16 = 8765
         var mcpEnabled = false
@@ -126,9 +127,13 @@
         var agentPrimary: ((Int) -> Void)?
         var importConfiguration: (() -> Void)?
         var exportConfiguration: (() -> Void)?
-        var setParameter: ((String, Double) -> Void)?
-        var loadConfiguration: ((SurfaceConfiguration) -> Void)?
         var realignLayer: (() -> Void)?
+        var resetParameters: (() -> Void)?
+        var setParameter: ((String, Double) -> Void)?
+        var applyConfiguration: ((SurfaceConfiguration) -> Void)?
+        var loadPreset: ((SurfaceConfiguration) -> Void)?
+        var confirmLoadPreset: ((SurfaceConfiguration) -> Void)?
+        var cancelLoadPreset: (() -> Void)?
         var addressing: ((_ control: CompactControl, _ layer: CompactLayer) -> ControlAddressing?)?
     }
 

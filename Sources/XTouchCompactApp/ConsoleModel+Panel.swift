@@ -47,6 +47,7 @@
                     guard let light = session.state.desiredButton(index) else { return nil }
                     return ButtonPresentation(index: index, light: light, isDown: session.state.isButtonDown(index))
                 },
+                pendingPreset: pendingPreset,
                 configuration: session.parameters.configuration,
                 mcpPort: mcpPort,
                 mcpEnabled: mcpEnabled, mcpWritesAllowed: mcpWritesAllowed,
@@ -81,9 +82,13 @@
                 agentPrimary: { [weak self] slot in self?.agentPrimary(slot) },
                 importConfiguration: { [weak self] in self?.chooseImportConfiguration() },
                 exportConfiguration: { [weak self] in self?.chooseExportConfiguration() },
-                setParameter: { [weak self] id, value in self?.setParameter(id, value: value) },
-                loadConfiguration: { [weak self] config in self?.loadConfiguration(config) },
                 realignLayer: { [weak self] in self?.realignCurrentLayer() },
+                resetParameters: { [weak self] in self?.resetParameterValues() },
+                setParameter: { [weak self] id, value in self?.setParameter(id, value: value) },
+                applyConfiguration: { [weak self] config in self?.applyConfiguration(config) },
+                loadPreset: { [weak self] config in self?.loadPreset(config) },
+                confirmLoadPreset: { [weak self] config in self?.confirmLoadPreset(config) },
+                cancelLoadPreset: { [weak self] in self?.cancelLoadPreset() },
                 addressing: { [weak self] control, layer in
                     guard let map = self?.session.state.map,
                           let input = map.inputAddress(for: control, layer: layer) else { return nil }

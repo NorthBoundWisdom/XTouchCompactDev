@@ -36,8 +36,8 @@ public struct ProtectedWorkspaceStore {
     }
 
     public func load() throws -> SavedWorkspace? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         try rejectSymlinks()
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
         do {
             let workspace = try JSONDecoder().decode(SavedWorkspace.self, from: data)

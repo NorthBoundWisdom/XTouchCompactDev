@@ -226,12 +226,14 @@
 "ignored" = "已忽略";
 "Encoder push" = "编码器按下";
 "Touch" = "触摸";
-
 "Device layer differs from the host; motor output is blocked." = "设备层与主机不一致；已阻止电机输出。";
-"Realign current layer" = "重新对齐当前层";
-"Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset." = "重发当前层并清除旧的层不一致记录；不召回电机，也不清除触摸状态。";
-
 "OSC output stopped: destination or parameter is invalid." = "OSC 输出已停止：目的地或参数无效。";
 "OSC output stopped: transport failure." = "OSC 输出已停止：传输失败。";
+"Reset parameter values\u2026" = "重置参数值…";
+"Reset all parameter values to defaults?" = "将所有参数值重置为默认值？";
+"Reset values" = "重置数值";
+"Configuration edits preserve values; resetting defaults requires confirmation." = "编辑配置保留已有值；重置默认值需明确确认。";
 "OSC output stopped: scheduler heartbeat expired or safety gate tripped." = "OSC 输出已停止：排程心跳超时或安全门已跳闸。";
 "OSC keeps stationary values active. A scheduler pause over 1 s stops output." = "OSC 可持续输出静止值；排程停顿超过 1 秒才停止输出。";
+"Realign current layer" = "重新对齐当前层";
+"Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset." = "重发当前层并清除旧的层不一致记录；不召回电机，也不清除触摸状态。";

@@ -193,6 +193,7 @@ public struct CompactState: Sendable {
         touchedFaders = touches
     }
 
+    /// A physical fader report owns its own position. Parameter snapping must never echo a motor command.
     public mutating func acceptPhysicalFader(_ index: Int) {
         desiredFader.removeValue(forKey: index)
         pendingMotor.remove(index)
