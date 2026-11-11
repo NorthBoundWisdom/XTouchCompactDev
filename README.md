@@ -2,11 +2,12 @@
 
 Native Swift 6 / SwiftUI / CoreMIDI control surface for the **Behringer X-TOUCH COMPACT**. A sibling of [BCR2000Dev](https://github.com/NorthBoundWisdom/BCR2000Dev), sharing its value-oriented MIDI and testable hardware-session architecture, but designed for the Compact's motorized, touch-sensitive faders and asymmetric RX/TX mapping.
 
-## Current stage — P0 software complete, hardware bring-up not started
+## Current stage — P0 software complete, passive hardware bring-up in progress
 
 - **Implemented and locally tested without hardware:** factory Standard MIDI protocol core with distinct input/feedback addressing and layer-independent decoding; 9 motorized faders, 9 touch sensors, 16 encoders and pushes, 39 buttons; touch ownership across layers, transports and reconnects; deferred motor reconciliation and a layer-mismatch motor interlock; typed parameters and per-layer control assignments; protected configuration persistence; eight Mock Agent slots; opt-in localhost MCP; guarded OSC output; deterministic mock device and Swift tests.
 - **macOS app:** SwiftUI virtual panel laid out like the device, control inspector, and workspaces for values, parameters, Agents, MIDI monitor and connection; Mock/Hardware modes; separate TX and Global RX channel configuration; manual LED velocity variant; explicit motor recall with confirmation; English, Simplified Chinese and Traditional Chinese.
-- **Not verified:** anything on a physical unit. The panel's button/encoder numbering, LED velocity encoding, ring styles, physical A/B behavior and motor behavior are assumptions until the hardware checklist in [TODO.md](TODO.md) is done. Remote CI covers build, tests, packaging and startup smoke on Linux and macOS; it does not exercise hardware.
+- **Physical input observed:** the operator accepted the Hardware observation workspace's response. A reviewed recording contains 56 Layer A touch/release messages for eight faders on TX channel 1, with no output records. See the [scoped session result](docs/HARDWARE_SESSION_2026-11-11.md).
+- **Still unverified:** complete input coverage and physical layout, LED velocity encoding, ring styles, cross-layer behavior and motor behavior. These remain open in [TODO.md](TODO.md). Remote CI covers build, tests, packaging and startup smoke on Linux and macOS; it does not exercise hardware.
 - **Not implemented:** Mackie Control mode, firmware replacement, measured 14-bit fader resolution, real external Agent processes, incoming OSC motor feedback, production signing and notarization.
 
 ## Test and run
@@ -45,6 +46,13 @@ data remain unchanged. Unsupported system languages fall back to English.
 ## Design
 
 `XTouchCompactCore` has no CoreMIDI/SwiftUI dependencies. `FactoryStandardMap` handles protocol and factory addressing. `CompactState` owns the host-desired LED/motor states and touch policies. `CompactSession` routes device events through the parameter engine into two per-layer banks, while `CoreMIDIService` owns native transport and `ConsoleModel` routes UI inputs. This deliberately avoids binding physical input Note numbers to the same output Note numbers.
+
+`CompactInputObserver` accumulates passive physical input in the pure core, retaining
+last reported state and coverage independently of its bounded history. Presentation
+types stay in `PanelPresentation.swift`; `ConsoleModel+Panel.swift` projects one
+observation snapshot and converts zero-based protocol channels to display numbers.
+Choose **Hardware observation** to view touches, releases and movements with MIDI
+output locked. This path tracks safety state without executing parameter or Agent actions.
 
 Views render a `PanelSnapshot` and emit `PanelIntents` (`PanelPresentation.swift`); `ConsoleModel+Panel.swift` is the single adapter between the UI and the session. Mock panel gestures produce factory TX messages through `MockXTouchCompact`, traverse the session, and consume RX feedback; inspector writes remain software commands. Snapshots expose touch, deferred motors, held controls and host-desired lights. Observed fader positions come only from actual input reports, never from motor commands. Unreported positions, ring styles and labels stay nil. The inspector describes factory TX and Global RX addresses from the applied session mapping, including separate encoder ring display/style addresses. The panel's button and encoder numbering by position is an assumption to be checked on hardware.
 

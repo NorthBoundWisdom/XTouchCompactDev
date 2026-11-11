@@ -1,8 +1,9 @@
 # X-TOUCH COMPACT physical bring-up record
 
 **Physical bring-up is in progress:** see [2026-11-11 session](HARDWARE_SESSION_2026-11-11.md).
-USB/CoreMIDI identity and front-panel mode indication have been recorded; no
-control, LED or motor test has been signed off. The fields below remain the full
+USB/CoreMIDI identity, Standard indication, partial Layer A touch input and the
+operator's observation-UI acceptance have been recorded. Full control coverage,
+LED and motor tests remain open. The fields below remain the full
 acceptance template. Factory Standard MIDI mode only; no firmware
 flashing, editor preset modifications or Mackie Control testing.
 

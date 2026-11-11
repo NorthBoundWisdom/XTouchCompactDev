@@ -1,7 +1,8 @@
 # Physical bring-up session — 2026-11-11
 
-Status: **in progress; input characterization only**. No LED/ring/motor output
-has been issued by the inspection tools. HW-1…HW-7 are not signed off.
+Status: **observation UI accepted by the operator; protocol bring-up remains
+partial**. No LED/ring/motor output has been issued by the inspection tools.
+HW-1…HW-7 are not signed off as complete.
 
 ## Environment and device identity
 
@@ -14,8 +15,9 @@ has been issued by the inspection tools. HW-1…HW-7 are not signed off.
 - USB `bcdDevice`: `0x0200`. This descriptor is **not a verified firmware version**.
 - USB serial-string descriptor: `1.0.1`. Whether this is a unique serial number
   or another device-provided string is unverified; no chassis serial recorded.
-- Firmware version: unknown. Configured Global RX channel: unknown. TX channel:
-  awaiting captured input. No hardware profile has been rewritten.
+- Firmware version: unknown. Actual configured Global RX channel: unknown. Captured
+  touch inputs use TX channel 1, decoded from their status bytes; this establishes
+  no RX-channel value. No hardware profile has been rewritten.
 
 ## Operator observations and setup
 
@@ -59,8 +61,10 @@ Firmware and Global RX remain unknown; the capture makes no RX-channel inference
 
 | Item | Actual result | Status |
 | --- | --- | --- |
-| HW-1 identity | USB and CoreMIDI names/IDs above; operator-confirmed Standard indication | Partial; firmware and both channels pending |
-| HW-7 layers and cross-layer touch release | Awaiting physical input | Pending |
+| Observation UI | Operator reported “全部生效，看起来没问题” after using the physical device | Visual acceptance passed for this workspace |
+| HW-1 identity | USB/CoreMIDI identity, Standard indication, captured touch TX channel 1 | Partial; firmware and actual Global RX pending |
+| Layer A touch input | 56 touch/release messages for F1–F5 and F7–F9, values 127/0 | Captured subset matches factory touch addresses |
+| HW-7 layers and cross-layer touch release | No Layer B or cross-layer release in the reviewed input prefix | Pending |
 | HW-2 buttons | Awaiting physical input | Pending |
 | HW-3 encoders and pushes | Awaiting physical input | Pending |
 | HW-5 LEDs and Program Change | No output issued | Pending Stage 1 review |
@@ -93,9 +97,44 @@ The native app creates normal CoreMIDI transport ports, with all hardware MIDI
 output blocked by the observation-mode send gate. Its physical-input path updates
 observations and safety state without executing parameter assignments or Agent
 actions. The native input capture uses the app's existing JSONL schema v1, not the
-temporary diagnostic schema. It was started successfully; physical UI response
-is awaiting operator observation. Synthetic previews and automated tests are
-not physical results.
+temporary diagnostic schema. The operator subsequently confirmed that the
+workspace responded correctly. Synthetic previews and automated tests are not
+physical results.
+
+## Accepted UI and reviewed input evidence
+
+The accepted observation build corresponds to `ea812d5`. The operator's exact
+report was **“全部生效，看起来没问题”**. This is acceptance of visible observation
+feedback, not sign-off of unperformed LED, ring or motor output tests, and does
+not close the separate N5 console mouse-acceptance cases.
+
+At the 20:13 local review, the live native capture contained 56 physical input
+events from 20:04:31.387 to 20:05:00.812 local (12:04:31.387–12:05:00.812 UTC).
+Every event used MIDI status `B0`, the captured layer was A, and values were
+127 for touch and 0 for release. There were **zero OUT records** in this prefix.
+
+| Decoded touch | Input CC | Touch count | Release count |
+| --- | --- | --- | --- |
+| F1 | 101 | 3 | 3 |
+| F2 | 102 | 3 | 3 |
+| F3 | 103 | 5 | 5 |
+| F4 | 104 | 2 | 2 |
+| F5 | 105 | 1 | 1 |
+| F7 | 107 | 2 | 2 |
+| F8 | 108 | 1 | 1 |
+| F9 | 109 | 11 | 11 |
+
+F6, fader-position reports, encoder rotation/push, button notes, Layer B and
+cross-layer releases are not present in this reviewed prefix. Absence from this
+capture is not evidence of a defective control; those checks remain open.
+
+The capture remains live, with no end marker at review time. A frozen local
+copy of its complete-line prefix is `build/hardware-bringup/reviewed-ui-input-prefix.jsonl`
+(25,104 bytes), with summary `build/hardware-bringup/reviewed-ui-input-summary.json`.
+Prefix SHA-256:
+`4b9d08b34f010dde9ca2fa3d32dfef748366cbcde9e044bd74f9a068de78e1e2`.
+This fingerprint identifies the reviewed prefix only; it does not make the whole
+recording complete. No running operator app was stopped to produce the review.
 
 ## Software checks during preparation
 
@@ -110,3 +149,11 @@ build/signature verification and offscreen inspection of the three Chinese
 observation previews. The feature's new tests cover all controls in both layers,
 touch/release, host/physical position separation, wrong-channel raw input, output
 locking, reconnect, reset preserving touch safety and input-only JSONL evidence.
+
+Follow-up refactor `343a354` moved the input accumulator into the pure Core and
+centralized presentation mapping without changing the accepted UI. Local checks
+passed 51 Core, 44 App and 3 localization tests, build, SwiftFormat/Ruff, isolated
+waiting/touch/release previews and startup smoke. The new Core tests are runnable
+on Linux, but this refactor has not yet been pushed through Linux CI. The
+operator's accepted `ea812d5` app and live recording were left running; these
+software checks are separate from the physical results above.

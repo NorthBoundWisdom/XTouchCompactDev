@@ -65,7 +65,21 @@ Physical: Fader 1, Layer B
 
 Using one symmetric `MIDIControlID` for both `IN` and `OUT` would update the wrong button or fail to move the correct motor.
 
-## Mock test boundaries
+## Physical evidence and simulation boundaries
+
+### Partial physical evidence — 2026-11-11
+
+The operator accepted the native observation workspace's visible response. Its
+reviewed capture prefix contains 56 Layer A touch/release inputs on TX channel 1:
+CC 101–105 and 107–109, touch 127 / release 0. These match the documented touch
+subset; CC 106 and every Layer B input remain unverified in this capture. No
+position, encoder, button-note or output message is present in the prefix.
+Firmware and actual Global RX are still unknown. See the
+[session record and evidence fingerprint](HARDWARE_SESSION_2026-11-11.md).
+This limited observation does not verify the remaining TX/RX tables or the three
+motor-safety firmware assumptions.
+
+### Simulation boundaries
 
 `MockXTouchCompact` deterministically models the tables above with separate configured TX and Global RX channels. Motors arrive immediately without emitting a position acknowledgement; touched motors reject commands and increment a diagnostic counter. Physical layer selection emits no messages and leaves faders in place. Encoders retain a separate local absolute value: RX ring commands change illumination, not that value.
 

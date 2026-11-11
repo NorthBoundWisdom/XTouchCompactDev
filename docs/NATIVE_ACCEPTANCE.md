@@ -1,9 +1,12 @@
 # Native mouse acceptance (N5)
 
-Status on 2026-11-11: **not completed**. Code-level tests pass, but they do not
-substitute for mouse/visual acceptance. No hardware has been used.
+Status on 2026-11-11: **the five N5 cases below remain incomplete**. Code-level
+tests pass, but they do not substitute for these mouse/visual acceptance cases.
+The separate hardware-observation workspace has since been accepted by the
+operator on a physical unit; see [the session record](HARDWARE_SESSION_2026-11-11.md).
+That confirmation covers visible input feedback, not the five console actions below.
 
-The native window automation surface returned `cgWindowNotFound` for both the
+The earlier native window automation surface returned `cgWindowNotFound` for both the
 isolated release instance and an independently identified acceptance bundle.
 A separate installed-app access attempt timed out and reset the UI tool session.
 The isolated processes were stopped; the pre-existing user app was left running.

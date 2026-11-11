@@ -176,6 +176,12 @@ existing errors; user names, MIDI data and file paths remain literal.
 
 ### Visual hardware observation
 
+The pure-core `CompactInputObserver` owns accumulated input facts and bounded
+history, with no transport or presentation dependency. `PanelPresentation.swift`
+owns observation display types; the single adapter creates a consistent snapshot,
+converts core channel numbers for display and selects the current input layer's
+encoder readings. Views render those values and their coverage rows directly.
+
 Choose **Hardware observation** in the console header. The dedicated workspace
 switches to physical input with listening locked on; returning to the console
 keeps listening on. It never recalls motors or sends a layer assertion. Incoming

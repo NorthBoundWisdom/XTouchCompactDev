@@ -40,10 +40,12 @@
   本机 MCP 端点、受限 OSC 输出、三语界面；运行时排程由模型持有，不依赖窗口。
 - 契约：视图只读 `PanelSnapshot`、只发 `PanelIntents`。未获得位置输入时 `observed` 为 `nil`，
   未发送过灯环样式时 `style` 为 `nil`，未绑定控件的 `label` / `detail` 为 `nil`。
-- 最近一次本地验证：macOS Swift 6.4.2 上 `swift test --jobs 2`（47 项 Core + 37 项 App + 3 项本地化）、
-  `swift build`、13 项工作流测试通过。原生打包、签名与启动冒烟通过；五张隔离预览已生成。
+- 最近一次本地验证：macOS Swift 6.4.2 上 `swift test --build-path build/swiftpm --jobs 2`
+  （51 项 Core + 44 项 App + 3 项本地化）、`swift build` 与 SwiftFormat/Ruff 检查通过。
+  此前原生打包、签名、启动冒烟、13 项工作流测试通过；观察页面三种隔离预览已生成并检查。
   [远端运行 43007338487](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43007338487)
-  的 Linux、旧 macOS 和 Xcode 26.6 / Swift 6.3.3 新 macOS 三条作业均通过；鼠标目视验收仍因原生窗口不可访问而未完成。
+  的 Linux、旧 macOS 和 Xcode 26.6 / Swift 6.3.3 新 macOS 三条作业均通过（未包含尚未推送的观察功能与重构）。
+  用户已确认观察页面的实机 UI 响应；N5 的五项控制台鼠标验收仍单列待完成。
 - 下一步见文末“后续待办”：阶段一（剩余 N5 鼠标验收）→ 阶段二（实机）→ 阶段三（功能方向）。
 
 ## 后端任务（按顺序）
@@ -259,12 +261,30 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 - [x] 按用户要求增加前端“硬件观察”页面：触摸/松手高亮、实测位置跟随、旋钮/按键输入、最近操作与覆盖计数；
   未报告值保持未知，输入层与主机层分开；锁定只听不发，不执行参数分配或 Agent 操作。
-  `--hardware-observe` 可直接启动并选择 JSONL 录制路径。三种原生离屏预览已检查，真实触摸响应待用户目视确认。
+  `--hardware-observe` 可直接启动并选择 JSONL 录制路径。三种原生离屏预览已检查；用户已确认实机 UI 响应正常，
+  56 条真实触摸/松手输入及其覆盖范围已记录，未发送输出。此确认不替代 HW 全部项目及 N5 五项验收。
   此次前端契约和观察适配由同一任务按用户明确要求完成；没有更改硬件配置。
 - [ ] HW-1…HW-7（见上，按三个阶段的顺序），每项结果记到 `docs/HARDWARE_BRINGUP.md`。
 - [ ] 三条固件假设逐条写明成立或不成立；不成立的先改 Core 并补测试，再继续输出测试。
 - [ ] F7 按 HW-2…HW-5 的结果修正面板；`docs/MIDI_PROTOCOL.md` 把“未实测”的标注改成实测结论。
 - [ ] 实机通过后更新 README 的阶段说明；是否打版本 tag 由用户决定。
+
+### 接下来的提交拆分
+
+本轮整理按两项本地提交交付：`343a354` 纯状态与显示契约的重构，以及实机证据/后续计划文档。
+`CompactInputObserver` 已移到 Core；前端契约集中在 `PanelPresentation.swift`，单一适配层负责状态映射和通道显示换算。
+现有观察界面及只听不发策略保持不变。后续每行独立提交，功能未实施前不勾选：
+
+| 顺序 | 建议提交 | 范围与验收 | 前置 |
+| --- | --- | --- | --- |
+| C1 | `fix(capture): preserve existing evidence and record session metadata` | 当前录制初始化会覆盖同名文件；改为拒绝覆盖，记录应用提交、端口、已配置通道与未知硬件字段。测试已存在文件、写入失败、正常结束及缺失结束标记；原始证据不进 Git | 可直接做，无需硬件输出 |
+| C2 | `feat(bringup): add per-layer input coverage review` | A/B 分层显示位置范围、触摸/松手配对、编码器/按键覆盖；导出带指纹的检查摘要。补 F6、全部位置、16 编码器及按下、39 按键、跨层松手证据；覆盖计数不自动等同验收通过 | C1；操作员在观察页面操作设备 |
+| C3 | `feat(bringup): add explicit nonmotor test controls` | 只提供单个按键 off/on/blink、单个灯环及显式层断言；两种 LED 编码分开，保存实际响应。白名单测试保证不产生推子电机指令 | Stage 1 记录审查完成；独立确认 Global RX，不能从 TX 推断 |
+| C4 | `feat(bringup): add single-fader motor acceptance` | 单推子小步、触摸阻断与松手一次对位、层不一致、重连和无回路验收；需要新鲜实测位置与明确操作，不自动移动、不使用全体归位 | Stage 2 及固件假设 1/2 已成立，再由操作员执行 Stage 3 |
+| C5 | `docs: sign off hardware bringup with scoped evidence` | 按证据更新 HW-1…HW-7、F7、协议与 README；未测内容继续保留未知。N5 五项单独填写实际结果 | 对应现场项目完成，不按代码测试推定通过 |
+
+后续需要推送时先核对远端 main，保持正常提交历史，观察现有 Linux/两条 macOS CI；没有新需求就不修改 CI 配置。
+本轮不发布版本，不改硬件档案，不提前实现 D1–D5；实机结论齐备后再确认参数数值持久化与真实 Agent 的产品方向。
 
 ### 阶段三：实机验证之后的功能方向
 
