@@ -48,6 +48,7 @@
                     return ButtonPresentation(index: index, light: light, isDown: session.state.isButtonDown(index))
                 },
                 configuration: session.parameters.configuration,
+                mcpPort: mcpPort,
                 mcpEnabled: mcpEnabled, mcpWritesAllowed: mcpWritesAllowed,
                 oscEnabled: oscEnabled, oscHost: oscHost, oscPort: oscPort,
                 oscParameter: oscParameter, oscOutput: oscOutput,

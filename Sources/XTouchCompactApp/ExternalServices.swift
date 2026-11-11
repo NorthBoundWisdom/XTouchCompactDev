@@ -16,7 +16,7 @@
                     return try routeMCP(request)
                 }
                 mcp.onError = { [weak self] error in self?.serviceError(error) }
-                try mcp.start(token: token)
+                try mcp.start(port: mcpPort, token: token)
                 mcpEnabled = true
             } catch { serviceError(error) }
         }
@@ -32,13 +32,15 @@
             let tools: [[String: Any]] = [
                 ["name": "get_state", "description": "Read active layer, parameters and physical touch state.", "inputSchema": ["type": "object", "properties": [:], "additionalProperties": false]],
                 ["name": "set_parameter", "description": "Write a parameter; touched faders defer motors until release.", "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "value": ["type": "number"]], "required": ["id", "value"], "additionalProperties": false]],
-                ["name": "agent_primary", "description": "Start, interrupt or approve a Mock Agent slot.", "inputSchema": ["type": "object", "properties": ["slot": ["type": "integer", "minimum": 1, "maximum": 8]], "required": ["slot"], "additionalProperties": false]],
+                ["name": "agent_primary", "description": "Start or interrupt a Mock Agent slot. Approval requires the user interface.", "inputSchema": ["type": "object", "properties": ["slot": ["type": "integer", "minimum": 1, "maximum": 8]], "required": ["slot"], "additionalProperties": false]],
             ]
             if request["method"] as? String == "tools/list" {
                 return ["tools": tools]
             }
-            guard request["method"] as? String == "tools/call", let params = request["params"] as? [String: Any], let name = params["name"] as? String else { throw MCPError.unknownTool }
+            guard request["method"] as? String == "tools/call" else { throw MCPError.methodNotFound }
+            guard let params = request["params"] as? [String: Any], let name = params["name"] as? String else { throw MCPError.unknownTool }
             defer { logAgentCall(name) }
+            guard params["arguments"] == nil || params["arguments"] is [String: Any] else { throw MCPError.invalidRequest }
             let args = params["arguments"] as? [String: Any] ?? [:]
             var result: [String: Any] = [:]
             switch name {
@@ -46,6 +48,8 @@
                 guard args.isEmpty else { throw MCPError.invalidRequest }
                 result = try ["layer": layer.rawValue, "values": session.parameters.values,
                               "parameters": JSONSerialization.jsonObject(with: JSONEncoder().encode(session.parameters.configuration.parameters)),
+                              "layerMismatch": session.state.layerMismatch,
+                              "observedLayer": session.state.observedLayer?.rawValue ?? "unknown",
                               "touchedFaders": (1 ... 9).filter { session.state.isTouched($0) },
                               "pendingMotors": (1 ... 9).filter { session.state.isMotorPending($0) }]
             case "set_parameter":
@@ -58,6 +62,7 @@
                       CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.rounded() == number.doubleValue,
                       (1 ... 8).contains(number.intValue) else { throw MCPError.denied }
                 let slot = number.intValue
+                guard agents.slots[slot - 1].phase != .waitingApproval else { throw MCPError.denied }
                 agentPrimary(slot, fromAgent: true); result = ["phase": agents.slots[slot - 1].phase.rawValue]
             default: throw MCPError.unknownTool
             }

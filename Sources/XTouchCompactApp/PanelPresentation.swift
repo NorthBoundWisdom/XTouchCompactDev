@@ -76,6 +76,7 @@
         var encoders: [EncoderPresentation]
         var buttons: [ButtonPresentation]
         var configuration: SurfaceConfiguration = .neutral
+        var mcpPort: UInt16 = 8765
         var mcpEnabled = false
         var mcpWritesAllowed = false
         var oscEnabled = false

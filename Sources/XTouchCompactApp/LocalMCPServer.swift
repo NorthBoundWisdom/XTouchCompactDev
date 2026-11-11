@@ -65,29 +65,42 @@
             guard request.headers["origin"] == nil else { return (403, Data()) }
             guard request.headers["authorization"] == "Bearer \(token)", !token.isEmpty else { return (401, Data()) }
             guard request.method == "POST" else { return (405, Data()) }
-            requests = requests.filter { Date().timeIntervalSince($0) < 60 }
-            guard requests.count < 60 else { return (429, Data()) }
-            requests.append(Date())
-            if let batch = (try? JSONSerialization.jsonObject(with: request.body)) as? [[String: Any]] {
-                guard !batch.isEmpty, batch.count <= 16 else { return (400, Data()) }
-                var responses: [[String: Any]] = []
-                for item in batch {
-                    guard let body = try? JSONSerialization.data(withJSONObject: item) else { return (400, Data()) }
-                    let (status, result) = respond(HTTPRequest(method: request.method, path: request.path, headers: request.headers, body: body))
-                    if status == 202 {
-                        continue
-                    }
-                    guard status == 200, let response = (try? JSONSerialization.jsonObject(with: result)) as? [String: Any] else { return (status, result) }
-                    responses.append(response)
-                }
-                return responses.isEmpty ? (202, Data()) : (200, (try? JSONSerialization.data(withJSONObject: responses)) ?? Data())
-            }
             guard request.headers["content-type"]?.hasPrefix("application/json") == true,
-                  let object = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
-                  object["jsonrpc"] as? String == "2.0", let method = object["method"] as? String else { return (400, Data()) }
-            if object["id"] == nil {
-                return (202, Data())
+                  let json = try? JSONSerialization.jsonObject(with: request.body) else { return (400, Data()) }
+            let isBatch = json is [Any]
+            let items: [[String: Any]]
+            if isBatch {
+                guard let batch = json as? [[String: Any]], !batch.isEmpty, batch.count <= 16 else { return (400, Data()) }
+                items = batch
+            } else {
+                guard let object = json as? [String: Any] else { return (400, Data()) }
+                items = [object]
             }
+            // Preflight and reserve the complete batch budget before any side effects.
+            guard items.allSatisfy(validEnvelope) else { return (400, Data()) }
+            requests = requests.filter { Date().timeIntervalSince($0) < 60 }
+            guard requests.count + items.count <= 60 else { return (429, Data()) }
+            requests.append(contentsOf: Array(repeating: Date(), count: items.count))
+            let responses = items.compactMap { execute($0) }
+            guard !responses.isEmpty else { return (202, Data()) }
+            let result: Any = isBatch ? responses : responses[0]
+            return (200, (try? JSONSerialization.data(withJSONObject: result)) ?? Data())
+        }
+
+        private func validEnvelope(_ object: [String: Any]) -> Bool {
+            guard object["jsonrpc"] as? String == "2.0", object["method"] is String else { return false }
+            guard let id = object["id"] else { return true }
+            if id is String || id is NSNull {
+                return true
+            }
+            if let number = id as? NSNumber {
+                return CFGetTypeID(number) != CFBooleanGetTypeID() && number.doubleValue.isFinite
+            }
+            return false
+        }
+
+        private func execute(_ object: [String: Any]) -> [String: Any]? {
+            guard object["id"] != nil, let method = object["method"] as? String else { return nil }
             let id = object["id"]!
             let response: [String: Any]
             do {
@@ -97,13 +110,13 @@
                 } else if method == "ping" {
                     [:]
                 } else {
-                    try handler?(object) ?? [:]
+                    try handler?(object) ?? { throw MCPError.methodNotFound }()
                 }
                 response = ["jsonrpc": "2.0", "id": id, "result": result]
             } catch {
-                response = ["jsonrpc": "2.0", "id": id, "error": ["code": -32602, "message": String(describing: error)]]
+                response = ["jsonrpc": "2.0", "id": id, "error": ["code": (error as? MCPError == .methodNotFound ? -32601 : -32602), "message": String(describing: error)]]
             }
-            return (200, (try? JSONSerialization.data(withJSONObject: response)) ?? Data())
+            return response
         }
     }
 
@@ -139,7 +152,7 @@
         }
     }
 
-    enum MCPError: Error { case invalidRequest, denied, unknownTool, credentials(OSStatus) }
+    enum MCPError: Error, Equatable { case invalidRequest, denied, unknownTool, methodNotFound, credentials(OSStatus) }
 
     @MainActor private final class MCPPeer {
         let connection: NWConnection

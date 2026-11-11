@@ -41,6 +41,7 @@
         }
 
         let mcp = LocalMCPServer()
+        let mcpPort: UInt16 = 8765
         let isolated: Bool
         private let memoryToken = UUID().uuidString + UUID().uuidString
         func accessToken() throws -> String {
@@ -153,6 +154,7 @@
         func agentPrimary(_ slot: Int, fromAgent: Bool = false) {
             agentOutput = fromAgent
             defer { agentOutput = false }
+            guard !(fromAgent && (1 ... 8).contains(slot) && agents.slots[slot - 1].phase == .waitingApproval) else { error = MCPError.denied; return }
             var next = agents
             next.primary(slot, now: runtimeTime)
             guard next != agents else { return }
