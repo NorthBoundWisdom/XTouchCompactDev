@@ -1,0 +1,4 @@
+{
+  "files.associations": {"*.jsonc.in": "jsonc"},
+  "freecm.codeCount.testPaths": ["Tests"]
+}

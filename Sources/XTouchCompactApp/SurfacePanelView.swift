@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import XTouchCompactCore
+import XTouchCompactLocalization
 
 /// Virtual X-TOUCH COMPACT front panel.
 ///
@@ -8,6 +9,8 @@ import XTouchCompactCore
 /// Middle: the master fader strip. Right: eight more encoders, the layer buttons and six
 /// transport buttons. The view renders a `PanelSnapshot` and emits `PanelIntents` only.
 struct SurfacePanelView: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     let snapshot: PanelSnapshot
     let intents: PanelIntents
     @Binding var selection: CompactControl?
@@ -44,14 +47,14 @@ struct SurfacePanelView: View {
             Text("X-TOUCH COMPACT")
                 .font(.system(size: m(17), weight: .black, design: .rounded))
                 .tracking(2)
-            Text(snapshot.isMock ? "MOCK DEVICE" : "HARDWARE MIRROR")
+            Text(l.text(snapshot.isMock ? "MOCK DEVICE" : "HARDWARE MIRROR"))
                 .font(.system(size: m(9), weight: .bold, design: .monospaced))
                 .foregroundStyle(snapshot.isMock ? Theme.value : .green)
                 .padding(.horizontal, m(7))
                 .padding(.vertical, m(3))
                 .background((snapshot.isMock ? Theme.value : Color.green).opacity(0.14), in: Capsule())
             Spacer()
-            Text(snapshot.isMock ? "拖动推子 / 旋钮、按下按键 = 模拟实体操作" : "镜像实体设备；操作即软件写入")
+            Text(snapshot.isMock ? l.text("拖动推子 / 旋钮、按下按键 = 模拟实体操作") : l.text("镜像实体设备；操作即软件写入"))
                 .font(.system(size: m(10)))
                 .foregroundStyle(.secondary)
         }
@@ -96,7 +99,7 @@ struct SurfacePanelView: View {
 
     private var layerButtons: some View {
         VStack(spacing: m(4)) {
-            Text("LAYER").font(.system(size: m(8), weight: .bold)).foregroundStyle(.secondary).tracking(1)
+            Text(l.text("Layer")).font(.system(size: m(8), weight: .bold)).foregroundStyle(.secondary).tracking(1)
             HStack(spacing: m(6)) {
                 ForEach(CompactLayer.allCases, id: \.self) { layer in
                     let isActive = snapshot.layer == layer
@@ -110,9 +113,9 @@ struct SurfacePanelView: View {
                                         in: RoundedRectangle(cornerRadius: m(6)))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("层 \(layer.rawValue.uppercased())")
+                    .accessibilityLabel(l.text("层 %@", String(layer.rawValue.uppercased())))
                     .accessibilityAddTraits(isActive ? .isSelected : [])
-                    .help("切换到 Layer \(layer.rawValue.uppercased())；不会自动移动电动推子")
+                    .help(l.text("切换到 Layer %@；不会自动移动电动推子", String(layer.rawValue.uppercased())))
                 }
             }
         }
@@ -164,6 +167,8 @@ struct SurfacePanelView: View {
 // MARK: - Fader
 
 private struct FaderCell: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     let fader: FaderPresentation
     let isSelected: Bool
     let onSelect: () -> Void
@@ -200,14 +205,14 @@ private struct FaderCell: View {
                 .stroke(isSelected ? Theme.selection : Color.clear, lineWidth: 1.5)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(CompactControl.fader(fader.index).localizedName) \(fader.label ?? "")")
-        .accessibilityValue(isTouched ? "\(fader.capPosition)，触摸中" : "\(fader.target)")
+        .accessibilityLabel("\(CompactControl.fader(fader.index).localizedName(using: l)) \(fader.label ?? "")")
+        .accessibilityValue(isTouched ? l.text("%@，触摸中", String(fader.capPosition)) : "\(fader.target)")
         .accessibilityAdjustableAction { direction in
             onSelect()
             let step = direction == .increment ? 1 : -1
             onMove(UInt8(min(max(Int(fader.target) + step, 0), 127)))
         }
-        .help("拖动 \(CompactControl.fader(fader.index).shortName)")
+        .help(l.text("拖动 %@", String(CompactControl.fader(fader.index).shortName)))
     }
 
     private var slot: some View {
@@ -272,7 +277,7 @@ private struct FaderCell: View {
                         .font(.system(size: m(8)))
                         .foregroundStyle(Theme.touch)
                         .offset(x: m(13))
-                        .help("触摸期间电机指令已暂缓，松开后再对位")
+                        .help(l.text("触摸期间电机指令已暂缓，松开后再对位"))
                 }
             }
     }
@@ -281,6 +286,8 @@ private struct FaderCell: View {
 // MARK: - Encoder
 
 private struct EncoderCell: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     static let height: CGFloat = 92
 
     let encoder: EncoderPresentation
@@ -315,13 +322,13 @@ private struct EncoderCell: View {
                 .stroke(isSelected ? Theme.selection : Color.clear, lineWidth: 1.5)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(CompactControl.encoder(encoder.index).localizedName) \(encoder.label ?? "")")
+        .accessibilityLabel("\(CompactControl.encoder(encoder.index).localizedName(using: l)) \(encoder.label ?? "")")
         .accessibilityValue("\(encoder.value)")
         .accessibilityAdjustableAction { direction in
             onSelect()
             onTurn(direction == .increment ? 1 : -1)
         }
-        .help("上下拖动转动 \(CompactControl.encoder(encoder.index).shortName)")
+        .help(l.text("上下拖动转动 %@", String(CompactControl.encoder(encoder.index).shortName)))
     }
 
     private var knob: some View {
@@ -359,7 +366,7 @@ private struct EncoderCell: View {
 
     @ViewBuilder
     private var pushCap: some View {
-        let label = Text("PUSH")
+        let label = Text(l.text("PUSH"))
             .font(.system(size: m(7), weight: .bold))
             .frame(maxWidth: .infinity)
             .frame(height: m(11))
@@ -381,16 +388,18 @@ private struct EncoderCell: View {
                             onPush(false)
                         }
                 )
-                .accessibilityLabel("\(CompactControl.encoderPush(encoder.index).localizedName)")
+                .accessibilityLabel("\(CompactControl.encoderPush(encoder.index).localizedName(using: l))")
                 .accessibilityAddTraits(.isButton)
         } else {
-            label.foregroundStyle(.tertiary).help("编码器按下尚未接入后端")
+            label.foregroundStyle(.tertiary).help(l.text("编码器按下尚未接入后端"))
         }
     }
 }
 
 /// Thirteen LEDs on a 270° arc, lit as the host commanded.
 private struct RingView: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     let lit: RingLEDs.Lit
     @Environment(\.panelMetrics) private var m
 
@@ -422,6 +431,8 @@ private struct RingView: View {
 // MARK: - Button
 
 private struct ButtonCell: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     static let height: CGFloat = 30
 
     let button: ButtonPresentation
@@ -461,7 +472,7 @@ private struct ButtonCell: View {
                 }
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(PanelLayout.buttonName(button.index)) \(button.label ?? "")")
+        .accessibilityLabel("\(PanelLayout.buttonName(button.index, using: l)) \(button.label ?? "")")
         .accessibilityValue(lightName)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction {
@@ -469,14 +480,14 @@ private struct ButtonCell: View {
             onPress()
             onRelease?()
         }
-        .help("操作 B\(button.index)")
+        .help(l.text("操作 B%@", String(button.index)))
     }
 
     private var lightName: String {
         switch button.light {
-        case .off: "熄灭"
-        case .on: "点亮"
-        case .blink: "闪烁"
+        case .off: l.text("熄灭")
+        case .on: l.text("点亮")
+        case .blink: l.text("闪烁")
         }
     }
 

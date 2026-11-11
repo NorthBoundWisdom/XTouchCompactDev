@@ -17,7 +17,21 @@ swift build
 swift run XTouchCompactApp
 ```
 
-The SwiftPM executable is for development; a signed `.app` bundle, provisioning and notarization are not part of this baseline. On Linux the executable prints a platform explanation; the core/tests work unchanged.
+For VS Code FreeCM integration, open **FreeCM: Show Workflow Panel**, run **Config**,
+then use **Build / Run / Test / Package**. The repository provides local ad-hoc
+signed `.app` bundles and Release ZIPs; production signing and notarization remain
+out of scope. See [FreeCM commands and local configuration](docs/FREECM.md).
+On Linux the executable prints a platform explanation; the core/tests work unchanged.
+
+## Interface language
+
+The interface defaults to the system's preferred supported language, with English,
+Simplified Chinese and Traditional Chinese translations. Open **Settings…** using
+the gear button or **⌘,**, then choose **Follow System / English / 简体中文 / 繁體中文**.
+Changes apply immediately and persist across launches. Switching language preserves
+the MIDI session and parameter values. Labels, motor confirmation, errors and
+existing monitor messages follow the selected language; device names and raw MIDI
+data remain unchanged. Unsupported system languages fall back to English.
 
 ## First physical connection
 

@@ -1,8 +1,11 @@
 #if os(macOS)
 import SwiftUI
 import XTouchCompactCore
+import XTouchCompactLocalization
 
 struct ContentView: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     @ObservedObject var model: ConsoleModel
     @State private var selection: CompactControl? = .fader(1)
 
@@ -11,8 +14,8 @@ struct ContentView: View {
         let intents = model.panelIntents
         VStack(spacing: 0) {
             HeaderBar(model: model)
-            if let error = model.error {
-                ErrorBanner(text: error)
+            if model.error != nil || model.connection.error != nil {
+                ErrorBanner(text: model.errorText(using: l))
                     .padding(.horizontal, 18)
                     .padding(.bottom, 10)
             }
@@ -81,6 +84,8 @@ struct ConsoleLayout: Equatable {
 }
 
 private struct SurfaceArea: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     @ObservedObject var model: ConsoleModel
     let snapshot: PanelSnapshot
     let intents: PanelIntents
@@ -115,6 +120,8 @@ private struct SurfaceArea: View {
 }
 
 private struct HeaderBar: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     @ObservedObject var model: ConsoleModel
     @State private var confirmsRecall = false
 
@@ -129,9 +136,9 @@ private struct HeaderBar: View {
                     .foregroundStyle(.secondary)
             }
 
-            Picker("设备", selection: Binding(get: { model.hardwareMode }, set: { model.useHardware($0) })) {
-                Text("Mock 设备").tag(false)
-                Text("实体 X-TOUCH").tag(true)
+            Picker(l.text("设备"), selection: Binding(get: { model.hardwareMode }, set: { model.useHardware($0) })) {
+                Text(l.text("Mock 设备")).tag(false)
+                Text(l.text("实体 X-TOUCH")).tag(true)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -140,18 +147,20 @@ private struct HeaderBar: View {
             Spacer()
 
             Button { confirmsRecall = true } label: {
-                Label("电机归位…", systemImage: "arrow.up.and.down.and.sparkles")
+                Label(l.text("电机归位…"), systemImage: "arrow.up.and.down.and.sparkles")
             }
             .controlSize(.small)
             .disabled(!model.hardwareMode || !model.connection.isConnected)
-            .help("把九个电动推子移动到当前层的软件数值；只在你确认后执行")
-            .confirmationDialog("移动全部九个实体推子？", isPresented: $confirmsRecall) {
-                Button("移动九个电动推子") { model.recallMotors() }
-                Button("取消", role: .cancel) {}
+            .help(l.text("把九个电动推子移动到当前层的软件数值；只在你确认后执行"))
+            .confirmationDialog(l.text("移动全部九个实体推子？"), isPresented: $confirmsRecall) {
+                Button(l.text("移动九个电动推子")) { model.recallMotors() }
+                Button(l.text("取消"), role: .cancel) {}
             } message: {
-                Text("连接或换层后不会自动移动电机。请确认推子行程内没有遮挡；被触摸的推子不会移动。")
+                Text(l.text("连接或换层后不会自动移动电机。请确认推子行程内没有遮挡；被触摸的推子不会移动。"))
             }
 
+            SettingsLink { Label(l.text("Settings"), systemImage: "gearshape") }
+                .labelStyle(.iconOnly).help(l.text("Settings"))
             DeviceStatus(model: model)
         }
         .padding(.horizontal, 18)
@@ -161,6 +170,8 @@ private struct HeaderBar: View {
 }
 
 private struct DeviceStatus: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     @ObservedObject var model: ConsoleModel
 
     var body: some View {
@@ -183,19 +194,21 @@ private struct DeviceStatus: View {
     }
 
     private var title: String {
-        guard model.hardwareMode else { return "Mock 设备运行中" }
-        return model.connection.isConnected ? "X-TOUCH COMPACT 已连接" : "X-TOUCH COMPACT 未连接"
+        guard model.hardwareMode else { return l.text("Mock 设备运行中") }
+        return model.connection.isConnected ? l.text("X-TOUCH COMPACT 已连接") : l.text("X-TOUCH COMPACT 未连接")
     }
 
     private var detail: String {
         let hardware = model.connection.isConnected
             ? "\(model.connection.connectedInput?.name ?? "—") → \(model.connection.connectedOutput?.name ?? "—")"
-            : (model.connection.error ?? "未找到完整的输入 / 输出端口")
-        return model.hardwareMode ? hardware : "实体：\(hardware)"
+            : (model.connection.error.map { l.text($0) } ?? l.text("未找到完整的输入 / 输出端口"))
+        return model.hardwareMode ? hardware : l.text("实体：%@", String(hardware))
     }
 }
 
 private struct ErrorBanner: View {
+    @EnvironmentObject private var language: LanguageSettings
+    private var l: Localizer { language.localizer }
     let text: String
 
     var body: some View {

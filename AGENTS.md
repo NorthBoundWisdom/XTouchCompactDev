@@ -25,4 +25,17 @@ swift test --jobs 2
 swift build
 ```
 
+FreeCM integration uses `configs/freecm.commands.jsonc` (version 2) and the thin
+`configs/source_root_workflow.py` setup/cleanup adapter. No FreeCM checkout,
+dependency lock or runtime dependency is required. Use `python3
+configs/setup_local_project.py` before plugin Build/Run/Test/Package actions.
+Keep local paths in ignored `build.local.json`; generated artifacts belong in
+`build/`. Packaging is local ad-hoc ZIP only; do not claim notarized distribution.
+See `docs/FREECM.md`. When changing workflows, also run:
+
+```sh
+python3 configs/validate_repo_commands.py .
+python3 -m unittest discover -s Tests/BuildWorkflowTests -v
+```
+
 On macOS, additionally verify the native app on a Mac with at least Xcode command-line tools, then perform the documented physical bring-up checklist once hardware is available.

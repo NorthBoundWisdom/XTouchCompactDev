@@ -46,5 +46,5 @@ This seed provides `XTouchCompactCore`, not the final app. Do not conflate a wor
 
 ## Known current limitations of this seed
 
-- No real CoreMIDI transport, `.app` bundle, SwiftUI view, persistence, MCP/OSC adapters or DAW-specific mappings are yet shipped here.
-- Current Swift tests verify only pure-value semantics. True hardware timings, channel settings and state ownership policies still require operator-attended validation.
+- SwiftUI and CoreMIDI transport are implemented, with a local ad-hoc `.app`/ZIP workflow wired to FreeCM; persistence, MCP/OSC adapters, production signing/notarization and DAW-specific mappings remain pending.
+- Swift tests verify pure-value semantics. True hardware timings, channel settings and state ownership policies still require operator-attended validation.

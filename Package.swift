@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "XTouchCompactDev",
+    defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "XTouchCompactCore", targets: ["XTouchCompactCore"]),
@@ -10,10 +11,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "XTouchCompactCore"),
-        .executableTarget(name: "XTouchCompactApp", dependencies: ["XTouchCompactCore"],
+        .target(name: "XTouchCompactLocalization", resources: [.process("Resources")]),
+        .executableTarget(name: "XTouchCompactApp", dependencies: ["XTouchCompactCore", "XTouchCompactLocalization"],
                           linkerSettings: [.linkedFramework("CoreMIDI", .when(platforms: [.macOS]))]),
         .testTarget(name: "XTouchCompactCoreTests", dependencies: ["XTouchCompactCore"]),
-        .testTarget(name: "XTouchCompactAppTests", dependencies: ["XTouchCompactApp"])
+        .testTarget(name: "XTouchCompactLocalizationTests", dependencies: ["XTouchCompactLocalization"]),
+        .testTarget(name: "XTouchCompactAppTests", dependencies: ["XTouchCompactApp", "XTouchCompactLocalization"])
     ],
     swiftLanguageModes: [.v6]
 )

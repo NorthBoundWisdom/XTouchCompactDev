@@ -2,6 +2,7 @@
 import CoreMIDI
 import Foundation
 import XTouchCompactCore
+import XTouchCompactLocalization
 
 /// CoreMIDI endpoint identity; never use transient port indices as persistence keys.
 struct CompactMIDIEndpoint: Equatable, Sendable, Identifiable {
@@ -14,7 +15,7 @@ struct CompactMIDIConnection: Equatable, Sendable {
     var outputs: [CompactMIDIEndpoint] = []
     var connectedInput: CompactMIDIEndpoint?
     var connectedOutput: CompactMIDIEndpoint?
-    var error: String?
+    var error: LocalizedMessage?
 
     var isConnected: Bool { connectedInput != nil && connectedOutput != nil }
 }
@@ -169,11 +170,11 @@ private final class CompactMIDITransport: @unchecked Sendable {
         }
         let source = choose(sources, id: desiredInputID)
         let output = choose(destinations, id: desiredOutputID)
-        var error: String?
+        var error: LocalizedMessage?
         if let source {
             let result = MIDIPortConnectSource(inputPort, source.1, nil)
             if result == noErr { connectedInput = source.1 }
-            else { error = "MIDI input connection failed: \(result)" }
+            else { error = LocalizedMessage("MIDI input connection failed: %@", String(result)) }
         }
         if let output { connectedOutput = output.1 }
         onConnection(CompactMIDIConnection(

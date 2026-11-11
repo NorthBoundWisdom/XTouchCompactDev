@@ -1,6 +1,7 @@
 #if os(macOS)
 import XCTest
 import XTouchCompactCore
+import XTouchCompactLocalization
 @testable import XTouchCompactApp
 
 final class PanelPresentationTests: XCTestCase {
@@ -122,17 +123,17 @@ final class PanelPresentationTests: XCTestCase {
         XCTAssertEqual(model.panelSnapshot.fader(1)?.isTouched, true)
         XCTAssertEqual(model.panelSnapshot.fader(1)?.isMotorPending, true)
         XCTAssertEqual(model.panelSnapshot.fader(1)?.capPosition, 31)
-        XCTAssertFalse(model.logs.contains("OUT CC ch1 #1=106 [MOCK]"))
+        XCTAssertFalse(model.logs.map { Localizer(language: .english).text($0) }.contains("OUT CC ch1 #1=106 [MOCK]"))
         intents.touchFader?(1, false)
         XCTAssertEqual(model.mock.faders[0], 106)
         XCTAssertEqual(model.panelSnapshot.fader(1)?.isTouched, false)
         XCTAssertEqual(model.panelSnapshot.fader(1)?.isMotorPending, false)
         XCTAssertEqual(model.panelSnapshot.fader(1)?.observed, 31) // RX is not a TX observation.
         XCTAssertEqual(model.panelSnapshot.fader(1)?.capPosition, 106)
-        XCTAssertEqual(model.logs.filter { $0 == "OUT CC ch1 #1=106 [MOCK]" }.count, 1)
+        XCTAssertEqual(model.logs.map { Localizer(language: .english).text($0) }.filter { $0 == "OUT CC ch1 #1=106 [MOCK]" }.count, 1)
         XCTAssertEqual(model.mock.ignoredMotorCommands, 0)
         // Consuming a motor command must not fake a position observation.
-        XCTAssertEqual(model.logs.filter { $0 == "IN CC ch1 #1=106 [MOCK]" }.count, 0)
+        XCTAssertEqual(model.logs.map { Localizer(language: .english).text($0) }.filter { $0 == "IN CC ch1 #1=106 [MOCK]" }.count, 0)
 
         intents.pushEncoder?(2, true)
         XCTAssertTrue(model.mock.pushedEncoders.contains(2))
@@ -146,8 +147,8 @@ final class PanelPresentationTests: XCTestCase {
         XCTAssertEqual(model.panelSnapshot.button(1)?.isDown, false)
         XCTAssertTrue(model.bank.buttons[0])
         XCTAssertEqual(model.mock.buttons[0], .on)
-        XCTAssertTrue(model.logs.contains("IN Note On ch1 #16=127 [MOCK]"))
-        XCTAssertTrue(model.logs.contains("IN Note Off ch1 #16=0 [MOCK]"))
+        XCTAssertTrue(model.logs.map { Localizer(language: .english).text($0) }.contains("IN Note On ch1 #16=127 [MOCK]"))
+        XCTAssertTrue(model.logs.map { Localizer(language: .english).text($0) }.contains("IN Note Off ch1 #16=0 [MOCK]"))
         XCTAssertNil(model.error)
     }
 

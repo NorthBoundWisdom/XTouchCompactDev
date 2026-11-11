@@ -1,6 +1,7 @@
 #if os(macOS)
 import Foundation
 import XTouchCompactCore
+import XTouchCompactLocalization
 
 // Frontend contract.
 //
@@ -101,13 +102,15 @@ extension CompactControl {
         }
     }
 
-    var localizedName: String {
+    var localizedName: String { localizedName(using: Localizer(language: .simplifiedChinese)) }
+
+    func localizedName(using l: Localizer) -> String {
         switch self {
-        case let .fader(index): index == PanelLayout.masterFader ? "主推子" : "推子 \(index)"
-        case let .faderTouch(index): "推子 \(index) 触摸"
-        case let .encoder(index): "编码器 \(index)"
-        case let .encoderPush(index): "编码器 \(index) 按下"
-        case let .button(index): PanelLayout.buttonName(index)
+        case let .fader(index): index == PanelLayout.masterFader ? l.text("主推子") : l.text("推子 %@", String(index))
+        case let .faderTouch(index): l.text("推子 %@ 触摸", String(index))
+        case let .encoder(index): l.text("编码器 %@", String(index))
+        case let .encoderPush(index): l.text("编码器 %@ 按下", String(index))
+        case let .button(index): PanelLayout.buttonName(index, using: l)
         }
     }
 }
@@ -149,12 +152,12 @@ enum PanelLayout {
         .init(button: 39, symbol: "play.fill", name: "播放")
     ]
 
-    static func buttonName(_ index: Int) -> String {
+    static func buttonName(_ index: Int, using l: Localizer = Localizer(language: .simplifiedChinese)) -> String {
         switch index {
-        case 1 ... 24: "按键 行\((index - 1) / 8 + 1) #\((index - 1) % 8 + 1)"
-        case 25 ... 32: "推子下按键 #\(index - 24)"
-        case masterButton: "主推子按键"
-        default: transport.first { $0.button == index }.map { "走带 · \($0.name)" } ?? "按键 \(index)"
+        case 1 ... 24: l.text("按键 行%@ #%@", String((index - 1) / 8 + 1), String((index - 1) % 8 + 1))
+        case 25 ... 32: l.text("推子下按键 #%@", String(index - 24))
+        case masterButton: l.text("主推子按键")
+        default: transport.first { $0.button == index }.map { l.text("走带 · %@", String(l.text($0.name))) } ?? l.text("按键 %@", String(index))
         }
     }
 }

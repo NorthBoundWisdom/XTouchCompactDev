@@ -2,6 +2,7 @@
 import Foundation
 import SwiftUI
 import XTouchCompactCore
+import XTouchCompactLocalization
 
 /// SwiftUI state is deliberately separate from the value-only/testable protocol session.
 @MainActor
@@ -9,14 +10,14 @@ final class ConsoleModel: ObservableObject {
     @Published private(set) var bank = CompactParameterBank()
     @Published private(set) var layer: CompactLayer = .a
     @Published private(set) var connection = CompactMIDIConnection()
-    @Published private(set) var logs: [String] = []
+    @Published private(set) var logs: [LocalizedMessage] = []
     @Published private(set) var hardwareMode = false
     @Published var transmitChannel = 1
     @Published var feedbackChannel = 1
     @Published var inputChoice: Int32 = 0
     @Published var outputChoice: Int32 = 0
     @Published var observedLEDVariant = false
-    @Published private(set) var error: String?
+    @Published private(set) var error: (any Error)?
 
     private let midi = CoreMIDIService()
     private(set) var session: CompactSession
@@ -37,7 +38,7 @@ final class ConsoleModel: ObservableObject {
             if self.hardwareMode && !snapshot.isConnected { self.session.invalidateTransportFeedback() }
         }
         if startsMIDI {
-            do { try midi.start() } catch { self.error = error.localizedDescription }
+            do { try midi.start() } catch { self.error = error }
         }
         apply { try $0.connect() }
     }
@@ -46,7 +47,7 @@ final class ConsoleModel: ObservableObject {
         hardwareMode = enabled
         if enabled {
             guard connection.isConnected else {
-                error = "No complete Compact MIDI input/output connection; select endpoints or connect hardware."
+                error = ConsoleError.noConnection
                 return
             }
             apply { try $0.connect() }
@@ -55,7 +56,7 @@ final class ConsoleModel: ObservableObject {
             apply { try $0.connect() }
             // A mock hand can still be holding a physical fader across a mode switch.
             for index in mock.touchedFaders.sorted() { touchFader(index, isTouched: true) }
-            log("Switched to deterministic mock surface")
+            log(LocalizedMessage("Switched to deterministic mock surface"))
         }
     }
 
@@ -71,10 +72,10 @@ final class ConsoleModel: ObservableObject {
                 lightProtocol: observedLEDVariant ? .observed114 : .manual)
             layer = .a
             updateBank()
-            log("MIDI channel/profile changed; application values reset")
+            log(LocalizedMessage("MIDI channel/profile changed; application values reset"))
             if hardwareMode && connection.isConnected { apply { try $0.connect() } }
             if !hardwareMode { apply { try $0.connect() } }
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = error }
     }
 
     func selectPorts() {
@@ -139,17 +140,17 @@ final class ConsoleModel: ObservableObject {
     private func performMockGesture(_ operation: (inout MockXTouchCompact) throws -> [MIDIMessage]) {
         guard !hardwareMode else { return }
         do { receive(try operation(&mock), fromMock: true) }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = error }
     }
 
     private func receive(_ messages: [MIDIMessage], fromMock: Bool = false) {
-        for message in messages { log("IN " + message.description + (fromMock ? " [MOCK]" : "")) }
+        for message in messages { log(LocalizedMessage(fromMock ? "IN %@ [MOCK]" : "IN %@", message.description)) }
         guard hardwareMode != fromMock else { return }
         do {
             let update = try session.receive(messages)
             send(update.feedback)
             if !update.inputs.isEmpty { updateBank() }
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = error }
     }
 
     private func apply(_ operation: (inout CompactSession) throws -> [MIDIMessage]) {
@@ -157,27 +158,51 @@ final class ConsoleModel: ObservableObject {
             send(try operation(&session))
             updateBank()
         }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = error }
     }
 
     private func send(_ messages: [MIDIMessage]) {
         for message in messages {
-            log("OUT " + message.description + (hardwareMode ? "" : " [MOCK]"))
+            log(LocalizedMessage(hardwareMode ? "OUT %@" : "OUT %@ [MOCK]", message.description))
             guard hardwareMode else {
                 mock.receive(message)
                 continue
             }
             do { try midi.send(message) }
             catch {
-                self.error = error.localizedDescription
+                self.error = error
                 session.invalidateTransportFeedback()
                 break
             }
         }
     }
 
+    private enum ConsoleError: Error { case noConnection }
+
+    func errorText(using l: Localizer) -> String {
+        guard let error else { return connection.error.map { l.text($0) } ?? "" }
+        switch error {
+        case is ConsoleError:
+            return l.text("No complete Compact MIDI input/output connection; select endpoints or connect hardware.")
+        case let error as CompactMIDIError:
+            switch error {
+            case let .operation(operation, status): return l.text("%@ (OSStatus %@)", l.text(operation), String(status))
+            case .outputUnavailable: return l.text("X-TOUCH COMPACT MIDI output not connected")
+            case .packetOverflow: return l.text("MIDI packet could not be built")
+            }
+        case let error as CompactError:
+            switch error {
+            case let .invalidChannel(channel): return l.text("Invalid MIDI channel: %@", String(channel))
+            case let .invalidIndex(control, index): return l.text("Invalid %@ index: %@", l.text(control), String(index))
+            case let .invalidMIDIValue(value): return l.text("Invalid MIDI value: %@", String(value))
+            case let .invalidDisplayPosition(position): return l.text("Invalid ring position: %@", String(position))
+            }
+        default: return l.text("Error: %@", error.localizedDescription)
+        }
+    }
+
     private func updateBank() { bank = session.bank(layer) }
-    private func log(_ entry: String) {
+    private func log(_ entry: LocalizedMessage) {
         logs.insert(entry, at: 0)
         if logs.count > 120 { logs.removeLast(logs.count - 120) }
     }

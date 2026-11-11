@@ -1,0 +1,91 @@
+{
+  "version": 2,
+  "commands": {
+    "config": [
+      {
+        "id": "local-swift",
+        "label": "Local macOS Swift",
+        "description": "Validate Swift package and plugin commands; prepare local settings without downloads",
+        "command": "python3",
+        "args": ["configs/setup_local_project.py"],
+        "platforms": ["darwin"],
+        "default": true,
+        "defaults": {"build": "debug-app", "run": "debug-app", "test": "unit", "package": "release-zip"},
+        "readiness": {
+          "inputs": [
+            "Package.swift", "configs/app_build.json", "configs/build.local.example.json",
+            "configs/setup_local_project.py", "configs/build_environment.py",
+            "configs/app_build.py", "configs/macos_workflow.py", "configs/validate_repo_commands.py",
+            "configs/_vendor/freecm/repo_commands.py", "configs/_vendor/freecm/jsonc.py", "build.local.json"
+          ],
+          "outputs": ["build/configured.json"]
+        }
+      },
+      {
+        "id": "linux-core",
+        "label": "Linux Swift Core",
+        "description": "Configure hardware-independent Swift builds and tests on Linux",
+        "command": "python3",
+        "args": ["configs/setup_local_project.py"],
+        "platforms": ["linux"],
+        "default": true,
+        "defaults": {"build": "core", "test": "unit"},
+        "readiness": {
+          "inputs": [
+            "Package.swift", "configs/app_build.json", "configs/build.local.example.json",
+            "configs/setup_local_project.py", "configs/build_environment.py",
+            "configs/app_build.py", "configs/macos_workflow.py", "configs/validate_repo_commands.py",
+            "configs/_vendor/freecm/repo_commands.py", "configs/_vendor/freecm/jsonc.py", "build.local.json"
+          ],
+          "outputs": ["build/configured.json"]
+        }
+      }
+    ],
+    "build": [
+      {
+        "id": "debug-app", "label": "Debug App",
+        "description": "Build and ad-hoc sign XTouchCompactApp.app",
+        "command": "python3", "args": ["configs/macos_workflow.py", "build"],
+        "configurations": ["local-swift"]
+      },
+      {
+        "id": "release-app", "label": "Release App",
+        "command": "python3", "args": ["configs/macos_workflow.py", "build", "--configuration", "release"],
+        "configurations": ["local-swift"]
+      },
+      {
+        "id": "core", "label": "Swift Core",
+        "command": "python3", "args": ["configs/macos_workflow.py", "core"],
+        "configurations": ["linux-core"]
+      }
+    ],
+    "run": [
+      {
+        "id": "debug-app", "label": "Debug App",
+        "description": "Build and run the bundled executable in the FreeCM terminal; Ctrl+C stops the app",
+        "command": "python3", "args": ["configs/macos_workflow.py", "run"],
+        "configurations": ["local-swift"]
+      }
+    ],
+    "test": [
+      {
+        "id": "unit", "label": "Swift Unit Tests",
+        "command": "python3", "args": ["configs/macos_workflow.py", "test"],
+        "configurations": ["local-swift", "linux-core"]
+      },
+      {
+        "id": "workflow", "label": "Build Workflow Tests",
+        "command": "python3", "args": ["-m", "unittest", "discover", "-s", "Tests/BuildWorkflowTests", "-v"],
+        "configurations": ["local-swift", "linux-core"]
+      }
+    ],
+    "package": [
+      {
+        "id": "release-zip", "label": "Local Release ZIP",
+        "description": "Build a native Release app, ad-hoc sign and archive it with SHA-256; no notarization",
+        "command": "python3", "args": ["configs/macos_workflow.py", "package"],
+        "configurations": ["local-swift"]
+      }
+    ]
+  }
+}
