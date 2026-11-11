@@ -15,7 +15,10 @@ struct ContentView: View {
         VStack(spacing: 0) {
             HeaderBar(model: model)
             if model.error != nil || model.connection.error != nil {
-                ErrorBanner(text: model.errorText(using: l))
+                HStack {
+                    ErrorBanner(text: model.errorText(using: l))
+                    Button(l.text("Dismiss")) { model.dismissNotification("runtime") }
+                }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 10)
             }

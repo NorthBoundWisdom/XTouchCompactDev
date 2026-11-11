@@ -99,14 +99,15 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 ### B4 ConsoleModel 可测试化与通知、监视器模型
 
-- [ ] 抽出 `MIDIService` 协议并注入；增加 `startsMIDI: Bool`。现在的
+- [x] 抽出 `MIDIService` 协议并注入；增加 `startsMIDI: Bool`。现在的
   `PanelPresentationTests` 直接构造 `ConsoleModel()`，会在测试里启动真实 CoreMIDI 客户端，改好后换成假服务。
-- [ ] `error: String?` 改为带级别、可关闭的通知（info / warning / error，可带动作）；持久性问题单独一条。
-- [ ] MIDI 日志从 `[String]` 改为结构化事件：时间、方向、来源（mock / hardware / agent）、消息、
+- [x] `error: String?` 改为带级别、可关闭的通知（info / warning / error，可带动作）；持久性问题单独一条。
+- [x] MIDI 日志从 `[String]` 改为结构化事件：时间、方向、来源（mock / hardware / agent）、消息、
   对应的 `CompactControl?`、是否被忽略；保留上限。提供清空。
-- [ ] `configure()` 目前会清空软件数值：改为保留数值，只重建映射并失效反馈缓存；确需重置时显式提示。
+- [x] `configure()` 目前会清空软件数值：改为保留数值，只重建映射并失效反馈缓存；确需重置时显式提示。
 
-验收：假 MIDI 服务下的重连、发送失败、端口缺失测试；发送失败后电机历史失效但不自动归位。
+验收：已覆盖假 MIDI 服务下重连、发送失败、端口缺失、监视器清空与注入时钟；发送失败后电机历史失效但不自动归位。
+配置保留 A/B 数值与物理触摸，取消旧的暂缓指令，松手不隐式归位。持久性通知留由 B6 的存储错误接入。
 
 ### B5 参数与功能系统（移植 BCR 的核心价值）
 

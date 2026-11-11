@@ -181,3 +181,20 @@ public struct CompactState: Sendable {
         return result
     }
 }
+
+extension CompactState {
+    /// A profile change never carries a queued motor intent across configuration boundaries.
+    /// Physical touch survives so subsequent writes cannot race a hand already on a fader.
+    public func reconfigured(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) -> CompactState {
+        var next = CompactState(map: map, lightProtocol: lightProtocol)
+        next.layer = layer
+        next.touchedFaders = touchedFaders
+        next.observedFaders = observedFaders
+        next.pressedButtons = pressedButtons
+        next.pushedEncoders = pushedEncoders
+        next.desiredButtons = desiredButtons
+        next.desiredRings = desiredRings
+        next.desiredStyles = desiredStyles
+        return next
+    }
+}

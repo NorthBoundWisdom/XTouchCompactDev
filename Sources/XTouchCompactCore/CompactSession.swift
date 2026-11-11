@@ -34,6 +34,11 @@ public struct CompactSession: Sendable {
         state.invalidateNonMotorFeedback()
     }
 
+    public mutating func reconfigure(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) throws -> [MIDIMessage] {
+        state = state.reconfigured(map: map, lightProtocol: lightProtocol)
+        return [map.selectLayer(state.layer)] + (try syncVisibleNonMotorFeedback())
+    }
+
     public func bank(_ layer: CompactLayer) -> CompactParameterBank { banks[layer] ?? .init() }
 
     /// Layer assertion is always sent. LED/rings restored from last host state; faders aren't.

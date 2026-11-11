@@ -155,3 +155,6 @@
 "MOCK DEVICE" = "模擬裝置";
 "HARDWARE MIRROR" = "硬體鏡像";
 "PUSH" = "按下";
+"Profile applied; parameter values preserved" = "設定已套用；參數值已保留";
+"Clear monitor" = "清空監視器";
+"Dismiss" = "關閉";

@@ -10,25 +10,35 @@ final class ConsoleModel: ObservableObject {
     @Published private(set) var bank = CompactParameterBank()
     @Published private(set) var layer: CompactLayer = .a
     @Published private(set) var connection = CompactMIDIConnection()
-    @Published private(set) var logs: [LocalizedMessage] = []
+    @Published private(set) var events: [MonitorEvent] = []
+    var logs: [LocalizedMessage] { events.map(\.text) }
+    @Published private(set) var notifications: [ConsoleNotification] = []
     @Published private(set) var hardwareMode = false
     @Published var transmitChannel = 1
     @Published var feedbackChannel = 1
     @Published var inputChoice: Int32 = 0
     @Published var outputChoice: Int32 = 0
     @Published var observedLEDVariant = false
-    @Published private(set) var error: (any Error)?
+    @Published private(set) var error: (any Error)? {
+        didSet {
+            notifications.removeAll { $0.id == "runtime" }
+            if error != nil { notifications.append(ConsoleNotification(id: "runtime", level: .error, persistent: false)) }
+        }
+    }
 
-    private let midi = CoreMIDIService()
+    private let midi: any MIDIService
+    private let now: () -> Date
     private(set) var session: CompactSession
     private(set) var mock: MockXTouchCompact
 
-    init(startsMIDI: Bool = true) {
+    init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: @escaping () -> Date = Date.init) {
+        self.midi = midi ?? CoreMIDIService()
+        self.now = now
         let map = try! FactoryStandardMap() // Constant channels are valid by construction.
         session = CompactSession(map: map, lightProtocol: .manual)
         mock = MockXTouchCompact(map: map, lightProtocol: .manual)
-        midi.onMessages = { [weak self] messages in self?.receive(messages) }
-        midi.onConnection = { [weak self] snapshot in
+        self.midi.onMessages = { [weak self] messages in self?.receive(messages) }
+        self.midi.onConnection = { [weak self] snapshot in
             guard let self else { return }
             let wasConnected = self.connection.isConnected
             self.connection = snapshot
@@ -38,7 +48,7 @@ final class ConsoleModel: ObservableObject {
             if self.hardwareMode && !snapshot.isConnected { self.session.invalidateTransportFeedback() }
         }
         if startsMIDI {
-            do { try midi.start() } catch { self.error = error }
+            do { try self.midi.start() } catch { self.error = error }
         }
         apply { try $0.connect() }
     }
@@ -62,19 +72,23 @@ final class ConsoleModel: ObservableObject {
 
     func configure() {
         do {
+            guard (1...16).contains(transmitChannel), (1...16).contains(feedbackChannel) else {
+                throw CompactError.invalidChannel(16)
+            }
             let map = try FactoryStandardMap(
                 transmitChannel: UInt8(transmitChannel - 1),
                 globalReceiveChannel: UInt8(feedbackChannel - 1)
             )
-            session = CompactSession(map: map,
-                lightProtocol: observedLEDVariant ? .observed114 : .manual)
-            mock = MockXTouchCompact(map: map,
-                lightProtocol: observedLEDVariant ? .observed114 : .manual)
-            layer = .a
-            updateBank()
-            log(LocalizedMessage("MIDI channel/profile changed; application values reset"))
-            if hardwareMode && connection.isConnected { apply { try $0.connect() } }
-            if !hardwareMode { apply { try $0.connect() } }
+            guard (1...16).contains(transmitChannel), (1...16).contains(feedbackChannel) else {
+                throw CompactError.invalidChannel(16)
+            }
+            let variant: ButtonLightProtocol = observedLEDVariant ? .observed114 : .manual
+            mock = MockXTouchCompact(map: map, lightProtocol: variant)
+            for index in 1...9 where session.state.isTouched(index) {
+                _ = try mock.touchFader(index, isTouched: true)
+            }
+            apply { try $0.reconfigure(map: map, lightProtocol: variant) }
+            log(LocalizedMessage("Profile applied; parameter values preserved"))
         } catch { self.error = error }
     }
 
@@ -144,7 +158,10 @@ final class ConsoleModel: ObservableObject {
     }
 
     private func receive(_ messages: [MIDIMessage], fromMock: Bool = false) {
-        for message in messages { log(LocalizedMessage(fromMock ? "IN %@ [MOCK]" : "IN %@", message.description)) }
+        for message in messages {
+            record(message, direction: .input, source: fromMock ? .mock : .hardware,
+                   ignored: hardwareMode == fromMock || session.state.map.decode(message, layer: layer) == nil)
+        }
         guard hardwareMode != fromMock else { return }
         do {
             let update = try session.receive(messages)
@@ -163,7 +180,7 @@ final class ConsoleModel: ObservableObject {
 
     private func send(_ messages: [MIDIMessage]) {
         for message in messages {
-            log(LocalizedMessage(hardwareMode ? "OUT %@" : "OUT %@ [MOCK]", message.description))
+            record(message, direction: .output, source: hardwareMode ? .hardware : .mock)
             guard hardwareMode else {
                 mock.receive(message)
                 continue
@@ -201,10 +218,45 @@ final class ConsoleModel: ObservableObject {
         }
     }
 
+    func clearMonitor() { events.removeAll() }
+    func dismissNotification(_ id: String) {
+        guard notifications.first(where: { $0.id == id })?.persistent != true else { return }
+        if id == "runtime" { error = nil }
+        notifications.removeAll { $0.id == id }
+    }
+
+    private func record(_ message: MIDIMessage, direction: MonitorEvent.Direction,
+                        source: MonitorEvent.Source, ignored: Bool = false) {
+        let control: CompactControl?
+        if direction == .input { control = session.state.map.decode(message, layer: layer)?.control }
+        else {
+            let candidates = (1...9).map(CompactControl.fader) + (1...16).map(CompactControl.encoder)
+                + (1...39).map(CompactControl.button)
+            control = candidates.first { control in
+                let address = session.state.map.feedbackAddress(for: control)
+                switch message {
+                case let .controlChange(c, n, _): return address?.messageType == .controlChange && address?.channel == c && address?.number == n
+                case let .noteOn(c, n, _): return address?.messageType == .note && address?.channel == c && address?.number == n
+                default: return false
+                }
+            }
+        }
+        let key = direction == .input ? (source == .mock ? "IN %@ [MOCK]" : "IN %@")
+                                     : (source == .mock ? "OUT %@ [MOCK]" : "OUT %@")
+        events.insert(MonitorEvent(timestamp: now(), direction: direction, source: source, message: message,
+                                   control: control, ignored: ignored, text: LocalizedMessage(key, message.description)), at: 0)
+        trimEvents()
+    }
+
+    private func trimEvents() {
+        if events.count > 120 { events.removeLast(events.count - 120) }
+    }
+
     private func updateBank() { bank = session.bank(layer) }
     private func log(_ entry: LocalizedMessage) {
-        logs.insert(entry, at: 0)
-        if logs.count > 120 { logs.removeLast(logs.count - 120) }
+        events.insert(MonitorEvent(timestamp: now(), direction: nil, source: .application, message: nil,
+                                   control: nil, ignored: false, text: entry), at: 0)
+        trimEvents()
     }
 }
 #endif

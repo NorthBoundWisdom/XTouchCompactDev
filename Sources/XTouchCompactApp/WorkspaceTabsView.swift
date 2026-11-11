@@ -45,7 +45,7 @@ struct WorkspaceTabsView: View {
 
             switch tab {
             case .values: ValueListView(snapshot: snapshot, intents: intents, selection: $selection)
-            case .monitor: MIDIMonitorView(entries: model.logs)
+            case .monitor: MIDIMonitorView(entries: model.events, clear: model.clearMonitor)
             case .connection: ConnectionSettingsView(model: model)
             }
         }
@@ -134,13 +134,15 @@ private struct ValueListView: View {
 private struct MIDIMonitorView: View {
     @EnvironmentObject private var language: LanguageSettings
     private var l: Localizer { language.localizer }
-    let entries: [LocalizedMessage]
+    let entries: [MonitorEvent]
+    let clear: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(l.text("IN = 设备 → 软件，OUT = 软件 → 设备；[MOCK] 表示未发往实体。最新在上。"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Button(l.text("Clear monitor"), action: clear)
             if entries.isEmpty {
                 Text(l.text("还没有 MIDI 事件。"))
                     .foregroundStyle(.tertiary)
@@ -148,9 +150,9 @@ private struct MIDIMonitorView: View {
             } else {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(entries.prefix(40).enumerated()), id: \.offset) { _, entry in
-                        Text(l.text(entry))
+                        Text("\(entry.timestamp.formatted(date: .omitted, time: .standard)) [\(entry.source.rawValue)] \(l.text(entry.text)) \(entry.control?.shortName ?? "")\(entry.ignored ? " [ignored]" : "")")
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(entry.key.hasPrefix("IN") ? Theme.value : Theme.selection)
+                            .foregroundStyle(entry.direction == .input ? Theme.value : Theme.selection)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -200,8 +202,8 @@ private struct ConnectionSettingsView: View {
                     .help(l.text("关闭时按官方手册发送 0 / 1 / 2"))
                 HStack {
                     Button(l.text("应用配置")) { model.configure() }
-                        .help(l.text("重建会话并重置临时数值；不会修改设备预设"))
-                    Text(l.text("应用后软件数值清零。两个通道互相独立，不从收到的消息推断接收通道。"))
+                        .help(l.text("Profile applied; parameter values preserved"))
+                    Text(l.text("Profile applied; parameter values preserved"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

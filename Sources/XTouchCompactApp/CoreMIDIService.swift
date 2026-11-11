@@ -37,7 +37,16 @@ enum CompactMIDIError: Error, LocalizedError {
 /// Main-actor application boundary. Transport owns only CoreMIDI objects and a serial queue.
 /// Adapted from the same CoreMIDI callback and lifetime design as BCR2000Dev.
 @MainActor
-final class CoreMIDIService {
+protocol MIDIService: AnyObject {
+    var onMessages: (([MIDIMessage]) -> Void)? { get set }
+    var onConnection: ((CompactMIDIConnection) -> Void)? { get set }
+    func start() throws
+    func select(inputID: Int32?, outputID: Int32?)
+    func send(_ message: MIDIMessage) throws
+}
+
+@MainActor
+final class CoreMIDIService: MIDIService {
     var onMessages: (([MIDIMessage]) -> Void)?
     var onConnection: ((CompactMIDIConnection) -> Void)?
     private var transport: CompactMIDITransport?
