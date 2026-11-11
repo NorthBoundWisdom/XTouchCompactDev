@@ -106,7 +106,7 @@ final class PanelPresentationTests: XCTestCase {
         XCTAssertNotNil(intents.touchFader)
         XCTAssertNotNil(intents.pushEncoder)
         XCTAssertNotNil(intents.releaseButton)
-        XCTAssertNil(intents.addressing)
+        XCTAssertNotNil(intents.addressing)
     }
 
     @MainActor

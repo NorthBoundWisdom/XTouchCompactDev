@@ -44,8 +44,8 @@
 - B1 / B2 已接入：Mock 面板手势走设备 TX → 会话 → 设备 RX；实测位置、触摸、电机暂缓、按住状态
   均来自会话，LED / 灯环读取期望状态。触摸期间推子帽按实测位置绘制，软件目标可独立变化。
 - 尚未获得位置输入时 `observed` 仍为 `nil`；未发送过灯环样式时 `style` 仍为 `nil`。
-  标签、详情与 MIDI 地址等待后续任务，不填猜测值。
-- 本轮验证：macOS 上 `swift test --jobs 2`（30 项 Core + 9 项 App）与 `swift build` 通过，原生可执行文件
+  标签与详情等待后续任务，不填猜测值。B3 已提供当前已应用映射的 MIDI 地址。
+- 本轮验证：macOS 上 `swift test --jobs 2`（33 项 Core + 12 项 App + 3 项本地化）与 `swift build` 通过，原生可执行文件
   启动后保持运行 3 秒并正常终止。触摸闭环已做确定性集成测试；鼠标交互目视验收及实机验证尚未完成。
 
 ## 后端任务（按顺序）
@@ -85,11 +85,17 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 ### B3 MIDI 地址描述
 
-- [ ] `FactoryStandardMap` 增加 `inputAddress(for:layer:)` 与 `feedbackAddress(for:)`，返回结构化地址
+- [x] `FactoryStandardMap` 增加 `inputAddress(for:layer:)` 与 `feedbackAddress(for:)`，返回结构化地址
   （消息类型、通道、编号），覆盖推子、触摸、编码器、编码器按下、按键；触摸与编码器按下没有反馈地址时返回 nil。
-- [ ] 适配层用它填 `PanelIntents.addressing`（文本格式如 `CC ch1 #28`、`Note ch1 #0`）。
+- [x] 适配层用它填 `PanelIntents.addressing`（文本格式如 `CC ch1 #28`、`Note ch1 #0`）。
 
 验收：对 `docs/MIDI_PROTOCOL.md` 两张表逐行断言，含“Layer B 推子 1 输入 CC 28、反馈 CC 1”这一反例。
+
+实现备注：`MIDIAddress` 分离消息类型、零基通道与编号，显示通道为 1–16；Note 地址涵盖按下与释放。
+编码器的主反馈地址为灯环显示，额外的 `encoderRingStyleAddress(encoder:)` 描述样式地址；检查器同时标明
+`RingDisplay` / `RingStyle`。触摸和编码器按下不伪造反馈地址，非法索引返回 nil。适配层只读取已应用的会话映射，
+未点击“应用配置”的通道草稿不会影响显示；地址查询不发送 MIDI。协议表、独立通道及只读适配已覆盖确定性测试，
+实机地址仍待 HW 清单验证。
 
 ### B4 ConsoleModel 可测试化与通知、监视器模型
 

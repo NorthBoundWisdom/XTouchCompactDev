@@ -51,7 +51,16 @@ extension ConsoleModel {
             releaseButton: hardwareMode ? nil : { [weak self] index in self?.releaseButton(index) },
             setFader: { [weak self] index, value in self?.faderChanged(index, value: Double(value)) },
             setEncoder: { [weak self] index, value in self?.encoderChanged(index, value: Double(value)) },
-            addressing: nil
+            addressing: { [weak self] control, layer in
+                guard let map = self?.session.state.map,
+                      let input = map.inputAddress(for: control, layer: layer) else { return nil }
+                var feedback = map.feedbackAddress(for: control)?.description
+                if case let .encoder(index) = control,
+                   let display = feedback, let style = map.encoderRingStyleAddress(encoder: index) {
+                    feedback = "\(display) [RingDisplay]; \(style) [RingStyle]"
+                }
+                return ControlAddressing(input: input.description, feedback: feedback)
+            }
         )
     }
 }

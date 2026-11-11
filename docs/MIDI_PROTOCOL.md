@@ -72,3 +72,18 @@ Using one symmetric `MIDIControlID` for both `IN` and `OUT` would update the wro
 Local redraws are intentionally disruptive so tests exercise reassertion: rotation and ring-style changes redraw from the local encoder value; a transport press clears the other five LEDs and lights the pressed key; release turns that key off. These redraw patterns, encoder accumulator behavior across layer changes, initial simulated positions and instantaneous motor motion are simulation choices, **not per-firmware physical measurements**.
 
 This protocol core test suite is **not** a substitute for capture-based, per-firmware verification. It does not prove USB enumeration, physical position precision, motor servo calibration, patch loading or Mac DriverKit compatibility.
+
+## Address inspection
+
+`FactoryStandardMap.inputAddress(for:layer:)` returns a structured `MIDIAddress`
+for each supported physical input. `feedbackAddress(for:)` returns the motor,
+ring-display or button LED address independently of layer and TX channel. Fader
+touch and encoder push have no feedback address. Encoder ring style is available
+separately through `encoderRingStyleAddress(encoder:)`.
+
+Addresses carry message type, zero-based channel and number; their descriptions
+use human-readable channels 1–16, e.g. `CC ch1 #28`. `Note` describes the shared
+Note On/Off number, not a velocity or a LED encoding. Invalid control indices
+return nil. These APIs describe the factory profile only; they do not send MIDI,
+learn a device preset or establish a position observation. The inspector reads
+the applied session profile rather than uncommitted channel edits.
