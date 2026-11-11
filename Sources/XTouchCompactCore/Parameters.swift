@@ -80,7 +80,8 @@ public struct SurfaceConfiguration: Codable, Equatable, Sendable {
             }
             switch assignment.action {
             case let .agent(slot): guard (1 ... 8).contains(slot) else { throw ParameterError.invalidAssignment }
-            case .resetGroup: break
+            case let .resetGroup(group):
+                guard parameters.contains(where: { $0.group == group }) else { throw ParameterError.invalidAssignment }
             case let .parameter(id): guard ids.contains(id) else { throw ParameterError.unknownParameter(id) }
             case let .step(id, value), let .set(id, value):
                 guard ids.contains(id), value.isFinite else { throw ParameterError.invalidAssignment }
@@ -166,8 +167,10 @@ public struct ParameterEngine: Sendable {
             }
         case let .cycle(id, choices):
             if event.isPressed == true {
-                let next = choices.firstIndex(of: values[id] ?? .nan).map { ($0 + 1) % choices.count } ?? 0
-                try set(id, value: choices[next])
+                guard let definition = definition(id) else { throw ParameterError.unknownParameter(id) }
+                let normalized = try choices.map { try definition.normalized($0) }
+                let next = normalized.firstIndex(of: values[id] ?? .nan).map { ($0 + 1) % normalized.count } ?? 0
+                try set(id, value: normalized[next])
             }
         }
         return nil

@@ -50,4 +50,11 @@ import Testing
     #expect(engine.values["p"] == 2)
     #expect(try engine.receive(.init(control: .button(5), layer: .b, value: 127, isPressed: true)) == 8)
     #expect(throws: ParameterError.self) { _ = try engine.set("p", value: .nan) }
+    var snapped = try ParameterEngine(configuration: SurfaceConfiguration(parameters: [definition], assignments: [
+        .init(control: .button(1), layer: .a, action: .cycle("p", [1, 3])),
+    ]))
+    _ = try snapped.receive(.init(control: .button(1), layer: .a, value: 127, isPressed: true))
+    #expect(snapped.values["p"] == 4)
+    _ = try snapped.receive(.init(control: .button(1), layer: .a, value: 127, isPressed: true))
+    #expect(snapped.values["p"] == 2)
 }
