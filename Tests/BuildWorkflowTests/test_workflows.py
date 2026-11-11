@@ -3,16 +3,22 @@
 import contextlib
 import io
 import json
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from configs import macos_workflow, setup_local_project, source_root_workflow
 from configs._vendor.freecm.errors import RepoCommandManifestError
-from configs._vendor.freecm.repo_commands import validate_repo_command_manifest, validate_repo_command_manifest_text
-from configs.build_environment import ensure_local_build_environment, load_build_environment
+from configs._vendor.freecm.repo_commands import (
+    validate_repo_command_manifest,
+    validate_repo_command_manifest_text,
+)
+from configs.build_environment import (
+    ensure_local_build_environment,
+    load_build_environment,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,8 +38,10 @@ class WorkflowTests(unittest.TestCase):
             (root / "configs").mkdir()
             (root / "configs/build.local.example.json").write_text('{"environment": {}, "path": []}')
             self.assertTrue(ensure_local_build_environment(root))
-            payload = {"environment": {"SDK": "$REPO_ROOT/sdk", "LITERAL": "$(touch sentinel)"},
-                       "path": ["$REPO_ROOT/tools"]}
+            payload = {
+                "environment": {"SDK": "$REPO_ROOT/sdk", "LITERAL": "$(touch sentinel)"},
+                "path": ["$REPO_ROOT/tools"],
+            }
             local = root / "build.local.json"
             local.write_text(json.dumps(payload))
             self.assertFalse(ensure_local_build_environment(root))
@@ -79,10 +87,12 @@ class WorkflowTests(unittest.TestCase):
             (root / "build").mkdir()
             marker = root / "build/configured.json"
             marker.write_text("{}")
-            with (patch.object(setup_local_project, "REPO_ROOT", root),
-                  patch.object(setup_local_project, "ensure_local_build_environment"),
-                  patch.object(setup_local_project, "load_app_build_settings", return_value={}),
-                  patch.object(setup_local_project, "validate_commands", return_value=1)):
+            with (
+                patch.object(setup_local_project, "REPO_ROOT", root),
+                patch.object(setup_local_project, "ensure_local_build_environment"),
+                patch.object(setup_local_project, "load_app_build_settings", return_value={}),
+                patch.object(setup_local_project, "validate_commands", return_value=1),
+            ):
                 self.assertEqual(setup_local_project.main(), 1)
             self.assertFalse(marker.exists())
 

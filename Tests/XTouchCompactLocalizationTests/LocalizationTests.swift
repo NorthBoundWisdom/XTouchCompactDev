@@ -11,7 +11,7 @@ import Testing
         (["zh_SG"], .simplifiedChinese), (["zh-TW"], .traditionalChinese),
         (["zh-HK"], .traditionalChinese), (["zh-MO"], .traditionalChinese),
         (["zh-Hans-HK"], .simplifiedChinese), (["zh-Hant-CN"], .traditionalChinese),
-        (["fr-FR", "zh-TW"], .traditionalChinese), (["ja-JP"], .english), ([], .english)
+        (["fr-FR", "zh-TW"], .traditionalChinese), (["ja-JP"], .english), ([], .english),
     ]
     for (preferences, expected) in cases {
         #expect(AppLanguage.system.resolved(preferredLanguages: preferences) == expected)
@@ -42,7 +42,7 @@ import Testing
         for (key, value) in translated {
             #expect(!value.isEmpty)
             #expect(key.components(separatedBy: "%@").count == value.components(separatedBy: "%@").count)
-            #expect(Localizer(language: AppLanguage(rawValue: language)!).text(key) == value)
+            #expect(try Localizer(language: #require(AppLanguage(rawValue: language))).text(key) == value)
         }
     }
 }

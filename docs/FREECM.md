@@ -17,7 +17,7 @@ The setup script writes `build/configured.json` only after validation succeeds.
 | Run | `python3 configs/macos_workflow.py run` | Build and execute the debug bundle in the terminal |
 | Test | `python3 configs/macos_workflow.py test` | Hardware-independent Swift tests, two jobs |
 | Workflow tests | `python3 -m unittest discover -s Tests/BuildWorkflowTests -v` | Python workflow checks |
-| Package | `python3 configs/macos_workflow.py package` | Native Release `.app` in a ZIP and `.zip.sha256` under `build/package/` |
+| Package | `python3 configs/macos_workflow.py package` | Native Release `.app` in ZIP/DMG and SHA-256 sidecars under `build/package/` |
 
 The Run process belongs to the FreeCM terminal: logs remain visible and Ctrl+C
 stops it. Stop Run before submitting another command. The app starts in Mock
@@ -44,7 +44,7 @@ and Xcode command-line tools providing `codesign` and `ditto`. No Python package
 Node, FreeCM checkout, submodule or external runtime dependency is needed.
 
 Packages are native-architecture, locally ad-hoc signed developer artifacts.
-They have no custom icon, Developer ID signing or notarization. They are not
+They include an app icon; Developer ID signing and notarization are not provided. They are not
 production distribution builds. No release, upload or tag is created.
 
 ## Initialization and cleanup
@@ -62,7 +62,7 @@ python3 configs/source_root_workflow.py --cleanbuild
 ```
 
 It removes only `build/configured.json`, `build/swiftpm`, `build/app` and
-`build/package`. Other files and local settings survive; symlinked build roots
+`build/package`, `build/icons` and `build/screenshots`. Other files and local settings survive; symlinked build roots
 are rejected. FreeCM's own **Clean Build** implementation may remove all build
 children except its dependency seed/source directories. Neither cleanup removes
 the separate `.build/` cache. Run Config again after cleanup.

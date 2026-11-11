@@ -81,7 +81,7 @@
     ],
     "package": [
       {
-        "id": "release-zip", "label": "Local Release ZIP",
+        "id": "release-zip", "label": "Local Release ZIP + DMG",
         "description": "Build a native Release app, ad-hoc sign and archive it with SHA-256; no notarization",
         "command": "python3", "args": ["configs/macos_workflow.py", "package"],
         "configurations": ["local-swift"]

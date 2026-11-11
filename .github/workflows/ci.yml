@@ -19,9 +19,12 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - run: brew install swiftformat ruff
+      - run: python3 configs/format_repo.py --check
       - run: swift --version
       - run: python3 configs/setup_local_project.py
       - run: python3 -m unittest discover -s Tests/BuildWorkflowTests -v
       - run: swift build -c debug
       - run: swift test --jobs 2
-      - run: python3 configs/macos_workflow.py build
+      - run: python3 configs/macos_workflow.py package
+      - run: python3 tools/capture_readme_screenshots.py

@@ -66,25 +66,25 @@ public struct FactoryStandardMap: Sendable {
     }
 
     public func motorPosition(fader: Int, value: UInt8) throws -> MIDIMessage {
-        guard (1...9).contains(fader) else { throw CompactError.invalidIndex("fader", fader) }
+        guard (1 ... 9).contains(fader) else { throw CompactError.invalidIndex("fader", fader) }
         return .controlChange(channel: globalReceiveChannel, number: UInt8(fader), value: value)
     }
 
     public func encoderRingStyle(encoder: Int, style: RingStyle) throws -> MIDIMessage {
-        guard (1...16).contains(encoder) else { throw CompactError.invalidIndex("encoder", encoder) }
+        guard (1 ... 16).contains(encoder) else { throw CompactError.invalidIndex("encoder", encoder) }
         return .controlChange(channel: globalReceiveChannel, number: UInt8(9 + encoder), value: style.rawValue)
     }
 
     public func encoderRingValue(encoder: Int, display: RingDisplay) throws -> MIDIMessage {
-        guard (1...16).contains(encoder) else { throw CompactError.invalidIndex("encoder", encoder) }
+        guard (1 ... 16).contains(encoder) else { throw CompactError.invalidIndex("encoder", encoder) }
         let value: Int
         switch display {
         case .off: value = 0
         case let .position(i):
-            guard (1...13).contains(i) else { throw CompactError.invalidDisplayPosition(i) }
+            guard (1 ... 13).contains(i) else { throw CompactError.invalidDisplayPosition(i) }
             value = i
         case let .blinkingPosition(i):
-            guard (1...13).contains(i) else { throw CompactError.invalidDisplayPosition(i) }
+            guard (1 ... 13).contains(i) else { throw CompactError.invalidDisplayPosition(i) }
             value = i + 13
         case .allOn: value = 27
         case .allBlinking: value = 28
@@ -93,8 +93,9 @@ public struct FactoryStandardMap: Sendable {
     }
 
     public func buttonLight(button: Int, light: ButtonLight,
-                            style: ButtonLightProtocol) throws -> MIDIMessage {
-        guard (1...39).contains(button) else { throw CompactError.invalidIndex("button", button) }
+                            style: ButtonLightProtocol) throws -> MIDIMessage
+    {
+        guard (1 ... 39).contains(button) else { throw CompactError.invalidIndex("button", button) }
         return .noteOn(channel: globalReceiveChannel, number: UInt8(button - 1),
                        velocity: style.velocity(for: light))
     }

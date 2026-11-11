@@ -21,21 +21,25 @@ public struct MockXTouchCompact: Sendable {
     }
 
     public mutating func moveFader(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
-        try validate(index, in: 1...9, name: "fader")
+        try validate(index, in: 1 ... 9, name: "fader")
         try validate(value)
         faders[index - 1] = value
         return [cc(base: layer == .a ? 1 : 28, index: index, value: value)]
     }
 
     public mutating func touchFader(_ index: Int, isTouched: Bool) throws -> [MIDIMessage] {
-        try validate(index, in: 1...9, name: "fader")
-        if isTouched { touchedFaders.insert(index) } else { touchedFaders.remove(index) }
+        try validate(index, in: 1 ... 9, name: "fader")
+        if isTouched {
+            touchedFaders.insert(index)
+        } else {
+            touchedFaders.remove(index)
+        }
         return [cc(base: layer == .a ? 101 : 111, index: index, value: isTouched ? 127 : 0)]
     }
 
     /// Stock encoders transmit absolute values, even though the physical knob is endless.
     public mutating func turnEncoder(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
-        try validate(index, in: 1...16, name: "encoder")
+        try validate(index, in: 1 ... 16, name: "encoder")
         try validate(value)
         encoders[index - 1] = value
         redrawRing(index)
@@ -43,24 +47,30 @@ public struct MockXTouchCompact: Sendable {
     }
 
     public mutating func turnEncoder(_ index: Int, delta: Int) throws -> [MIDIMessage] {
-        try validate(index, in: 1...16, name: "encoder")
+        try validate(index, in: 1 ... 16, name: "encoder")
         let value = min(max(Int(encoders[index - 1]) + min(max(delta, -127), 127), 0), 127)
         return try turnEncoder(index, value: UInt8(value))
     }
 
     public mutating func pushEncoder(_ index: Int, isDown: Bool) throws -> [MIDIMessage] {
-        try validate(index, in: 1...16, name: "encoder")
-        if isDown { pushedEncoders.insert(index) } else { pushedEncoders.remove(index) }
+        try validate(index, in: 1 ... 16, name: "encoder")
+        if isDown {
+            pushedEncoders.insert(index)
+        } else {
+            pushedEncoders.remove(index)
+        }
         return [note(base: layer == .a ? 0 : 55, index: index, isDown: isDown)]
     }
 
     public mutating func pressButton(_ index: Int, isDown: Bool) throws -> [MIDIMessage] {
-        try validate(index, in: 1...39, name: "button")
+        try validate(index, in: 1 ... 39, name: "button")
         if isDown {
             pressedButtons.insert(index)
             // Deliberately destructive group redraw exercises the host's reassertion policy.
-            if (34...39).contains(index) {
-                for other in 34...39 { buttons[other - 1] = .off }
+            if (34 ... 39).contains(index) {
+                for other in 34 ... 39 {
+                    buttons[other - 1] = .off
+                }
             }
         } else {
             pressedButtons.remove(index)
@@ -70,10 +80,14 @@ public struct MockXTouchCompact: Sendable {
     }
 
     /// Physical A/B selectors are local: no outbound MIDI event and no motor recall.
-    public mutating func selectPhysicalLayer(_ layer: CompactLayer) { self.layer = layer }
+    public mutating func selectPhysicalLayer(_ layer: CompactLayer) {
+        self.layer = layer
+    }
 
     public mutating func receive(_ messages: [MIDIMessage]) {
-        for message in messages { receive(message) }
+        for message in messages {
+            receive(message)
+        }
     }
 
     public mutating func receive(_ message: MIDIMessage) {
@@ -81,24 +95,24 @@ public struct MockXTouchCompact: Sendable {
         case let .controlChange(channel, number, value):
             guard channel == map.globalReceiveChannel, value < 128 else { return }
             switch number {
-            case 1...9:
+            case 1 ... 9:
                 let index = Int(number)
                 guard !touchedFaders.contains(index) else {
                     ignoredMotorCommands += 1
                     return
                 }
                 faders[index - 1] = value
-            case 10...25:
+            case 10 ... 25:
                 guard let style = RingStyle(rawValue: value) else { return }
                 let index = Int(number) - 9
                 ringStyles[index - 1] = style
                 redrawRing(index)
-            case 26...41:
+            case 26 ... 41:
                 let display: RingDisplay
                 switch value {
                 case 0: display = .off
-                case 1...13: display = .position(Int(value))
-                case 14...26: display = .blinkingPosition(Int(value) - 13)
+                case 1 ... 13: display = .position(Int(value))
+                case 14 ... 26: display = .blinkingPosition(Int(value) - 13)
                 case 27: display = .allOn
                 case 28: display = .allBlinking
                 default: return

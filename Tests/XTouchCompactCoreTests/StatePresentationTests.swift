@@ -2,20 +2,22 @@ import Testing
 @testable import XTouchCompactCore
 
 @Test func disconnectedSessionStillOwnsCompleteDisplayIntent() throws {
-    var session = CompactSession(map: try FactoryStandardMap(), lightProtocol: .manual)
-    for i in 1...16 {
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    for i in 1 ... 16 {
         #expect(session.state.desiredRing(i) == .position(1))
         #expect(session.state.desiredRingStyle(i) == nil)
     }
-    for i in 1...39 { #expect(session.state.desiredButton(i) == .off) }
+    for i in 1 ... 39 {
+        #expect(session.state.desiredButton(i) == .off)
+    }
     // Initialization seeds desired state, not a fictional successful transmission.
     #expect(try session.setEncoder(1, value: 0).count == 1)
 }
 
 @Test func stateQueriesDistinguishDesiredObservedAndHeldControls() throws {
-    var state = CompactState(map: try FactoryStandardMap(transmitChannel: 3, globalReceiveChannel: 9),
-                             lightProtocol: .manual)
-    for i in 1...9 {
+    var state = try CompactState(map: FactoryStandardMap(transmitChannel: 3, globalReceiveChannel: 9),
+                                 lightProtocol: .manual)
+    for i in 1 ... 9 {
         #expect(state.observedFader(i) == nil)
         #expect(!state.isTouched(i))
         #expect(!state.isMotorPending(i))
@@ -31,7 +33,7 @@ import Testing
         #expect(!state.isMotorPending(i))
         #expect(state.observedFader(i) == 31) // Last report remains stale, never forged as 106.
     }
-    for i in 1...16 {
+    for i in 1 ... 16 {
         #expect(state.desiredRing(i) == nil)
         #expect(state.desiredRingStyle(i) == nil)
         #expect(!state.isEncoderPushed(i))
@@ -44,7 +46,7 @@ import Testing
         _ = state.receive(.noteOn(channel: 3, number: UInt8(i - 1), velocity: 0))
         #expect(!state.isEncoderPushed(i))
     }
-    for i in 1...39 {
+    for i in 1 ... 39 {
         #expect(state.desiredButton(i) == nil)
         #expect(!state.isButtonDown(i))
         _ = try state.setButton(i, light: .blink)
@@ -65,7 +67,7 @@ import Testing
 }
 
 @Test func reconnectClearsObservationsAndHeldStateButKeepsDesiredFeedback() throws {
-    var state = CompactState(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
     _ = state.receive(.controlChange(channel: 0, number: 1, value: 31))
     _ = state.receive(.controlChange(channel: 0, number: 101, value: 127))
     _ = try state.setFader(1, value: 106)
@@ -83,11 +85,17 @@ import Testing
     #expect(state.desiredRing(1) == .allBlinking)
     #expect(state.desiredRingStyle(1) == .spread)
     #expect(state.desiredButton(1) == .blink)
-    #expect(!commands.contains { if case .controlChange(_, 1...9, _) = $0 { true } else { false } })
+    #expect(!commands.contains {
+        if case .controlChange(_, 1 ... 9, _) = $0 {
+            true
+        } else {
+            false
+        }
+    })
 }
 
 @Test func layerChangeCancelsOldPendingMotorAndRetainsPhysicalTouch() throws {
-    var session = CompactSession(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
     _ = try session.connect()
     _ = try session.receive([.controlChange(channel: 0, number: 101, value: 127),
                              .controlChange(channel: 0, number: 1, value: 31)])

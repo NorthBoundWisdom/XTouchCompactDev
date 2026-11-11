@@ -30,14 +30,37 @@ public struct CompactState: Sendable {
 
     /// Last actual TX position report, possibly stale after a motor command. Sending RX
     /// feedback never updates this observation; no report means nil.
-    public func observedFader(_ index: Int) -> UInt8? { observedFaders[index] }
-    public func isTouched(_ index: Int) -> Bool { touchedFaders.contains(index) }
-    public func isMotorPending(_ index: Int) -> Bool { pendingMotor.contains(index) }
-    public func desiredButton(_ index: Int) -> ButtonLight? { desiredButtons[index] }
-    public func desiredRing(_ index: Int) -> RingDisplay? { desiredRings[index] }
-    public func desiredRingStyle(_ index: Int) -> RingStyle? { desiredStyles[index] }
-    public func isButtonDown(_ index: Int) -> Bool { pressedButtons.contains(index) }
-    public func isEncoderPushed(_ index: Int) -> Bool { pushedEncoders.contains(index) }
+    public func observedFader(_ index: Int) -> UInt8? {
+        observedFaders[index]
+    }
+
+    public func isTouched(_ index: Int) -> Bool {
+        touchedFaders.contains(index)
+    }
+
+    public func isMotorPending(_ index: Int) -> Bool {
+        pendingMotor.contains(index)
+    }
+
+    public func desiredButton(_ index: Int) -> ButtonLight? {
+        desiredButtons[index]
+    }
+
+    public func desiredRing(_ index: Int) -> RingDisplay? {
+        desiredRings[index]
+    }
+
+    public func desiredRingStyle(_ index: Int) -> RingStyle? {
+        desiredStyles[index]
+    }
+
+    public func isButtonDown(_ index: Int) -> Bool {
+        pressedButtons.contains(index)
+    }
+
+    public func isEncoderPushed(_ index: Int) -> Bool {
+        pushedEncoders.contains(index)
+    }
 
     /// Always send Program Change on (re)connect; physical A/B presses are not host-visible.
     /// Deliberately do NOT recall motor positions on reconnect until operator opts in.
@@ -79,39 +102,56 @@ public struct CompactState: Sendable {
             observedFaders[i] = event.value
             observedIsCurrent.insert(i)
         case let .faderTouch(i):
-            if event.isPressed == true { touchedFaders.insert(i) }
-            else { touchedFaders.remove(i) }
+            if event.isPressed == true {
+                touchedFaders.insert(i)
+            } else {
+                touchedFaders.remove(i)
+            }
         case let .encoder(i): lastSentRings.removeValue(forKey: i)
         case let .button(i):
-            if event.isPressed == true { pressedButtons.insert(i) }
-            else { pressedButtons.remove(i) }
-            if event.isPressed == true && (34...39).contains(i) {
+            if event.isPressed == true {
+                pressedButtons.insert(i)
+            } else {
+                pressedButtons.remove(i)
+            }
+            if event.isPressed == true, (34 ... 39).contains(i) {
                 // The six right-area transport buttons may redraw *the whole group* locally.
-                for index in 34...39 { lastSentButtons.removeValue(forKey: index) }
-            } else if event.isPressed == false { lastSentButtons.removeValue(forKey: i) }
+                for index in 34 ... 39 {
+                    lastSentButtons.removeValue(forKey: index)
+                }
+            } else if event.isPressed == false {
+                lastSentButtons.removeValue(forKey: i)
+            }
         case let .encoderPush(i):
-            if event.isPressed == true { pushedEncoders.insert(i) }
-            else { pushedEncoders.remove(i) }
+            if event.isPressed == true {
+                pushedEncoders.insert(i)
+            } else {
+                pushedEncoders.remove(i)
+            }
         }
         return event
     }
 
     /// Use only after a decoded fader-touch release; compare with the observed physical position.
     public mutating func reconcileReleasedFader(_ index: Int) throws -> [MIDIMessage] {
-        guard (1...9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
+        guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
         guard !touchedFaders.contains(index), pendingMotor.contains(index),
               let desired = desiredFader[index] else { return [] }
         pendingMotor.remove(index)
-        if observedIsCurrent.contains(index), observedFaders[index] == desired { return [] }
-        if !observedIsCurrent.contains(index), lastMotorCommands[index] == desired { return [] }
+        if observedIsCurrent.contains(index), observedFaders[index] == desired {
+            return []
+        }
+        if !observedIsCurrent.contains(index), lastMotorCommands[index] == desired {
+            return []
+        }
         lastMotorCommands[index] = desired
         observedIsCurrent.remove(index)
-        return [try map.motorPosition(fader: index, value: desired)]
+        return try [map.motorPosition(fader: index, value: desired)]
     }
 
     /// When touched, only update desired state; never drive the motor against the user's hand.
     public mutating func setFader(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
-        guard (1...9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
+        guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
         desiredFader[index] = value
         if touchedFaders.contains(index) {
             pendingMotor.insert(index)
@@ -124,19 +164,19 @@ public struct CompactState: Sendable {
         }
         lastMotorCommands[index] = value
         observedIsCurrent.remove(index)
-        return [try map.motorPosition(fader: index, value: value)]
+        return try [map.motorPosition(fader: index, value: value)]
     }
 
     public mutating func setButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
-        guard (1...39).contains(index) else { throw CompactError.invalidIndex("button", index) }
+        guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
         desiredButtons[index] = light
         guard lastSentButtons[index] != light else { return [] }
         lastSentButtons[index] = light
-        return [try map.buttonLight(button: index, light: light, style: lightProtocol)]
+        return try [map.buttonLight(button: index, light: light, style: lightProtocol)]
     }
 
     public mutating func setRing(_ index: Int, display: RingDisplay) throws -> [MIDIMessage] {
-        guard (1...16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
+        guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
         let midi = try map.encoderRingValue(encoder: index, display: display)
         desiredRings[index] = display
         guard lastSentRings[index] != display else { return [] }
@@ -145,14 +185,16 @@ public struct CompactState: Sendable {
     }
 
     public mutating func setRingStyle(_ index: Int, style: RingStyle) throws -> [MIDIMessage] {
-        guard (1...16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
+        guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
         desiredStyles[index] = style
         guard lastSentStyles[index] != style else { return [] }
         lastSentStyles[index] = style
-        var result = [try map.encoderRingStyle(encoder: index, style: style)]
+        var result = try [map.encoderRingStyle(encoder: index, style: style)]
         // Changing ring style locally redraws the ring: replay the host-owned position.
         lastSentRings.removeValue(forKey: index)
-        if let display = desiredRings[index] { result += try setRing(index, display: display) }
+        if let display = desiredRings[index] {
+            result += try setRing(index, display: display)
+        }
         return result
     }
 
@@ -170,22 +212,28 @@ public struct CompactState: Sendable {
     public mutating func restoreNonMotorFeedback() throws -> [MIDIMessage] {
         var result: [MIDIMessage] = []
         for index in desiredStyles.keys.sorted() {
-            if let style = desiredStyles[index] { result += try setRingStyle(index, style: style) }
+            if let style = desiredStyles[index] {
+                result += try setRingStyle(index, style: style)
+            }
         }
         for index in desiredRings.keys.sorted() {
-            if let display = desiredRings[index] { result += try setRing(index, display: display) }
+            if let display = desiredRings[index] {
+                result += try setRing(index, display: display)
+            }
         }
         for index in desiredButtons.keys.sorted() {
-            if let light = desiredButtons[index] { result += try setButton(index, light: light) }
+            if let light = desiredButtons[index] {
+                result += try setButton(index, light: light)
+            }
         }
         return result
     }
 }
 
-extension CompactState {
+public extension CompactState {
     /// A profile change never carries a queued motor intent across configuration boundaries.
     /// Physical touch survives so subsequent writes cannot race a hand already on a fader.
-    public func reconfigured(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) -> CompactState {
+    func reconfigured(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) -> CompactState {
         var next = CompactState(map: map, lightProtocol: lightProtocol)
         next.layer = layer
         next.touchedFaders = touchedFaders

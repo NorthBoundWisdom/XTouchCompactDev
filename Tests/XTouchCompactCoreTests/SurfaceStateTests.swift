@@ -2,7 +2,7 @@ import Testing
 @testable import XTouchCompactCore
 
 @Test func noMotorDriveWhileUserTouchesFader() throws {
-    var state = CompactState(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
     _ = try state.connect()
     #expect(state.receive(.controlChange(channel: 0, number: 101, value: 127))?.isPressed == true)
     #expect(try state.setFader(1, value: 80).isEmpty)
@@ -13,7 +13,7 @@ import Testing
 }
 
 @Test func layerSelectionAlwaysTransmitsAndReconnectAvoidsMotors() throws {
-    var state = CompactState(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
     #expect(state.selectLayer(.b) == .programChange(channel: 0, number: 1))
     #expect(state.selectLayer(.b) == .programChange(channel: 0, number: 1))
     _ = try state.setFader(1, value: 64)
@@ -25,19 +25,19 @@ import Testing
 }
 
 @Test func encoderRingLocalRedrawAndStyleChange() throws {
-    var state = CompactState(map: try FactoryStandardMap(), lightProtocol: .observed114)
+    var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .observed114)
     #expect(try state.setRing(1, display: .position(7)) == [.controlChange(channel: 0, number: 26, value: 7)])
     #expect(try state.setRing(1, display: .position(7)).isEmpty)
     _ = state.receive(.controlChange(channel: 0, number: 10, value: 100))
     #expect(try state.setRing(1, display: .position(7)).count == 1)
     #expect(try state.setRingStyle(1, style: .pan) == [
         .controlChange(channel: 0, number: 10, value: 1),
-        .controlChange(channel: 0, number: 26, value: 7)
+        .controlChange(channel: 0, number: 26, value: 7),
     ])
 }
 
 @Test func rightButtonGroupInvalidation() throws {
-    var state = CompactState(map: try FactoryStandardMap(), lightProtocol: .observed114)
+    var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .observed114)
     #expect(try state.setButton(34, light: .on).count == 1)
     #expect(try state.setButton(35, light: .on).count == 1)
     #expect(try state.setButton(34, light: .on).isEmpty)

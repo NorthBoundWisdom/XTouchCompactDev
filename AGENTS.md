@@ -30,7 +30,7 @@ FreeCM integration uses `configs/freecm.commands.jsonc` (version 2) and the thin
 dependency lock or runtime dependency is required. Use `python3
 configs/setup_local_project.py` before plugin Build/Run/Test/Package actions.
 Keep local paths in ignored `build.local.json`; generated artifacts belong in
-`build/`. Packaging is local ad-hoc ZIP only; do not claim notarized distribution.
+`build/`. Packaging is local ad-hoc ZIP/DMG only; do not claim notarized distribution.
 See `docs/FREECM.md`. When changing workflows, also run:
 
 ```sh

@@ -11,10 +11,16 @@ public enum AppLanguage: String, CaseIterable, Sendable {
         guard self == .system else { return self }
         for language in preferredLanguages {
             let parts = language.lowercased().replacingOccurrences(of: "_", with: "-").split(separator: "-")
-            if parts.first == "en" { return .english }
+            if parts.first == "en" {
+                return .english
+            }
             if parts.first == "zh" {
-                if parts.contains("hant") { return .traditionalChinese }
-                if parts.contains("hans") { return .simplifiedChinese }
+                if parts.contains("hant") {
+                    return .traditionalChinese
+                }
+                if parts.contains("hans") {
+                    return .simplifiedChinese
+                }
                 return parts.contains(where: { ["tw", "hk", "mo"].contains($0) })
                     ? .traditionalChinese : .simplifiedChinese
             }
@@ -50,12 +56,12 @@ public struct Localizer: Sendable {
 
     private func render(_ key: String, arguments: [String]) -> String {
         let resourceName = "XTouchCompactDev_XTouchCompactLocalization"
-        let resources: Bundle
-        if let url = Bundle.main.resourceURL?.appendingPathComponent(resourceName + ".bundle"),
-           let packaged = Bundle(url: url) {
-            resources = packaged
+        let resources: Bundle = if let url = Bundle.main.resourceURL?.appendingPathComponent(resourceName + ".bundle"),
+                                   let packaged = Bundle(url: url)
+        {
+            packaged
         } else {
-            resources = .module
+            .module
         }
         let path = resources.path(forResource: language.rawValue, ofType: "lproj")!
         let bundle = Bundle(path: path)!

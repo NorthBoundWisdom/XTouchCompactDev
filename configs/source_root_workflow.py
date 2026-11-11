@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -15,7 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from configs.setup_local_project import main as setup_main
 
-CLEAN_TARGETS = ("configured.json", "swiftpm", "app", "package")
+CLEAN_TARGETS = ("configured.json", "swiftpm", "app", "package", "icons", "screenshots")
 
 
 def clean_build(*, dry_run: bool = False) -> None:

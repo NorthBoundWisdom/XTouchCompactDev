@@ -7,28 +7,34 @@ import Testing
         .noteOn(channel: 3, number: 70, velocity: 90),
         .noteOff(channel: 3, number: 70, velocity: 0),
         .programChange(channel: 15, number: 1),
-        .pitchBend(channel: 2, value: 16383)
+        .pitchBend(channel: 2, value: 16383),
     ]
     for message in messages {
         #expect(MIDI1UMPCodec.decode(MIDI1UMPCodec.encode(message, group: 4)) == message)
     }
-    #expect(MIDI1UMPCodec.decode(0x40000000) == nil) // 64-bit MIDI 2.0 UMP
-    #expect(MIDI1UMPCodec.decode(0x10000000) == nil) // System messages
-    #expect(MIDI1UMPCodec.decode(0x20904000) == .noteOff(channel: 0, number: 64, velocity: 0))
+    #expect(MIDI1UMPCodec.decode(0x4000_0000) == nil) // 64-bit MIDI 2.0 UMP
+    #expect(MIDI1UMPCodec.decode(0x1000_0000) == nil) // System messages
+    #expect(MIDI1UMPCodec.decode(0x2090_4000) == .noteOff(channel: 0, number: 64, velocity: 0))
 }
 
 @Test func sessionInitializesButNeverAutomaticallyMovesFaders() throws {
-    var session = CompactSession(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
     let commands = try session.connect()
     #expect(commands.first == .programChange(channel: 0, number: 0))
     #expect(commands.count == 56) // 1 layer + 16 rings + 39 buttons
-    #expect(!commands.contains { if case .controlChange(_, 1...9, _) = $0 { true } else { false } })
+    #expect(!commands.contains {
+        if case .controlChange(_, 1 ... 9, _) = $0 {
+            true
+        } else {
+            false
+        }
+    })
     #expect(try session.connect().count == 56)
     #expect(session.bank(.a).faders.allSatisfy { $0 == 0 })
 }
 
 @Test func separateApplicationBanksAndExplicitMotorRecall() throws {
-    var session = CompactSession(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
     _ = try session.connect()
     _ = try session.setFader(1, value: 100)
     _ = try session.setEncoder(1, value: 127)
@@ -46,7 +52,7 @@ import Testing
 }
 
 @Test func physicalInputAndTouchReconciliation() throws {
-    var session = CompactSession(map: try FactoryStandardMap(), lightProtocol: .observed114)
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .observed114)
     _ = try session.connect()
     let touch = try session.receive([.controlChange(channel: 0, number: 101, value: 127)])
     #expect(touch.inputs.first?.control == .faderTouch(1))
@@ -60,8 +66,8 @@ import Testing
 }
 
 @Test func buttonPressHasSeparateInputAndFeedbackAddress() throws {
-    var session = CompactSession(map: try FactoryStandardMap(globalReceiveChannel: 2),
-                                 lightProtocol: .observed114)
+    var session = try CompactSession(map: FactoryStandardMap(globalReceiveChannel: 2),
+                                     lightProtocol: .observed114)
     _ = try session.connect()
     let pressed = try session.receive([.noteOn(channel: 0, number: 16, velocity: 127)])
     #expect(pressed.inputs.first?.control == .button(1))
@@ -73,7 +79,7 @@ import Testing
 }
 
 @Test func ringFeedbackAfterPhysicalRotation() throws {
-    var session = CompactSession(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
     _ = try session.connect()
     let event = try session.receive([.controlChange(channel: 0, number: 10, value: 127)])
     #expect(session.bank(.a).encoders[0] == 127)
@@ -81,7 +87,7 @@ import Testing
 }
 
 @Test func stalePositionIsNotTreatedAsMotorAcknowledgement() throws {
-    var state = CompactState(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
     _ = try state.connect()
     _ = state.receive(.controlChange(channel: 0, number: 1, value: 20))
     #expect(try state.setFader(1, value: 80) == [.controlChange(channel: 0, number: 1, value: 80)])
@@ -92,7 +98,7 @@ import Testing
 }
 
 @Test func transportErrorInvalidatesLastSentFeedback() throws {
-    var session = CompactSession(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
     _ = try session.connect()
     #expect(try session.setEncoder(1, value: 40).count == 1)
     #expect(try session.setEncoder(1, value: 40).isEmpty)
@@ -101,9 +107,9 @@ import Testing
 }
 
 @Test func deterministicInputSweepKeepsParametersAndDisplaysWithinBounds() throws {
-    var session = CompactSession(map: try FactoryStandardMap(), lightProtocol: .manual)
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
     _ = try session.connect()
-    for turn in 0..<2048 {
+    for turn in 0 ..< 2048 {
         let index = 1 + turn % 16
         let value = UInt8((turn * 31) % 128)
         let raw = UInt8(9 + index)
@@ -111,7 +117,7 @@ import Testing
         #expect(session.bank(.a).encoders[index - 1] == value)
         #expect(update.feedback.allSatisfy {
             if case let .controlChange(_, cc, ringValue) = $0 {
-                return cc == UInt8(25 + index) && (1...13).contains(ringValue)
+                return cc == UInt8(25 + index) && (1 ... 13).contains(ringValue)
             }
             return false
         })

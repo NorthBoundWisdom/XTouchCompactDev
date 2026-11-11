@@ -6,7 +6,7 @@ Native Swift 6 / SwiftUI / CoreMIDI control surface for the **Behringer X-TOUCH 
 
 - **Implemented and locally tested:** factory Standard MIDI mode protocol core, A/B-layer mappings, 9 motorized faders, 9 touch sensors, 16 encoders and pushes, 39 buttons; distinct input/feedback addressing; exact MIDI1 UMP codec; stateful feedback dedup/invalidation; touch ownership and deferred motor reconciliation; two application parameter banks; deterministic Swift tests.
 - **macOS app code added:** SwiftUI virtual panel laid out like the device (8 channel strips, master fader, side encoder block, layer and transport buttons) with a control inspector and a values / MIDI monitor / connection workspace; Mock/Hardware modes; input/output port selection, separate TX/Global RX channel configuration, live MIDI event monitor, manual LED velocity variant, explicit motor recall with confirmation. CoreMIDI uses hotplug notifications and automatic **name-matched** endpoint discovery. GUI code needs macOS CI compilation and real hardware testing.
-- **Not implemented:** Mackie Control mode, firmware replacement, measured 14-bit physical fader resolution, persistence/import/export, advanced mapping/agent workflows/MCP/OSC, production app signing and notarization. These remain later work, not claimed capabilities.
+- **Not implemented:** Mackie Control mode, firmware replacement, measured 14-bit physical fader resolution, real external Agent processes, incoming OSC motor feedback, production app signing and notarization. These remain later work, not claimed capabilities.
 
 ## Test and run
 
@@ -19,7 +19,7 @@ swift run XTouchCompactApp
 
 For VS Code FreeCM integration, open **FreeCM: Show Workflow Panel**, run **Config**,
 then use **Build / Run / Test / Package**. The repository provides local ad-hoc
-signed `.app` bundles and Release ZIPs; production signing and notarization remain
+signed `.app` bundles and Release ZIP/DMG packages; production signing and notarization remain
 out of scope. See [FreeCM commands and local configuration](docs/FREECM.md).
 On Linux the executable prints a platform explanation; the core/tests work unchanged.
 
@@ -56,3 +56,13 @@ Views render a `PanelSnapshot` and emit `PanelIntents` (`PanelPresentation.swift
 - [Agent constraints](AGENTS.md)
 
 Reference implementation: [jetsonhacks/xtouch-compact](https://github.com/jetsonhacks/xtouch-compact), an MIT-licensed Linux ALSA library with validated behavior. We model its documented observations independently in Swift; no Python ALSA dependency is included. Original BCR2000Dev code influenced CoreMIDI callback and session boundaries.
+
+## Software workflows
+
+Parameters and bulk assignments, protected configuration persistence, eight Mock
+Agent slots, structured MIDI monitoring, opt-in localhost MCP and guarded OSC
+output are available without hardware. See [software workflows and safety boundaries](docs/SOFTWARE_WORKFLOWS.md).
+
+![Isolated Mock console](docs/images/console-en.png)
+
+[Settings preview](docs/images/settings.png) · [Traditional Chinese preview](docs/images/console-zh-Hant.png)

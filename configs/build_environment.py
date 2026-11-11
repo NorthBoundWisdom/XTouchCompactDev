@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
 import json
 import os
-from pathlib import Path
 import re
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_FILE = "build.local.json"

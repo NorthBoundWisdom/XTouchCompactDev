@@ -44,8 +44,8 @@
 - B1 / B2 已接入：Mock 面板手势走设备 TX → 会话 → 设备 RX；实测位置、触摸、电机暂缓、按住状态
   均来自会话，LED / 灯环读取期望状态。触摸期间推子帽按实测位置绘制，软件目标可独立变化。
 - 尚未获得位置输入时 `observed` 仍为 `nil`；未发送过灯环样式时 `style` 仍为 `nil`。
-  标签与详情等待后续任务，不填猜测值。B3 已提供当前已应用映射的 MIDI 地址。
-- 本轮验证：macOS 上 `swift test --jobs 2`（33 项 Core + 12 项 App + 3 项本地化）与 `swift build` 通过，原生可执行文件
+  B5 已提供参数标签与带单位详情；未绑定控件保持 nil。B3 已提供当前已应用映射的 MIDI 地址。
+- 本轮验证：macOS 上 `swift test --jobs 2`（38 项 Core + 17 项 App + 3 项本地化）与 `swift build` 通过，原生可执行文件
   启动后保持运行 3 秒并正常终止。触摸闭环已做确定性集成测试；鼠标交互目视验收及实机验证尚未完成。
 
 ## 后端任务（按顺序）
@@ -81,7 +81,7 @@ BCR 的做法是“Mock 下面板就是硬件”。这里同样需要，否则�
 
 实现备注：测试已改名为 `testAdapterReflectsSessionStateAndLeavesUnreportedFieldsNil`，仍保留对尚未报告值的
 `nil` 断言。切层取消旧层暂缓的电机目标，保留物理触摸；松手不会隐式归位，需再次明确软件写入或手动归位。
-App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI 客户端；MIDI 服务协议注入仍留给 B4。
+App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI 客户端；MIDI 服务协议注入已在 B4 完成。
 
 ### B3 MIDI 地址描述
 
@@ -99,8 +99,7 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 ### B4 ConsoleModel 可测试化与通知、监视器模型
 
-- [x] 抽出 `MIDIService` 协议并注入；增加 `startsMIDI: Bool`。现在的
-  `PanelPresentationTests` 直接构造 `ConsoleModel()`，会在测试里启动真实 CoreMIDI 客户端，改好后换成假服务。
+- [x] 抽出 `MIDIService` 协议并注入；增加 `startsMIDI: Bool`。`PanelPresentationTests` 使用不启动硬件的模型，服务测试显式注入假服务。
 - [x] `error: String?` 改为带级别、可关闭的通知（info / warning / error，可带动作）；持久性问题单独一条。
 - [x] MIDI 日志从 `[String]` 改为结构化事件：时间、方向、来源（mock / hardware / agent）、消息、
   对应的 `CompactControl?`、是否被忽略；保留上限。提供清空。
@@ -114,15 +113,15 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 来源参考：BCR2000Dev 的 `SurfaceConfiguration.swift`、`SurfaceEngine.swift`、`SurfaceSession.swift`、
 `BulkAssignment.swift`。按 X-TOUCH 语义重写，不要机械改名。
 
-- [ ] `ParameterDefinition`（名称、分组、单位、范围、默认值、连续 / 开关、步长吸附、`agentWritable`）。
-- [ ] 功能分配：`(CompactControl, CompactLayer)` → 参数 / Agent 主操作 / 复位参数组 / 步进 / 指定值 / 循环。
+- [x] `ParameterDefinition`（名称、分组、单位、范围、默认值、连续 / 开关、步长吸附、`agentWritable`）。
+- [x] 功能分配：`(CompactControl, CompactLayer)` → 参数 / Agent 主操作 / 复位参数组 / 步进 / 指定值 / 循环。
   A、B 两层是两套独立分配。
-- [ ] 软件参数是唯一事实来源：硬件输入改参数，参数决定反馈（电机、灯环、LED）。同一参数绑定多个控件时互相同步；
+- [x] 软件参数是唯一事实来源：硬件输入改参数，参数决定反馈（电机、灯环、LED）。同一参数绑定多个控件时互相同步；
   推子的同步遵守触摸仲裁，并明确 Agent 与人同时写入时谁赢（建议：触摸中的人赢，松开后以最后一次软件值对位）。
-- [ ] 编码器：出厂预设发的是带加速的**绝对值** 0…127；参数映射与灯环 13 段量化分开处理。
-- [ ] 内置预置：首次启动用中性的默认配置（9 个推子 + 16 个编码器对应通用参数，一行按键对应 Agent 1–8）；
+- [x] 编码器：出厂预设发的是带加速的**绝对值** 0…127；参数映射与灯环 13 段量化分开处理。
+- [x] 内置预置：首次启动用中性的默认配置（9 个推子 + 16 个编码器对应通用参数，一行按键对应 Agent 1–8）；
   领域示例作为可显式载入的预置。配置带版本号和设备型号标记，**拒绝载入 BCR2000 的配置**。
-- [ ] 适配层填 `label` / `detail`（参数名与带单位的值）。
+- [x] 适配层填 `label` / `detail`（参数名与带单位的值）。
 
 验收：闭环测试“Mock 输入 → 引擎 → Mock 反馈”；导入 BCR 配置被拒并有可见原因；触摸仲裁有测试。
 
@@ -130,43 +129,43 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 来源参考：BCR 的 `JSONFileStore.swift`、`ProtectedJSONFile.swift`。
 
-- [ ] `~/Library/Application Support/XTouchCompactConsole/` 下保存功能配置、设备档案（两个通道、LED 变体、
+- [x] `~/Library/Application Support/XTouchCompactConsole/` 下保存功能配置、设备档案（两个通道、LED 变体、
   手动端口选择）。非法文件保留原件并另存指纹备份，显示持续提示；保存失败不伪装成功。
-- [ ] 设备档案永不被静默改写；手动选择的端口缺失时不自动换路由。
-- [ ] 冒烟 / 集成测试使用临时目录，不碰用户文件与 Keychain。
+- [x] 设备档案永不被静默改写；手动选择的端口缺失时不自动换路由。
+- [x] 冒烟 / 集成测试使用临时目录，不碰用户文件与 Keychain。
 
 ### B7 Agent 槽位与 Mock Agent
 
 来源参考：BCR 的 `AgentModels.swift`、`ConsoleViewModel+Agents.swift`。
 
-- [ ] 8 个槽位状态机与确定性 Mock 时间线；绑定按键的主操作（空闲启动、运行中断、等待批准时批准）。
-- [ ] LED 映射利用本设备的闪烁能力：例如等待批准 = 闪烁，运行 = 常亮。两种 LED 速度编码都要有测试。
+- [x] 8 个槽位状态机与确定性 Mock 时间线；绑定按键的主操作（空闲启动、运行中断、等待批准时批准）。
+- [x] LED 映射利用本设备的闪烁能力：例如等待批准 = 闪烁，运行 = 常亮。两种 LED 速度编码都要有测试。
 
 ### B8 通用 MCP 接口
 
 来源参考：BCR 的 `MCPRouter.swift`、`MCPModels.swift`、`MCPInputValidation.swift`、`MCPHTTPServer.swift`、
 `MCPController.swift`、`docs/MCP.md`。
 
-- [ ] 仅绑定 127.0.0.1、默认关闭、Token 存 Keychain、权限与限速、调用记录。
-- [ ] Agent 写入与界面写入走同一管线，推子写入同样受触摸仲裁；监视器标为 AGENT。
-- [ ] 工具 schema 暴露层与触摸状态，让客户端知道一次写入是否被暂缓。
+- [x] 仅绑定 127.0.0.1、默认关闭、Token 存 Keychain、权限与限速、调用记录。
+- [x] Agent 写入与界面写入走同一管线，推子写入同样受触摸仲裁；监视器标为 AGENT。
+- [x] 工具 schema 暴露层与触摸状态，让客户端知道一次写入是否被暂缓。
 
 ### B9 OSC 输出与安全门
 
 来源参考：BCR 的 `MotionSafetyGate.swift`、`OSCCodec.swift`、`OutputController.swift`、`OSCParameterAdapter.swift`。
 
-- [ ] 移植安全门（限位、限速、心跳、先关后开使能、启动不自动恢复输出）。
-- [ ] 评估“实际回传 → 电动推子”：只有在触摸仲裁和归位确认都成立时才允许回传驱动电机，默认关闭。
+- [x] 移植安全门（限位、限速、心跳、先关后开使能、启动不自动恢复输出）。
+- [x] 评估“实际回传 → 电动推子”：只有在触摸仲裁和归位确认都成立时才允许回传驱动电机，默认关闭。
 
 ### B10 构建、打包与工具链
 
 来源参考：BCR 的 `configs/`（`macos_workflow.py`、`app_build.json`、`format_repo.py`、`githooks/`）、
 `tools/mcp_integration.py`、`tools/capture_readme_screenshots.py`、`CONTRIBUTING.md`、`assets/`。
 
-- [ ] `.app` 构建、ad-hoc 签名、ZIP / DMG、校验和；启动冒烟（`--startup-smoke`）。
-- [ ] 隔离集成测试模式（独立目录与内存凭据），供原生验收与截图脚本使用。
-- [ ] SwiftFormat / Ruff 提交钩子与 `CONTRIBUTING.md`；CI 增加 App 测试目标与格式检查。
-- [ ] 不移植 DriverKit 相关内容：没有证据表明本设备需要。
+- [x] `.app` 构建、ad-hoc 签名、ZIP / DMG、校验和；启动冒烟（`--startup-smoke`）。
+- [x] 隔离集成测试模式（独立目录与内存凭据），供原生验收与截图脚本使用。
+- [x] SwiftFormat / Ruff 提交钩子与 `CONTRIBUTING.md`；CI 增加 App 测试目标与格式检查。
+- [x] 不移植 DriverKit 相关内容：没有证据表明本设备需要。
 
 ### HW 实机到货后（需现场操作，逐项记录到 `docs/`）
 
@@ -184,10 +183,18 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 ## 前端后续（等对应后端项完成后由前端做）
 
-- [ ] F1 参数工作区、参数编辑与功能分配编辑器、批量分配（依赖 B5）。
-- [ ] F2 Agent 工作区（依赖 B7）。
-- [ ] F3 MCP 设置与输出设置面板、输出读数（依赖 B8、B9）。
-- [ ] F4 “载入预置…”与按需启用的专业面板菜单（依赖 B5、B6）。
-- [ ] F5 结构化 MIDI 监视（方向、来源、对应控件、清空）与可关闭通知条（依赖 B4）。
-- [ ] F6 无标题栏窗口、应用图标、README 截图与截图脚本（依赖 B10）。
+- [x] F1 参数工作区、参数编辑与功能分配编辑器、批量分配（依赖 B5）。
+- [x] F2 Agent 工作区（依赖 B7）。
+- [x] F3 MCP 设置与输出设置面板、输出读数（依赖 B8、B9）。
+- [x] F4 “载入预置…”与按需启用的专业面板菜单（依赖 B5、B6）。
+- [x] F5 结构化 MIDI 监视（方向、来源、对应控件、清空）与可关闭通知条（依赖 B4）。
+- [x] F6 无标题栏窗口、应用图标、README 截图与截图脚本（依赖 B10）。
 - [ ] F7 实机核对后的面板修正（依赖 HW-2…HW-5）。
+
+## 无硬件软件验收补记
+
+B4–B10 与 F1–F6 已实现软件路径；F7 与 HW-1…HW-7 保持待办。说明及边界见
+[软件工作流](docs/SOFTWARE_WORKFLOWS.md)。MCP 为本地静态令牌 JSON HTTP 端点，Mock Agent
+不是实际外部 Agent；OSC 只有显式启用的受限输出，没有进入电机的接收路径。
+启动、截图和网络测试使用隔离模式，不访问用户硬件、文件与 Keychain。
+当前没有实机验证结论；预览生成检查不等同于鼠标交互验收。

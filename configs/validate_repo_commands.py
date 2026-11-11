@@ -13,8 +13,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from configs._vendor.freecm.errors import RepoCommandManifestError  # noqa: E402
-from configs._vendor.freecm.repo_commands import validate_repo_command_manifest  # noqa: E402
+from configs._vendor.freecm.errors import RepoCommandManifestError
+from configs._vendor.freecm.repo_commands import validate_repo_command_manifest
 
 
 def main(argv: Sequence[str] | None = None) -> int:

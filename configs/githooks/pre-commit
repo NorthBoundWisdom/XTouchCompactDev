@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+python3 configs/format_repo.py --check
+python3 configs/validate_repo_commands.py .
