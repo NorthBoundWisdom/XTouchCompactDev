@@ -66,8 +66,8 @@ final class CoreMIDIService {
 }
 
 private final class CompactMIDITransport: @unchecked Sendable {
-    private typealias MessageCallback = @Sendable ([MIDIMessage]) -> Void
-    private typealias StatusCallback = @Sendable (CompactMIDIConnection) -> Void
+    typealias MessageCallback = @Sendable ([MIDIMessage]) -> Void
+    typealias StatusCallback = @Sendable (CompactMIDIConnection) -> Void
 
     private let onMessages: MessageCallback
     private let onConnection: StatusCallback
@@ -146,7 +146,7 @@ private final class CompactMIDITransport: @unchecked Sendable {
             var packets = MIDIPacketList()
             let start = MIDIPacketListInit(&packets)
             let data = message.midi1Bytes
-            let added = data.withUnsafeBufferPointer { bytes in
+            let added = data.withUnsafeBufferPointer { bytes -> UnsafeMutablePointer<MIDIPacket>? in
                 MIDIPacketListAdd(&packets, MemoryLayout<MIDIPacketList>.size, start,
                                   0, bytes.count, bytes.baseAddress!)
             }
