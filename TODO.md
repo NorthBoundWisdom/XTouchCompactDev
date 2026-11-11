@@ -213,10 +213,16 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 不依赖硬件，按顺序做：
 
-- [ ] N1 **远端 CI 转绿**：推送前最近两次运行（`1da00ed` 及其前一次）在 Linux 与 macOS 上都失败，原因是
-  SwiftPM 原生构建把 `zh-Hans.lproj` 改成小写后本地化查找强制解包崩溃；查找已改为兼容小写并在缺目录时回退英文。
-  推送后确认 `core-linux` 与 `app-macos` 两个作业。macOS 作业里的打包与截图步骤此前从未在 runner 上执行到，
-  截图需要窗口服务，若失败改为可跳过或移出 CI，不要删掉本地脚本。
+- [ ] N1 **远端 CI 转绿**：需区分两个独立失败原因：
+  - 早期 `1da00ed` 及其前一次运行因 SwiftPM 原生构建把 `zh-Hans.lproj` 改成小写，
+    本地化查找强制解包崩溃；`eea7a22` 已兼容小写并在缺目录时回退英文。
+  - 最新 `0019b24` 的运行 `42997141447` 中 `core-linux` 已通过，`app-macos` 在 Swift 6.1.2
+    编译 `LocalMCPServer.swift` 时报告 sending self risks causing data races。本机 Swift 6.4.2 未报此错。
+    修复在 MCP listener/peer 与 OSC callbacks 的 MainActor Task 内显式再次捕获 `[weak self]`，
+    与现有 CoreMIDI 的交接模式一致；不关闭并发检查，不更改运行语义。
+  - 本地测试、建置、格式检查通过不等于远端验证。补丁需在 Swift 6.1.2 runner 重跑后才能勾选 N1。
+    打包与截图在上述失败运行中均被跳过，窗口服务相关问题仍未验证；保留这两步，
+    若 runner 实际报告窗口服务不可用，再将截图改为可跳过或移出 CI，不删除本地脚本。
 - [ ] N2 **前端作者审视契约与视图改动**：`PanelSnapshot.pendingPreset`、`mcpPort`；`PanelIntents.realignLayer`、
   `resetParameters`、`applyConfiguration`（取代 `loadConfiguration`）、`loadPreset`、`confirmLoadPreset`、
   `cancelLoadPreset`；视图 `ParameterWorkspace`、`WorkspaceTabsView`、`ExternalServicesSettings`。

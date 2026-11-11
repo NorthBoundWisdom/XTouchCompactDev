@@ -32,21 +32,21 @@
             let listener = try NWListener(using: parameters)
             self.listener = listener
             listener.newConnectionHandler = { [weak self] connection in
-                Task { @MainActor in
-                    guard let self, self.peers.count < 16 else { connection.cancel(); return }
+                Task { @MainActor [weak self] in
+                    guard let self, peers.count < 16 else { connection.cancel(); return }
                     let id = UUID()
                     let peer = MCPPeer(connection: connection) { [weak self] request in self?.respond(request) ?? (503, Data()) }
-                    self.peers[id] = peer
+                    peers[id] = peer
                     peer.finished = { [weak self] in self?.peers.removeValue(forKey: id) }
                     peer.start()
                 }
             }
             listener.stateUpdateHandler = { [weak self] state in
                 if case .ready = state {
-                    Task { @MainActor in self?.ready = true }
+                    Task { @MainActor [weak self] in self?.ready = true }
                 }
                 if case let .failed(error) = state {
-                    Task { @MainActor in self?.stop(); self?.onError?(error) }
+                    Task { @MainActor [weak self] in self?.stop(); self?.onError?(error) }
                 }
             }
             listener.start(queue: .main)
@@ -180,22 +180,22 @@
 
         func receive() {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 16384) { [weak self] data, _, complete, error in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let self else { return }
                     if let data {
-                        self.bytes.append(data)
+                        bytes.append(data)
                     }
                     do {
-                        if let request = try HTTPRequest.parse(self.bytes) {
-                            let (status, body) = self.respond(request)
+                        if let request = try HTTPRequest.parse(bytes) {
+                            let (status, body) = respond(request)
                             let header = "HTTP/1.1 \(status) Response\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-                            self.connection.send(content: Data(header.utf8) + body, completion: .contentProcessed { [weak self] _ in Task { @MainActor in self?.cancel() } })
+                            connection.send(content: Data(header.utf8) + body, completion: .contentProcessed { [weak self] _ in Task { @MainActor [weak self] in self?.cancel() } })
                         } else if complete || error != nil {
-                            self.cancel()
+                            cancel()
                         } else {
-                            self.receive()
+                            receive()
                         }
-                    } catch { self.cancel() }
+                    } catch { cancel() }
                 }
             }
         }

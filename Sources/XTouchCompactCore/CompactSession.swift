@@ -224,7 +224,7 @@ public struct CompactSession: Sendable {
                 }
             case let .encoder(index):
                 result.feedback += try setEncoder(index, value: event.value, layer: event.layer)
-            case let .button(index):
+            case .button:
                 let previous = parameters.values
                 if let slot = try parameters.receive(event) {
                     result.agentIntents.append(slot)

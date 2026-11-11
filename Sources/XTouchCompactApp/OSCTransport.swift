@@ -22,7 +22,7 @@
             self.connection = connection
             connection.stateUpdateHandler = { [weak self] state in
                 if case let .failed(error) = state {
-                    Task { @MainActor in guard self?.generation == generation else { return }; self?.onFailure?(error) }
+                    Task { @MainActor [weak self] in guard self?.generation == generation else { return }; self?.onFailure?(error) }
                 }
             }
             connection.start(queue: .main)
@@ -32,7 +32,7 @@
             let generation = generation
             connection?.send(content: data, completion: .contentProcessed { [weak self] error in
                 guard let error else { return }
-                Task { @MainActor in guard self?.generation == generation else { return }; self?.onFailure?(error) }
+                Task { @MainActor [weak self] in guard self?.generation == generation else { return }; self?.onFailure?(error) }
             })
         }
 
