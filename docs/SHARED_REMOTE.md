@@ -37,9 +37,15 @@ this host's 256-record journal capacity). A first request may use an old epoch:
 {"method":"tools/call","params":{"name":"surface_events","arguments":{"epoch":"new-client","after":"0","limit":128}}}
 ```
 
-Retain the returned epoch and latestSequence for the next read, converting the
-cursor to a decimal string. A changed epoch or evicted/future cursor reports gap;
-refetch snapshots. Reading never advances clocks, repeats actions or adds events.
+Retain the returned epoch. When events are present, the next `after` cursor is
+the **last returned event.sequence**, converted to a decimal string.
+`latestSequence` is only the current high-water mark: using it as the next cursor
+when a page is partial would skip events that have not been returned. Keep the
+current cursor when an ordinary read returns no events.
+
+A changed epoch or evicted/future cursor reports `gap`. First refetch the current
+snapshots, then re-anchor to the returned epoch/high-water mark and resume; do not
+claim the missing events were consumed. Reading never advances clocks, repeats actions or adds events.
 Successful mutations and actual simulation changes share one journal; failures
 commit neither state nor events. Typed host telemetry changes also carry events.
 Events never include control tokens or command proofs.

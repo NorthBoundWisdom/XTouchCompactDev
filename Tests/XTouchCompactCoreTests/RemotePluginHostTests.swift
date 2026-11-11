@@ -57,3 +57,33 @@ import Testing
     let fresh = try CompactPluginHost.agent()
     #expect(fresh.remoteTools == host.remoteTools)
 }
+
+@Test func remoteEventPaginationUsesLastReturnedCursorWithoutSkippingPartialPages() throws {
+    var host = try CompactPluginHost.agent()
+    func arguments(_ epoch: String, _ cursor: Int) -> JSONValue {
+        .object(["epoch": .string(epoch), "after": .string(String(cursor)), "limit": .number(2)])
+    }
+    for index in 1 ... 5 {
+        _ = try host.callRemote("surface_agent_primary", arguments: .object(["instance_id": .string("agent"), "slot": .number(1)]), context: .init(time: Double(index)))
+    }
+    let discovery = try host.callRemote("surface_events", arguments: arguments("discover", 0), context: .init(time: 5))
+    let epoch = try #require(discovery.value(for: "epoch")?.stringValue)
+    var cursor = 0
+    var received: [Int] = []
+    for pageNumber in 0 ..< 10 {
+        let page = try host.callRemote("surface_events", arguments: arguments(epoch, cursor), context: .init(time: 6))
+        #expect(page.value(for: "gap") == .bool(false))
+        let events = try #require(page.value(for: "events")?.arrayValue)
+        guard !events.isEmpty else { break }
+        let sequences = try events.map { try #require($0.value(for: "sequence")?.intValue) }
+        received += sequences
+        cursor = try #require(sequences.last)
+        if pageNumber == 0 {
+            #expect(cursor < (page.value(for: "latestSequence")?.intValue ?? 0))
+            // A writer advances the high-water mark while this reader is still paging.
+            _ = try host.callRemote("surface_agent_primary", arguments: .object(["instance_id": .string("agent"), "slot": .number(1)]), context: .init(time: 6))
+        }
+    }
+    #expect(received == Array(1 ... 7)) // start + six successful primary calls.
+    #expect(cursor == 7)
+}
