@@ -19,7 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Install workflow Python
-        run: apt-get update && apt-get install --no-install-recommends -y python3
+        # Use GitHub's tool cache; Ubuntu APT DNS outages must not prevent tests.
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python3 --version
       - run: swift --version
       - run: python3 configs/setup_local_project.py
       - run: python3 -m unittest discover -s Tests/BuildWorkflowTests -v
