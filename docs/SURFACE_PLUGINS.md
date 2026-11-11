@@ -37,3 +37,17 @@ Saved X-TOUCH COMPACT version-1 parameter files retain `isSwitch`, numeric `step
 these to shared parameter metadata. Clamping uses a zero-anchored grid including
 both endpoints and chooses the lower candidate on ties. Seven-bit projection and
 13-segment ring rendering stay device-specific.
+
+
+The Agent composition uses shared `AgentPlugin` and `AgentRemoteBinding` behind
+one value registry. Local hardware and interface origins retain approval rights;
+remote input cannot approve itself. Seven-phase presentation and button-light
+rendering remain host adapters: active is on, attention blinks, every other
+semantic is off. Only the default Agent instance is bound to the saved device
+assignments. Additional instances retain independent state without overriding
+those lights. Registration validates the complete candidate batch before start.
+
+Plugin updates, startup, reconfiguration, layer selection and reconnection never
+recall faders. Touch protection remains at the final motor-send boundary. None of
+the software checks qualifies physical firmware behavior or completes a hardware
+bring-up checklist.

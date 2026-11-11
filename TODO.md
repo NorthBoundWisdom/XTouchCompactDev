@@ -22,7 +22,7 @@
 
 - 一个 B 项一个提交（Conventional Commits），提交正文写明跑过的检查与未验证的部分。
 - 每项必须带确定性单元测试，Core 测试保持可在 Linux 上运行；`swift test` 与 `swift build` 全绿。
-- 不引入第三方运行时依赖；不拷贝 PolyForm Noncommercial 或无许可证的代码（见 `docs/UPSTREAM.md`）。
+- 除明确授权的SurfacePlugins共享业务包外不引入第三方运行时依赖；不拷贝 PolyForm Noncommercial 或无许可证的代码（见 `docs/UPSTREAM.md`）。
 - 审查重点（每项都会查）：
   1. 触摸期间绝不发电机指令；连接、重连、换层不自动归位。
   2. 输入地址与反馈地址、TX 通道与 Global RX 通道始终分开。
@@ -30,18 +30,21 @@
   4. 失败可见（通知或监视器），没有静默回退；未实机验证的内容不写成已验证。
   5. 视图里没有业务规则，`ConsoleModel` 之外没有 CoreMIDI 类型泄漏。
 
-## 现状（2026-11-11）
+## 现状（2026-11-12）
 
 - **软件路径 B1–B10、F1–F6 已完成并经两轮代码审查**；实机验机已开始记录 USB/CoreMIDI 身份及操作员确认的
   Standard 模式指示，HW-1…HW-7 尚未签收，F7 待实测输入。见 [本次验机记录](docs/HARDWARE_SESSION_2026-11-11.md)。
 - Core：出厂 Standard MIDI 映射与层无关解码、A/B 两套 bank、触摸所有权（跨层、跨传输、跨重连）、
-  层不一致电机门禁、反馈去重与失效、参数 / 功能分配引擎、Mock 设备、Mock Agent、OSC 编码与安全门、受保护存储。
+  层不一致电机门禁、反馈去重与失效、参数 / 功能分配引擎、Mock 设备、共享AgentPlugin七态演示、OSC编码与安全门、受保护存储。
 - App：CoreMIDI 传输与端口选择、面板 + 检查器 + 工作区（数值、参数、Agent、MIDI 监视、连接）、
   本机 MCP 端点、受限 OSC 输出、三语界面；运行时排程由模型持有，不依赖窗口。
 - 契约：视图只读 `PanelSnapshot`、只发 `PanelIntents`。未获得位置输入时 `observed` 为 `nil`，
   未发送过灯环样式时 `style` 为 `nil`，未绑定控件的 `label` / `detail` 为 `nil`。
-- 最近一次本地验证：macOS Swift 6.4.2 上 `swift test --build-path build/swiftpm --jobs 2`
-  （62 项 Core + 65 项 App + 3 项本地化）、`swift build` 与 SwiftFormat/Ruff 检查通过。
+- 共享Agent宿主C0–C2已完成：唯一RemoteRegistry拥有插件值；版本1配置翻译为中性动作/指示灯绑定，
+  参数使用共享0锚点/平分取低规则。构建只消费Git锁定SHA的build目录副本，见[共享包说明](docs/SURFACE_PLUGINS.md)。
+  没有两个宿主之间的源码依赖；跨宿主一致性与Linux验收由工作区监督汇总。
+- 最近一次本地验证：macOS Swift 6.4.2上137项Swift（Core69、App Swift Testing56、App XCTest9、
+  本地化3），25项Python工作流，build、命令校验和SwiftFormat/Ruff通过。Linux与实机不由这些检查推定。
   此前原生打包、签名、启动冒烟、13 项工作流测试通过；观察页面三种隔离预览已生成并检查。
   调整前最新的 [远端运行 43053024236](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43053024236)
   已覆盖观察、重构及非电机工具；当时的 Linux、旧 macOS 和 Xcode 26.6 新 macOS 三条作业均通过。
@@ -140,7 +143,8 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 来源参考：BCR 的 `AgentModels.swift`、`ConsoleViewModel+Agents.swift`。
 
-- [x] 8 个槽位状态机与确定性 Mock 时间线；绑定按键的主操作（空闲启动、运行中断、等待批准时批准）。
+- [x] 8个共享AgentPlugin槽位与七态Mock时间线；空闲启动进入queued，+0.45秒running，+2.65秒等待批准，
+  批准后+2.25秒完成。硬件和界面可批准，远程禁止自批；状态机仅在共享包中。
 - [x] LED 映射利用本设备的闪烁能力：例如等待批准 = 闪烁，运行 = 常亮。两种 LED 速度编码都要有测试。
 
 ### B8 通用 MCP 接口
@@ -317,3 +321,16 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 - [ ] D4 真实外部 Agent 进程接入（现在只有 Mock 时间线）。依赖 D3 与实机上的触摸仲裁验证。
 - [ ] D2 OSC 输出目前只有一个参数、固定地址 `/xtouch/value`；是否需要多参数与可配置地址。有具体接收端需求时再做。
 - [ ] D5 Mackie Control 模式、编辑器预置导入、相对编码器模式：见 `docs/IMPLEMENTATION_PLAN.md` 的 P2，特性化之前不做。
+
+
+## 共享插件迁移（本轮）
+
+- [x] C0：130项基线测试；锁定Agent灯光/自批限制/无电机边界，保留nonmotor工作台。
+- [x] C1：共享参数规则、版本1配置兼容、固定远端/完整SHA锁与Git物化获取。
+- [x] C2：七态Agent、原子注册、中性ActionReference/IndicatorID、多实例隔离、来源审批。
+- [x] C3：架构/构建/参数及Agent时间线说明对齐。跨宿主M1由监督窗口验收。
+- [ ] M2：显式可选机器人、底盘、参数输出与示例参数集装配；默认仍只Agent。
+- [ ] M3：共享surface_远程合同；保留旧get_state/set_parameter/agent_primary。
+
+用户本轮明确授权同一开发线程负责必要的PanelSnapshot/PanelIntents、适配器和视图调整；
+这不改变视图只读快照/只发意图的边界。实机记录与既有HW/N5/C4等未验收项目保持原状态。

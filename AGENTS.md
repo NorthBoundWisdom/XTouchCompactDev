@@ -2,7 +2,7 @@
 
 ## Scope
 
-Native macOS 14+ app for Behringer X-TOUCH COMPACT, with a pure Swift 6 core and a CoreMIDI/SwiftUI host. Reuse of BCR2000Dev's architecture is permitted, but hardware semantics differ significantly: **input messages and feedback addresses must never be presumed identical**.
+Native macOS 14+ app for Behringer X-TOUCH COMPACT, with a pure Swift 6 core and a CoreMIDI/SwiftUI host. The hosts independently adapt the same pinned SurfacePlugins contracts and business plugins; they have no source dependency on each other. Hardware semantics differ significantly: **input messages and feedback addresses must never be presumed identical**.
 
 ## Rules
 
@@ -27,7 +27,7 @@ swift build
 
 FreeCM integration uses `configs/freecm.commands.jsonc` (version 2) and the thin
 `configs/source_root_workflow.py` setup/cleanup adapter. No FreeCM checkout,
-dependency lock or runtime dependency is required. Use `python3
+FreeCM dependency lock or runtime dependency is required. SurfacePlugins has its own committed Git SHA lock and stdlib+Git acquisition manager; see `docs/SURFACE_PLUGINS.md`. Use `python3
 configs/setup_local_project.py` before plugin Build/Run/Test/Package actions.
 Keep local paths in ignored `build.local.json`; generated artifacts belong in
 `build/`. Packaging is local ad-hoc ZIP/DMG only; do not claim notarized distribution.

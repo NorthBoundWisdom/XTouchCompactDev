@@ -1,7 +1,8 @@
 # Development
 
 Use Swift 6, Python 3.10+, Xcode command-line tools on macOS, SwiftFormat and Ruff.
-No third-party runtime package is required. Run `python3 configs/setup_local_project.py`
+SurfacePlugins is the one authorized shared package, locked to an exact Git commit;
+[prepare its source](docs/SURFACE_PLUGINS.md) before direct Swift commands. Run `python3 configs/setup_local_project.py`
 then install the optional local hook with `git config core.hooksPath configs/githooks`.
 Setup does not change Git configuration implicitly.
 

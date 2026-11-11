@@ -12,7 +12,7 @@ The setup script writes `build/configured.json` only after validation succeeds.
 
 | Action | Command | Result |
 | --- | --- | --- |
-| Config | `python3 configs/setup_local_project.py` | Validate manifest and Swift package; create local settings if missing |
+| Config | `python3 configs/setup_local_project.py` | Acquire locked shared source, validate manifest and Swift package; preserve local settings |
 | Build | `python3 configs/macos_workflow.py build` | `build/app/debug/XTouchCompactApp.app`, ad-hoc signed |
 | Run | `python3 configs/macos_workflow.py run` | Build and execute the debug bundle in the terminal |
 | Test | `python3 configs/macos_workflow.py test` | Hardware-independent Swift tests, two jobs |
@@ -27,7 +27,7 @@ the workflow does not select MIDI ports, change channels or send MIDI commands.
 Build variants include Debug App and Release App (`build --configuration
 release`). SwiftPM artifacts live under `build/swiftpm/`. The original `swift
 test --jobs 2`, `swift build` and `swift run XTouchCompactApp` commands also work
-and use SwiftPM's separate `.build/` directory.
+and use SwiftPM's separate `.build/` directory after preparing the dependency.
 
 ## Local settings and packaging limits
 
@@ -41,7 +41,8 @@ through the local environment.
 
 Python 3.10+ is required for these workflows. macOS actions require macOS 14+, Swift 6
 and Xcode command-line tools providing `codesign` and `ditto`. No Python packages,
-Node, FreeCM checkout, submodule or external runtime dependency is needed.
+Node, FreeCM checkout or submodule is needed. Git acquires the explicitly authorized
+SurfacePlugins shared source at its committed lock; see [dependency setup](SURFACE_PLUGINS.md).
 
 Packages are native-architecture, locally ad-hoc signed developer artifacts.
 They include an app icon; Developer ID signing and notarization are not provided. They are not
@@ -51,8 +52,9 @@ production distribution builds. No release, upload or tag is created.
 
 `configs/source_root_workflow.py` supplies FreeCM's Init repo and Update
 entry points (`--initrepo`, `--update`), both running local setup. `--init` is
-accepted for older plugins. `--initlock` reports that there are no external
-source roots; it creates no artificial dependency lock or download.
+accepted for older plugins. `--initlock` reports the committed SurfacePlugins lock.
+Setup materializes its full Git SHA in build/dependencies; FreeCM itself is not a
+dependency manager for this source.
 
 The adapter's explicit cleanup supports previews:
 
@@ -72,6 +74,7 @@ the separate `.build/` cache. Run Config again after cleanup.
 ```sh
 python3 configs/validate_repo_commands.py .
 python3 -m unittest discover -s Tests/BuildWorkflowTests -v
+python3 configs/surface_plugins_dependency.py ensure
 swift test --jobs 2
 swift build
 git diff --check

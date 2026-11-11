@@ -12,7 +12,8 @@ into a draft. Change names, groups, units, min/max/default/step, switch behavior
 or Agent write permission; Apply configuration validates the complete draft.
 The parameter list sliders write the active configuration, not unsaved drafts.
 Apply configuration and bulk assignment preserve existing parameter IDs' values,
-normalized only to the edited range/step, and preserve unbound fader/encoder bank
+normalized only to the edited range/step (zero-anchored grid, endpoints included,
+with lower values chosen on ties), and preserve unbound fader/encoder bank
 targets on both layers. Presets and imported configurations instead use the new
 configuration's declared defaults, even for matching IDs: there is no proportional
 unit conversion. When the current workspace has non-default values, replacement
@@ -56,9 +57,11 @@ control. Incoming data on an inactive source or wrong channel is marked ignored.
 
 ## Mock Agents
 
-Eight deterministic slots support Start → Running → Waiting for approval;
-Approve resumes Running and completes after two seconds. Interrupt stops a
-running slot. Waiting never approves itself. Buttons assigned to Agent actions
+Eight slots use the shared seven-state AgentPlugin: idle, queued, running,
+waitingApproval, completed, interrupted and error. Start queues the task; running
+begins after 0.45 seconds and approval is requested after 2.65 seconds. Approval
+resumes running and completes after 2.25 seconds. Interrupt stops queued or running
+work. The host injects time independently of the window. Waiting never approves itself. Buttons assigned to Agent actions
 use the same operations. Running is LED on, waiting is LED blink, other phases
 are off, with both manual and observed-firmware velocity encodings preserved.
 These are Mock Agents, not real CLI sessions or external approvals.
@@ -86,7 +89,7 @@ layer, parameter permissions, touched and deferred faders. Writes use the same
 parameter/session pipeline as UI writes; they do not bypass touch ownership.
 Calls appear in the monitor without credentials or request arguments. Remote
 `agent_primary` can start or interrupt but cannot approve a waiting slot, even
-when Agent writes are enabled. Approval remains a user-interface action.
+when Agent writes are enabled. Local interface and hardware actions can approve; remote actions cannot.
 
 To exercise an explicitly enabled normal app, put its token in the environment
 and run `python3 tools/mcp_integration.py`. Tests use an ephemeral loopback port
