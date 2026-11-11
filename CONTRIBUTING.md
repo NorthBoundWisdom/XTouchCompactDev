@@ -24,8 +24,8 @@ MCP and OSC are off at startup. Tests inject fake MIDI, temporary storage and
 in-memory authentication tokens; they never use user Keychain credentials.
 
 Hosted macOS CI requires native build/tests, ad-hoc ZIP/DMG packaging and isolated
-startup smoke. Preview capture is a desktop diagnostic: the hosted runner timed
-out despite passing startup smoke. Run `tools/capture_readme_screenshots.py`
+startup smoke. Preview capture uses an independent isolated AppKit launch path;
+the earlier window-task startup dependency was removed after hosted timeout reproduction. Run `tools/capture_readme_screenshots.py`
 locally on a Mac, or explicitly enable `capture_previews` in the manual GitHub
 workflow. It is not silently ignored when selected: a capture error still fails
 that diagnostic run. Push and pull-request CI do not run desktop preview capture.
@@ -36,3 +36,8 @@ removing the Node 20 setup action while retaining Swift 6.2 / Ubuntu 24.04.
 The macOS lane stays Apple Silicon. GitHub may attach an arm64 capacity notice;
 that provider scheduling notice is not a build failure and cannot be fixed by
 repository code. Do not hide it by silently replacing ARM coverage with Intel.
+
+Preview runs retain per-scene traces and fresh PNGs in `build/screenshots/`. A timeout
+adds an owned-process sample before killing/reaping that process; the manual CI job
+uploads these diagnostics on success or failure. See `docs/reviews/N2-N8.md` for the
+remote before/after evidence. Offscreen rendering does not count as mouse acceptance.
