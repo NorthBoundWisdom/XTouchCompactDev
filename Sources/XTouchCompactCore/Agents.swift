@@ -11,7 +11,7 @@ public struct AgentSlot: Identifiable, Equatable, Sendable {
     }
 }
 
-public struct MockAgents: Sendable {
+public struct MockAgents: Equatable, Sendable {
     public private(set) var slots = (1 ... 8).map { AgentSlot(id: $0) }
     public init() {}
     public mutating func primary(_ slot: Int, now: TimeInterval) {
@@ -37,12 +37,6 @@ public struct MockAgents: Sendable {
 
 public extension CompactSession {
     mutating func agentFeedback(_ agents: MockAgents) throws -> [MIDIMessage] {
-        var messages: [MIDIMessage] = []
-        for assignment in parameters.configuration.assignments where assignment.layer == state.layer {
-            if case let .agent(slot) = assignment.action, case let .button(index) = assignment.control {
-                messages += try setAgentButton(index, light: agents.slots[slot - 1].light)
-            }
-        }
-        return messages
+        try updateAgentLights(Dictionary(uniqueKeysWithValues: agents.slots.map { ($0.id, $0.light) }))
     }
 }

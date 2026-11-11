@@ -36,6 +36,10 @@
 
         @Published private(set) var agents = MockAgents()
 
+        var runtimeTime: TimeInterval {
+            now().timeIntervalSince1970
+        }
+
         let mcp = LocalMCPServer()
         let isolated: Bool
         private let memoryToken = UUID().uuidString + UUID().uuidString
@@ -149,8 +153,11 @@
         func agentPrimary(_ slot: Int, fromAgent: Bool = false) {
             agentOutput = fromAgent
             defer { agentOutput = false }
-            agents.primary(slot, now: now().timeIntervalSince1970)
-            apply { try $0.agentFeedback(agents) }
+            var next = agents
+            next.primary(slot, now: runtimeTime)
+            guard next != agents else { return }
+            agents = next
+            apply { try $0.agentFeedback(next) }
         }
 
         func advanceAgents() {
@@ -203,8 +210,14 @@
                 performMockGesture { try $0.pressButton(index, isDown: true) }
                 return
             }
-            apply { try $0.toggleButton(index) }
-            updateBank()
+            do {
+                let update = try session.activateButton(index)
+                send(update.feedback)
+                for slot in update.agentIntents {
+                    agentPrimary(slot)
+                }
+                updateBank()
+            } catch { self.error = error }
         }
 
         func moveFader(_ index: Int, value: UInt8) {

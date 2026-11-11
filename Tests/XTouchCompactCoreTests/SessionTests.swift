@@ -69,6 +69,11 @@ import Testing
     var session = try CompactSession(map: FactoryStandardMap(globalReceiveChannel: 2),
                                      lightProtocol: .observed114)
     _ = try session.connect()
+    var config = SurfaceConfiguration.neutral
+    config.parameters.append(ParameterDefinition(id: "button", name: "Button", isSwitch: true))
+    config.assignments.removeAll { $0.control == .button(1) && $0.layer == .a }
+    config.assignments.append(.init(control: .button(1), layer: .a, action: .parameter("button")))
+    _ = try session.loadConfiguration(config)
     let pressed = try session.receive([.noteOn(channel: 0, number: 16, velocity: 127)])
     #expect(pressed.inputs.first?.control == .button(1))
     #expect(pressed.feedback.contains(.noteOn(channel: 2, number: 0, velocity: 2)))

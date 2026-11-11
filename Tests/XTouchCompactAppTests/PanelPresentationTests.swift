@@ -92,7 +92,7 @@
             XCTAssertEqual(snapshot.fader(3)?.target, 100)
             XCTAssertEqual(snapshot.encoder(12)?.value, 0)
             XCTAssertEqual(snapshot.encoder(2)?.ring, .position(13))
-            XCTAssertEqual(snapshot.button(39)?.light, .on)
+            XCTAssertEqual(snapshot.button(39)?.light, .off)
             XCTAssertEqual(snapshot.button(1)?.light, .off)
             // Not reported by the backend yet: the UI must hide these, not guess them.
             XCTAssertNil(snapshot.fader(3)?.observed)
@@ -145,7 +145,8 @@
             XCTAssertEqual(model.panelSnapshot.button(1)?.isDown, true)
             intents.releaseButton?(1)
             XCTAssertEqual(model.panelSnapshot.button(1)?.isDown, false)
-            XCTAssertTrue(model.bank.buttons[0])
+            XCTAssertFalse(model.bank.buttons[0])
+            XCTAssertEqual(model.agents.slots[0].phase, .running)
             XCTAssertEqual(model.mock.buttons[0], .on)
             XCTAssertTrue(model.logs.map { Localizer(language: .english).text($0) }.contains("IN Note On ch1 #16=127 [MOCK]"))
             XCTAssertTrue(model.logs.map { Localizer(language: .english).text($0) }.contains("IN Note Off ch1 #16=0 [MOCK]"))

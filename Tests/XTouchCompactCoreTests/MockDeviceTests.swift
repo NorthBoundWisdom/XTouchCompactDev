@@ -127,6 +127,10 @@ func mockConsumesBothLEDVelocityProtocols(_ variant: ButtonLightProtocol) throws
     let map = try FactoryStandardMap()
     var mock = MockXTouchCompact(map: map, lightProtocol: .manual)
     var session = CompactSession(map: map, lightProtocol: .manual)
+    var config = SurfaceConfiguration.neutral
+    config.parameters.append(ParameterDefinition(id: "transport-light", name: "Transport light", defaultValue: 127, isSwitch: true))
+    config.assignments.append(.init(control: .button(35), layer: .a, action: .parameter("transport-light")))
+    _ = try session.loadConfiguration(config)
     try mock.receive(session.connect())
     try mock.receive(map.encoderRingValue(encoder: 1, display: .allBlinking))
     let rotation = try mock.turnEncoder(1, value: 127)
@@ -135,17 +139,16 @@ func mockConsumesBothLEDVelocityProtocols(_ variant: ButtonLightProtocol) throws
     #expect(session.bank(.a).encoders[0] == 127)
     #expect(mock.rings[0] == .position(13))
 
-    try mock.receive(session.toggleButton(35))
     let press = try mock.pressButton(34, isDown: true)
     #expect(mock.buttons[34] == .off) // Local transport group redraw erased button 35.
     try mock.receive(session.receive(press).feedback)
-    #expect(mock.buttons[33] == .on)
+    #expect(mock.buttons[33] == .off)
     #expect(mock.buttons[34] == .on)
     let release = try mock.pressButton(34, isDown: false)
     #expect(mock.buttons[33] == .off)
     try mock.receive(session.receive(release).feedback)
-    #expect(mock.buttons[33] == .on)
-    #expect(session.bank(.a).buttons[33]) // Release does not toggle the parameter again.
+    #expect(mock.buttons[33] == .off)
+    #expect(!session.bank(.a).buttons[33]) // Unassigned input never latches an LED.
 }
 
 @Test func mockLayerSelectorsDoNotGenerateEventsOrMoveMotors() throws {

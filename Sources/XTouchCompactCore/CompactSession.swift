@@ -26,6 +26,7 @@ public struct CompactSessionUpdate: Equatable, Sendable {
 public struct CompactSession: Sendable {
     public private(set) var state: CompactState
     public private(set) var parameters = try! ParameterEngine()
+    private var agentLights: [Int: ButtonLight] = [:]
     private var banks: [CompactLayer: CompactParameterBank] = [.a: .init(), .b: .init()]
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) {
@@ -53,6 +54,22 @@ public struct CompactSession: Sendable {
         state.setInputTouches(touches)
     }
 
+    public mutating func updateAgentLights(_ lights: [Int: ButtonLight]) throws -> [MIDIMessage] {
+        agentLights = lights
+        return try syncVisibleNonMotorFeedback()
+    }
+
+    public mutating func activateButton(_ index: Int) throws -> CompactSessionUpdate {
+        guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
+        let before = parameters.values
+        let slot = try parameters.receive(CompactInput(control: .button(index), layer: state.layer, value: 127, isPressed: true))
+        var update = try CompactSessionUpdate(feedback: synchronizeParameters(ids: Set(parameters.values.keys.filter { before[$0] != parameters.values[$0] })))
+        if let slot {
+            update.agentIntents = [slot]
+        }
+        return update
+    }
+
     public func bank(_ layer: CompactLayer) -> CompactParameterBank {
         banks[layer] ?? .init()
     }
@@ -77,10 +94,6 @@ public struct CompactSession: Sendable {
         return try (1 ... 9).flatMap { try state.setFader($0, value: values[$0 - 1]) }
     }
 
-    public mutating func setAgentButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
-        try state.setButton(index, light: light)
-    }
-
     public mutating func setParameter(_ id: String, value: Double, fromAgent: Bool = false) throws -> [MIDIMessage] {
         try parameters.set(id, value: value, fromAgent: fromAgent)
         return try synchronizeParameters(ids: [id])
@@ -91,7 +104,7 @@ public struct CompactSession: Sendable {
         parameters = next
         // Loading a preset is not permission to move motors.
         state = state.reconfigured(map: state.map, lightProtocol: state.lightProtocol)
-        return try synchronizeParameters(includeMotors: false)
+        return try synchronizeParameters(includeMotors: false) + syncVisibleNonMotorFeedback()
     }
 
     private mutating func synchronizeParameters(includeMotors: Bool = true, ids: Set<String>? = nil, excludingFader: Int? = nil) throws -> [MIDIMessage] {
@@ -147,14 +160,6 @@ public struct CompactSession: Sendable {
         return try state.setRing(index, display: .position(Self.ringSegment(for: value)))
     }
 
-    public mutating func toggleButton(_ index: Int, layer: CompactLayer? = nil) throws -> [MIDIMessage] {
-        guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
-        let target = layer ?? state.layer
-        banks[target, default: .init()].buttons[index - 1].toggle()
-        guard target == state.layer else { return [] }
-        return try state.setButton(index, light: bank(target).buttons[index - 1] ? .on : .off)
-    }
-
     /// A MIDI callback may contain many events. Apply all of them before publishing UI state.
     /// 'touch released' can yield a motor command only if host desire differs from the last observed position.
     public mutating func receive(_ messages: [MIDIMessage]) throws -> CompactSessionUpdate {
@@ -163,6 +168,7 @@ public struct CompactSession: Sendable {
             guard let event = state.receive(message) else { continue }
             result.inputs.append(event)
             if event.layer != state.layer {
+                // Other-layer messages are physical safety evidence, never an active-bank edit.
                 continue
             }
             switch event.control {
@@ -196,14 +202,6 @@ public struct CompactSession: Sendable {
                 }
                 let changed = Set(parameters.values.keys.filter { previous[$0] != parameters.values[$0] })
                 result.feedback += try synchronizeParameters(ids: changed)
-                if event.isPressed == true, {
-                    if case .parameter = parameters.assignment(.button(index), layer: event.layer) {
-                        return false
-                    }
-                    return true
-                }() {
-                    result.feedback += try toggleButton(index, layer: event.layer)
-                }
                 // Local release/transport presses can overwrite feedback without a message
                 // describing which other LEDs were redrawn. Reassert invalidated desired state.
                 result.feedback += try state.restoreNonMotorFeedback()
@@ -232,7 +230,12 @@ public struct CompactSession: Sendable {
             result += try state.setRing(i, display: .position(Self.ringSegment(for: values.encoders[i - 1])))
         }
         for i in 1 ... 39 {
-            result += try state.setButton(i, light: values.buttons[i - 1] ? .on : .off)
+            let light: ButtonLight = switch parameters.assignment(.button(i), layer: state.layer) {
+            case let .agent(slot): agentLights[slot] ?? .off
+            case .parameter: values.buttons[i - 1] ? .on : .off
+            default: .off
+            }
+            result += try state.setButton(i, light: light)
         }
         return result
     }
