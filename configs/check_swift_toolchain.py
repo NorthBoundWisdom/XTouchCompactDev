@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail explicitly if the modern CI lane accidentally selects an older Swift compiler."""
+"""Fail explicitly if macOS CI accidentally selects an older Swift compiler."""
 
 import re
 import subprocess
@@ -11,7 +11,7 @@ def validate_swift_version(output: str, minimum: tuple[int, int] = (6, 2)) -> tu
         raise ValueError("Unable to identify the Swift compiler version.")
     version = tuple(int(part or 0) for part in match.groups())
     if version[:2] < minimum:
-        raise ValueError(f"Modern CI requires Swift {minimum[0]}.{minimum[1]}+, got {version}.")
+        raise ValueError(f"macOS CI requires Swift {minimum[0]}.{minimum[1]}+, got {version}.")
     return version
 
 

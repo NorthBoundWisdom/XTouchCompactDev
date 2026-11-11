@@ -211,7 +211,7 @@ class WorkflowTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 capture_readme_screenshots.validate_png(output)
 
-    def test_modern_swift_lane_rejects_older_or_unidentifiable_toolchains(self):
+    def test_macos_swift_job_rejects_older_or_unidentifiable_toolchains(self):
         self.assertEqual(
             check_swift_toolchain.validate_swift_version("Apple Swift version 6.4.2 (swiftlang-test)"), (6, 4, 2)
         )

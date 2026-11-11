@@ -42,14 +42,17 @@ adds an owned-process sample before killing/reaping that process; the manual CI 
 uploads these diagnostics on success or failure. See `docs/reviews/N2-N8.md` for the
 remote before/after evidence. Offscreen rendering does not count as mouse acceptance.
 
-The compiler policy deliberately keeps three validation lanes: Linux Swift 6.2,
-macOS 15's older Swift compiler for compatibility, and `app-macos-modern` on
-`macos-26` with `DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer`.
-The modern lane runs all Swift tests/build plus signed native bundle/startup smoke.
+The compiler policy keeps two validation jobs: `core-linux` on Linux Swift 6.2
+and `app-macos` on `macos-26`, with
+`DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer`.
+The macOS job runs formatting, all Swift tests/build, signed Debug bundle/startup
+smoke and Release ZIP/DMG packaging with its isolated startup check. The former
+macOS 15 compatibility job has been removed; `app-macos-modern` was renamed
+`app-macos`. Manual preview capture and diagnostic uploads remain available.
 It prints Xcode and Swift versions and explicitly rejects Swift older than 6.2;
 there is no silent toolchain fallback or continue-on-error. The pinned Xcode path
 is listed in the [official runner inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md).
-When that image retires the pinned version, update this lane explicitly after
+When that image retires the pinned version, update this job explicitly after
 review. Swift 6 language mode and the macOS 14 deployment target stay unchanged.
 The development machine may still be newer than CI; this broadens diagnostics
 coverage without claiming identical compilers. Prefer assigning macro-returned

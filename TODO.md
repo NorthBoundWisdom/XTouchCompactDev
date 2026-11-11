@@ -43,9 +43,11 @@
 - 最近一次本地验证：macOS Swift 6.4.2 上 `swift test --build-path build/swiftpm --jobs 2`
   （62 项 Core + 65 项 App + 3 项本地化）、`swift build` 与 SwiftFormat/Ruff 检查通过。
   此前原生打包、签名、启动冒烟、13 项工作流测试通过；观察页面三种隔离预览已生成并检查。
-  [远端运行 43007338487](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43007338487)
-  的 Linux、旧 macOS 和 Xcode 26.6 / Swift 6.3.3 新 macOS 三条作业均通过（未包含尚未推送的观察功能与重构）。
+  调整前最新的 [远端运行 43053024236](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43053024236)
+  已覆盖观察、重构及非电机工具；当时的 Linux、旧 macOS 和 Xcode 26.6 新 macOS 三条作业均通过。
   用户已确认观察页面的实机 UI 响应；N5 的五项控制台鼠标验收仍单列待完成。
+- 当前 CI 仅保留 `core-linux` 与 `app-macos`。后者使用 macOS 26 / 固定 Xcode 26.6，保留格式、测试、
+  Debug 原生启动及 Release 打包；2026-11-12 按用户要求移除 macOS 15，并把 modern 作业改名为 `app-macos`。
 - 下一步见文末“后续待办”：阶段一（剩余 N5 鼠标验收）→ 阶段二（实机）→ 阶段三（功能方向）。
 
 ## 后端任务（按顺序）
@@ -256,6 +258,7 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 - [x] N8 编译器版本覆盖：保留旧 macOS / Linux 6.2 作业，新增明确选择 Xcode 26.6 的 `app-macos-modern`。
   实际 Swift 6.3.3 的完整测试、建置、签名应用和启动冒烟已在运行 43007338487 通过；版本门禁拒绝低于 6.2 的编译器。
   本机仍为 Swift 6.4.2，明确接受这一小段差异；没有放宽 Swift 6 并发检查。
+  以上为历史三作业方案；2026-11-12 已按用户要求合并为 Linux + macOS 26 两作业，modern 改名 `app-macos`，不再保留 macOS 15。
 
 ### 阶段二：实机到货后
 
@@ -301,7 +304,7 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 - [ ] C4 仍等待现场前置：Stage 1/2 与固件假设 1/2 完成后再推进单推子电机验收；
   若实机推翻固件假设，先修 Core 与回归测试，不按模拟测试推定实机已通过。
 
-后续需要推送时先核对远端 main，保持正常提交历史，观察现有 Linux/两条 macOS CI；没有新需求就不修改 CI 配置。
+后续需要推送时先核对远端 main，保持正常提交历史，观察现有 `core-linux` / `app-macos` 两条 CI；没有新需求就不修改 CI 配置。
 本轮不发布版本，不改硬件档案，不提前实现 D1–D5；实机结论齐备后再确认参数数值持久化与真实 Agent 的产品方向。
 
 ### 阶段三：实机验证之后的功能方向
