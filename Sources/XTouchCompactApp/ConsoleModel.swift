@@ -56,7 +56,8 @@
         @Published var oscEnabled = false
         @Published var oscOutput = 0.0
         var oscGate = try! MotionSafetyGate()
-        var oscConnection: NWConnection?
+        let oscTransport: any OSCTransport
+        private var runtimeTask: Task<Void, Never>?
         private var agentOutput = false
 
         private let midi: any MIDIService
@@ -67,8 +68,9 @@
         private(set) var session: CompactSession
         private(set) var mock: MockXTouchCompact
 
-        init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: @escaping () -> Date = Date.init, storageRoot: URL? = nil, isolated: Bool = false) {
+        init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: @escaping () -> Date = Date.init, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil) {
             self.midi = midi ?? CoreMIDIService()
+            self.oscTransport = oscTransport ?? NetworkOSCTransport()
             self.now = now
             self.isolated = isolated
             store = storageRoot.map(ProtectedWorkspaceStore.init(directory:))
@@ -164,8 +166,11 @@
 
         func advanceAgents() {
             tickOSC()
-            agents.advance(to: now().timeIntervalSince1970)
-            apply { try $0.agentFeedback(agents) }
+            var next = agents
+            next.advance(to: runtimeTime)
+            guard next != agents else { return }
+            agents = next
+            apply { try $0.agentFeedback(next) }
         }
 
         func setParameter(_ id: String, value: Double, fromAgent: Bool = false) {
@@ -339,6 +344,27 @@
         func realignCurrentLayer() {
             setLayer(layer)
         }
+
+        func startRuntime() {
+            guard runtimeTask == nil else { return }
+            runtimeTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .milliseconds(250)) } catch { break }
+                    self?.advanceAgents()
+                }
+            }
+        }
+
+        func stopRuntime() {
+            runtimeTask?.cancel(); runtimeTask = nil; setOSCEnabled(false)
+        }
+
+        func notificationsForOSC(_ key: String) {
+            notifications.removeAll { $0.id == "osc" }
+            notifications.append(ConsoleNotification(id: "osc", level: .warning, message: LocalizedMessage(key), persistent: false))
+        }
+
+        deinit { runtimeTask?.cancel() }
 
         private enum ConsoleError: Error { case noConnection }
 

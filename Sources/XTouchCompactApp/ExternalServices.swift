@@ -71,42 +71,51 @@
         }
 
         func setOSCEnabled(_ enabled: Bool) {
-            let time = Date().timeIntervalSince1970
             if !enabled {
-                oscConnection?.cancel(); oscConnection = nil; oscGate.setEnabled(false, now: time); oscEnabled = false; return
-            }
-            guard !oscHost.isEmpty, let port = NWEndpoint.Port(rawValue: oscPort), !oscParameter.isEmpty else { serviceError(OSCError.invalidAddress); return }
-            oscGate.setEnabled(false, now: time)
-            oscGate.setEnabled(true, now: time)
-            let connection = NWConnection(host: NWEndpoint.Host(oscHost), port: port, using: .udp)
-            oscConnection = connection
-            connection.stateUpdateHandler = { [weak self] state in
-                if case let .failed(error) = state {
-                    Task { @MainActor in self?.setOSCEnabled(false); self?.serviceError(error) }
+                oscTransport.stop(); oscGate.setEnabled(false, now: runtimeTime)
+                if oscEnabled {
+                    oscEnabled = false
                 }
+                return
             }
-            connection.start(queue: .main); oscEnabled = true
+            guard !oscEnabled else { return }
+            guard !oscHost.isEmpty, oscPort > 0, session.parameters.definition(oscParameter) != nil else {
+                oscFault("OSC output stopped: destination or parameter is invalid."); return
+            }
+            do {
+                try oscTransport.start(host: oscHost, port: oscPort) { [weak self] error in
+                    self?.oscFault("OSC output stopped: transport failure."); self?.serviceError(error)
+                }
+                let time = runtimeTime
+                oscGate.setEnabled(false, now: time)
+                oscGate.setEnabled(true, now: time)
+                oscEnabled = true
+            } catch { oscFault("OSC output stopped: transport failure."); serviceError(error) }
         }
 
         func tickOSC() {
             guard oscEnabled else { return }
-            let time = Date().timeIntervalSince1970
-            // The app heartbeat is checked before refreshing, so a stalled UI trips the gate.
-            guard let value = session.parameters.values[oscParameter], let definition = session.parameters.definition(oscParameter),
-                  let output = oscGate.sample((value - definition.minimum) / (definition.maximum - definition.minimum), now: time)
-            else {
-                setOSCEnabled(false); return
+            let time = runtimeTime
+            guard let value = session.parameters.values[oscParameter], let definition = session.parameters.definition(oscParameter) else {
+                oscFault("OSC output stopped: destination or parameter is invalid."); return
             }
+            guard let output = oscGate.sample((value - definition.minimum) / (definition.maximum - definition.minimum), now: time) else {
+                oscFault("OSC output stopped: scheduler heartbeat expired or safety gate tripped."); return
+            }
+            // sample validates the elapsed interval against the previous heartbeat first.
+            // Only a timely scheduler tick refreshes liveness; a constant value is valid.
             oscGate.beat(now: time)
             do {
-                let packet = try OSCCodec.encode(address: "/xtouch/value", value: Float(output))
-                oscConnection?.send(content: packet, completion: .contentProcessed { [weak self] error in
-                    if let error {
-                        Task { @MainActor in self?.setOSCEnabled(false); self?.serviceError(error) }
-                    }
-                })
-                oscOutput = output
-            } catch { setOSCEnabled(false); serviceError(error) }
+                try oscTransport.send(OSCCodec.encode(address: "/xtouch/value", value: Float(output)))
+                if oscOutput != output {
+                    oscOutput = output
+                }
+            } catch { oscFault("OSC output stopped: transport failure."); serviceError(error) }
+        }
+
+        private func oscFault(_ key: String) {
+            setOSCEnabled(false)
+            notificationsForOSC(key)
         }
     }
 #endif

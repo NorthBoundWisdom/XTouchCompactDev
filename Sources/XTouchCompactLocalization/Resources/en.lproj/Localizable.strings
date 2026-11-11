@@ -230,3 +230,8 @@
 "Device layer differs from the host; motor output is blocked." = "Device layer differs from the host; motor output is blocked.";
 "Realign current layer" = "Realign current layer";
 "Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset." = "Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset.";
+
+"OSC output stopped: destination or parameter is invalid." = "OSC output stopped: destination or parameter is invalid.";
+"OSC output stopped: transport failure." = "OSC output stopped: transport failure.";
+"OSC output stopped: scheduler heartbeat expired or safety gate tripped." = "OSC output stopped: scheduler heartbeat expired or safety gate tripped.";
+"OSC keeps stationary values active. A scheduler pause over 1 s stops output." = "OSC keeps stationary values active. A scheduler pause over 1 s stops output.";

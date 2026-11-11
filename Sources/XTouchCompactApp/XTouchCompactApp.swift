@@ -12,7 +12,9 @@
             let root = isolated ? nil : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("XTouchCompactConsole")
             let defaults = isolated ? UserDefaults(suiteName: "XTouchCompactDev.tests.\(UUID().uuidString)")! : .standard
             _language = StateObject(wrappedValue: LanguageSettings(defaults: defaults))
-            _model = StateObject(wrappedValue: ConsoleModel(startsMIDI: !isolated, storageRoot: root, isolated: isolated))
+            let model = ConsoleModel(startsMIDI: !isolated, storageRoot: root, isolated: isolated)
+            model.startRuntime()
+            _model = StateObject(wrappedValue: model)
         }
 
         var body: some Scene {
@@ -23,7 +25,6 @@
                     .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
                         language.refreshSystemLanguage()
                     }
-                    .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in model.advanceAgents() }
                     .task {
                         let arguments = ProcessInfo.processInfo.arguments
                         if let index = arguments.firstIndex(of: "--snapshot-output"), arguments.indices.contains(index + 1) {
