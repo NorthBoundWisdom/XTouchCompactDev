@@ -72,9 +72,12 @@ public struct Localizer: Sendable {
         } else {
             .module
         }
-        let path = resources.path(forResource: language.rawValue, ofType: "lproj")!
-        let bundle = Bundle(path: path)!
-        let template = bundle.localizedString(forKey: key, value: key, table: nil)
+        // SwiftPM's native build lowercases localization directories (`zh-hans.lproj`), and
+        // bundle lookup is case-sensitive there. Keys are the English source text, so a
+        // missing catalog degrades to English instead of crashing.
+        let path = resources.path(forResource: language.rawValue, ofType: "lproj")
+            ?? resources.path(forResource: language.rawValue.lowercased(), ofType: "lproj")
+        let template = path.flatMap(Bundle.init(path:))?.localizedString(forKey: key, value: key, table: nil) ?? key
         guard !arguments.isEmpty else { return template }
         return String(format: template, locale: Locale(identifier: language.rawValue), arguments: arguments)
     }
