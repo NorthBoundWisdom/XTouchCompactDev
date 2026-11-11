@@ -8,8 +8,8 @@ struct XTouchCompactDevApp: App {
 
     var body: some Scene {
         WindowGroup {
-            CompactConsoleView(model: model)
-                .frame(minWidth: 960, minHeight: 730)
+            ContentView(model: model)
+                .frame(minWidth: 1_200, minHeight: 760)
         }
         .defaultSize(width: 1260, height: 920)
     }

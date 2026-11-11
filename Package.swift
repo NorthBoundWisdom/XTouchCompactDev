@@ -12,7 +12,8 @@ let package = Package(
         .target(name: "XTouchCompactCore"),
         .executableTarget(name: "XTouchCompactApp", dependencies: ["XTouchCompactCore"],
                           linkerSettings: [.linkedFramework("CoreMIDI", .when(platforms: [.macOS]))]),
-        .testTarget(name: "XTouchCompactCoreTests", dependencies: ["XTouchCompactCore"])
+        .testTarget(name: "XTouchCompactCoreTests", dependencies: ["XTouchCompactCore"]),
+        .testTarget(name: "XTouchCompactAppTests", dependencies: ["XTouchCompactApp"])
     ],
     swiftLanguageModes: [.v6]
 )

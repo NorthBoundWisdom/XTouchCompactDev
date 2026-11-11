@@ -16,6 +16,8 @@ Native macOS 14+ app for Behringer X-TOUCH COMPACT, with a pure Swift 6 core and
 - For GitHub changes, verify the current main before pushing. Never force push; no release tag unless requested.
 - Avoid adding an external runtime dependency until there is a demonstrated need. Do not copy PolyForm Noncommercial code from third parties.
 
+- Views render `PanelSnapshot` and emit `PanelIntents` only; `ConsoleModel+Panel.swift` is the single adapter. Leave contract fields nil when the backend cannot report them — never fill them with guesses. Work split and task order are in `TODO.md`.
+
 ## Local checks
 
 ```sh

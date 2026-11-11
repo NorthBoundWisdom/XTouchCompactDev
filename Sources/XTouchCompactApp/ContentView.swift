@@ -1,0 +1,212 @@
+#if os(macOS)
+import SwiftUI
+import XTouchCompactCore
+
+struct ContentView: View {
+    @ObservedObject var model: ConsoleModel
+    @State private var selection: CompactControl? = .fader(1)
+
+    var body: some View {
+        let snapshot = model.panelSnapshot
+        let intents = model.panelIntents
+        VStack(spacing: 0) {
+            HeaderBar(model: model)
+            if let error = model.error {
+                ErrorBanner(text: error)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 10)
+            }
+            Divider()
+            GeometryReader { proxy in
+                let inspectorWidth = min(max(proxy.size.width * 0.24, 300), 380)
+                HStack(spacing: 0) {
+                    SurfaceArea(model: model, snapshot: snapshot, intents: intents, selection: $selection)
+                    Divider()
+                    ControlInspectorView(snapshot: snapshot, intents: intents, selection: selection)
+                        .frame(width: inspectorWidth)
+                }
+            }
+        }
+        .background(Theme.background)
+        .preferredColorScheme(.dark)
+    }
+}
+
+/// Chooses the panel scale and arrangement for the space left of the inspector.
+///
+/// - Side by side: the workspace sits right of the panel when at least `minWorkspace` points
+///   remain; the panel grows up to the available height.
+/// - Stacked: the workspace sits below; the panel grows with width but leaves `peek` points of
+///   the workspace visible.
+struct ConsoleLayout: Equatable {
+    static let padding: CGFloat = 18
+    static let gap: CGFloat = 16
+    static let minWorkspace: CGFloat = 400
+    static let maxWorkspace: CGFloat = 720
+    static let peek: CGFloat = 150
+
+    let scale: CGFloat
+    let isSideBySide: Bool
+    let workspaceWidth: CGFloat
+
+    var panelWidth: CGFloat {
+        PanelMetrics.naturalSize.width * scale
+    }
+
+    var contentWidth: CGFloat {
+        isSideBySide ? panelWidth + Self.gap + workspaceWidth : panelWidth
+    }
+
+    init(available: CGSize) {
+        let natural = PanelMetrics.naturalSize
+        let range = PanelMetrics.scaleRange
+        let width = available.width - Self.padding * 2
+        let height = available.height - Self.padding * 2
+        func clamp(_ value: CGFloat) -> CGFloat {
+            min(max(value, range.lowerBound), range.upperBound)
+        }
+
+        let sideScale = clamp(min((width - Self.gap - Self.minWorkspace) / natural.width, height / natural.height))
+        let remaining = width - Self.gap - natural.width * sideScale
+        if remaining >= Self.minWorkspace {
+            scale = sideScale
+            isSideBySide = true
+            workspaceWidth = min(remaining, Self.maxWorkspace)
+        } else {
+            scale = clamp(min(width / natural.width, (height - Self.peek) / natural.height))
+            isSideBySide = false
+            workspaceWidth = natural.width * scale
+        }
+    }
+}
+
+private struct SurfaceArea: View {
+    @ObservedObject var model: ConsoleModel
+    let snapshot: PanelSnapshot
+    let intents: PanelIntents
+    @Binding var selection: CompactControl?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let layout = ConsoleLayout(available: proxy.size)
+            ScrollView([.vertical, .horizontal]) {
+                Group {
+                    if layout.isSideBySide {
+                        HStack(alignment: .top, spacing: ConsoleLayout.gap) { content(layout) }
+                    } else {
+                        VStack(spacing: ConsoleLayout.gap) { content(layout) }
+                    }
+                }
+                .padding(ConsoleLayout.padding)
+                // Centered whenever the window is wider than the content.
+                .frame(minWidth: proxy.size.width, alignment: .top)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ layout: ConsoleLayout) -> some View {
+        SurfacePanelView(snapshot: snapshot, intents: intents, selection: $selection,
+                         onSelectLayer: { model.setLayer($0) })
+            .environment(\.panelMetrics, PanelMetrics(scale: layout.scale))
+        WorkspaceTabsView(model: model, snapshot: snapshot, intents: intents, selection: $selection)
+            .frame(width: layout.workspaceWidth)
+    }
+}
+
+private struct HeaderBar: View {
+    @ObservedObject var model: ConsoleModel
+    @State private var confirmsRecall = false
+
+    var body: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("X-TOUCH CONSOLE")
+                    .font(.system(size: 20, weight: .black, design: .rounded))
+                    .tracking(1.6)
+                Text("Standard MIDI · Layer \(model.layer.rawValue.uppercased())")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("设备", selection: Binding(get: { model.hardwareMode }, set: { model.useHardware($0) })) {
+                Text("Mock 设备").tag(false)
+                Text("实体 X-TOUCH").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 240)
+
+            Spacer()
+
+            Button { confirmsRecall = true } label: {
+                Label("电机归位…", systemImage: "arrow.up.and.down.and.sparkles")
+            }
+            .controlSize(.small)
+            .disabled(!model.hardwareMode || !model.connection.isConnected)
+            .help("把九个电动推子移动到当前层的软件数值；只在你确认后执行")
+            .confirmationDialog("移动全部九个实体推子？", isPresented: $confirmsRecall) {
+                Button("移动九个电动推子") { model.recallMotors() }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("连接或换层后不会自动移动电机。请确认推子行程内没有遮挡；被触摸的推子不会移动。")
+            }
+
+            DeviceStatus(model: model)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
+    }
+}
+
+private struct DeviceStatus: View {
+    @ObservedObject var model: ConsoleModel
+
+    var body: some View {
+        let connected = model.connection.isConnected
+        let color: Color = model.hardwareMode ? (connected ? .green : .orange) : Theme.value
+        HStack(spacing: 10) {
+            Image(systemName: model.hardwareMode
+                ? (connected ? "cable.connector.horizontal" : "cable.connector.slash") : "cpu")
+                .foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.callout.bold()).foregroundStyle(color)
+                Text(detail).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: 360, alignment: .trailing)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var title: String {
+        guard model.hardwareMode else { return "Mock 设备运行中" }
+        return model.connection.isConnected ? "X-TOUCH COMPACT 已连接" : "X-TOUCH COMPACT 未连接"
+    }
+
+    private var detail: String {
+        let hardware = model.connection.isConnected
+            ? "\(model.connection.connectedInput?.name ?? "—") → \(model.connection.connectedOutput?.name ?? "—")"
+            : (model.connection.error ?? "未找到完整的输入 / 输出端口")
+        return model.hardwareMode ? hardware : "实体：\(hardware)"
+    }
+}
+
+private struct ErrorBanner: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+            Text(text).font(.callout).textSelection(.enabled)
+            Spacer()
+        }
+        .padding(10)
+        .background(Color.red.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+        .overlay { RoundedRectangle(cornerRadius: 9).stroke(Color.red.opacity(0.25)) }
+    }
+}
+#endif
