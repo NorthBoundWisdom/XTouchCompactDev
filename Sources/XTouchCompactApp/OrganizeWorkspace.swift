@@ -17,6 +17,10 @@
         @State private var linkName = ""
         @State private var leader = ""
         @State private var members: Set<String> = []
+        /// ID of the link loaded into the form, or nil while composing a new one.
+        @State private var editingLink: String?
+        @State private var renamingScene: String?
+        @State private var sceneRename = ""
 
         private var parameters: [XTouchCompactCore.ParameterDefinition] {
             snapshot.configuration.parameters
@@ -69,7 +73,14 @@
                             Text(name(link.leader) + " → " + link.members.map(name).joined(separator: ", "))
                                 .font(.caption).lineLimit(1)
                             Spacer()
-                            Button(role: .destructive) { intents.deleteLink?(link.id) } label: { Image(systemName: "trash") }
+                            Button { load(link) } label: { Image(systemName: "pencil") }
+                                .buttonStyle(.plain).help(l.text("Edit link"))
+                            Button(role: .destructive) {
+                                intents.deleteLink?(link.id)
+                                if editingLink == link.id {
+                                    clearLinkForm()
+                                }
+                            } label: { Image(systemName: "trash") }
                                 .buttonStyle(.plain).help(l.text("Delete link"))
                         }
                     }
@@ -87,20 +98,38 @@
                             }
                         }
                     }
-                    Button(l.text("Add link")) {
-                        intents.saveLink?(ParameterLink(id: UUID().uuidString, name: linkName.trimmingCharacters(in: .whitespaces),
-                                                        leader: leader, members: members.sorted()))
-                        linkName = ""; leader = ""; members = []
+                    HStack {
+                        Button(l.text(editingLink == nil ? "Add link" : "Save link")) {
+                            intents.saveLink?(ParameterLink(id: editingLink ?? UUID().uuidString,
+                                                            name: linkName.trimmingCharacters(in: .whitespaces),
+                                                            leader: leader, members: members.subtracting([leader]).sorted()))
+                            clearLinkForm()
+                        }
+                        .disabled(linkName.trimmingCharacters(in: .whitespaces).isEmpty || leader.isEmpty
+                            || members.subtracting([leader]).isEmpty)
+                        if editingLink != nil {
+                            Button(l.text("Cancel"), action: clearLinkForm)
+                        }
                     }
-                    .disabled(linkName.trimmingCharacters(in: .whitespaces).isEmpty || leader.isEmpty || members.isEmpty)
                 }
                 section(l.text("Scenes")) {
                     Text(l.text("A scene stores every parameter value. Recall updates targets, rings and LEDs; faders move only with 电机归位."))
                         .font(.caption).foregroundStyle(.secondary)
                     ForEach(snapshot.configuration.scenes ?? []) { scene in
                         HStack {
-                            Text(scene.name).bold()
-                            Text(l.text("%@ values", String(scene.values.count))).font(.caption).foregroundStyle(.secondary)
+                            if renamingScene == scene.id {
+                                TextField(l.text("Scene name"), text: $sceneRename)
+                                    .frame(maxWidth: 180)
+                                    .onSubmit { commitSceneRename(scene.id) }
+                                Button(l.text("Rename")) { commitSceneRename(scene.id) }
+                                    .disabled(sceneRename.trimmingCharacters(in: .whitespaces).isEmpty)
+                                Button(l.text("Cancel")) { renamingScene = nil }
+                            } else {
+                                Text(scene.name).bold()
+                                Text(l.text("%@ values", String(scene.values.count))).font(.caption).foregroundStyle(.secondary)
+                                Button { renamingScene = scene.id; sceneRename = scene.name } label: { Image(systemName: "pencil") }
+                                    .buttonStyle(.plain).help(l.text("Rename scene"))
+                            }
                             Spacer()
                             Button(l.text("Recall")) { intents.recallScene?(scene.id) }
                             Button(l.text("Update")) { intents.captureScene?(scene.name) }
@@ -124,6 +153,19 @@
             guard !trimmed.isEmpty else { return }
             intents.captureScene?(trimmed)
             sceneName = ""
+        }
+
+        private func load(_ link: ParameterLink) {
+            editingLink = link.id; linkName = link.name; leader = link.leader; members = Set(link.members)
+        }
+
+        private func clearLinkForm() {
+            editingLink = nil; linkName = ""; leader = ""; members = []
+        }
+
+        private func commitSceneRename(_ id: String) {
+            intents.renameScene?(id, sceneRename)
+            renamingScene = nil
         }
 
         private func toggle(_ id: String) {

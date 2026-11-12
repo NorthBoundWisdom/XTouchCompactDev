@@ -530,3 +530,6 @@
 "Update" = "更新";
 "Hold to press the simulated footswitch" = "按住即踩下模拟脚踏开关";
 "Simulated pedals: CC 26 / 27 on layer A, CC 63 / 64 on layer B" = "模拟踏板：A 层 CC 26 / 27，B 层 CC 63 / 64";
+"Edit link" = "编辑联动";
+"Save link" = "保存联动";
+"Rename scene" = "重命名场景";

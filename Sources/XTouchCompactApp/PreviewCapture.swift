@@ -129,6 +129,20 @@
             width = 650; height = 1100
             model.mcpWritesAllowed = true
             content = AnyView(LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents))
+        case "organize-page":
+            // The Organize workspace alone, with synthetic links and scenes.
+            width = 760; height = 760
+            model.renameControl(.fader(1), name: "Kick")
+            model.setControlColor(.fader(1), color: .red)
+            model.setControlGroup(.fader(1), group: "Drums")
+            model.renameControl(.fader(2), name: "Snare")
+            model.setControlGroup(.fader(2), group: "Drums")
+            model.saveLink(ParameterLink(id: "drums", name: "Drums", leader: "a.Fader.1", members: ["a.Fader.2"]))
+            model.setParameter("a.Fader.1", value: 80)
+            model.captureScene(name: "Verse")
+            model.captureScene(name: "Chorus")
+            content = AnyView(OrganizeWorkspace(snapshot: model.panelSnapshot, intents: model.panelIntents).padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(Theme.background))
         case "organization-values":
             // The Values tab with the same synthetic organization data.
             width = 1600; height = 1400

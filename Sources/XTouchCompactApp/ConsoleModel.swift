@@ -914,6 +914,19 @@
             } catch { self.error = error }
         }
 
+        /// Rename a scene without touching its stored values. Blank or duplicate names are ignored
+        /// so that "save under an existing name updates it" stays unambiguous.
+        func renameScene(_ id: String, name: String) {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            var configuration = session.parameters.configuration
+            guard !trimmed.isEmpty, var scenes = configuration.scenes,
+                  let index = scenes.firstIndex(where: { $0.id == id }),
+                  !scenes.contains(where: { $0.id != id && $0.name == trimmed }) else { return }
+            scenes[index].name = trimmed
+            configuration.scenes = scenes
+            commitMetadata(configuration)
+        }
+
         func recallScene(_ id: String) {
             apply { try $0.recallScene(id: id) }
             log(LocalizedMessage("Scene recalled; faders move only with the explicit motor recall."))

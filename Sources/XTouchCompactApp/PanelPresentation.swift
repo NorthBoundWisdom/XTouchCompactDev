@@ -483,6 +483,7 @@
         var deleteLink: ((String) -> Void)?
         var captureScene: ((_ name: String) -> Void)?
         var recallScene: ((String) -> Void)?
+        var renameScene: ((_ id: String, _ name: String) -> Void)?
         var deleteScene: ((String) -> Void)?
         var undo: (() -> Void)?
         var redo: (() -> Void)?

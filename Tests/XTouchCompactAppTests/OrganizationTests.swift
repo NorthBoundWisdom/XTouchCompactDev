@@ -116,4 +116,32 @@
         try intent(model.panelIntents.deleteLink)("l")
         #expect(model.panelSnapshot.fader(1)?.linkRole == nil)
     }
+
+    @Test @MainActor func scenesRenameAndLinksEditInPlaceWithoutChangingValues() throws {
+        let model = ConsoleModel(startsMIDI: false, isolated: true)
+        model.setParameter("a.Fader.1", value: 55)
+        try intent(model.panelIntents.captureScene)("Verse")
+        try intent(model.panelIntents.captureScene)("Chorus")
+        let verse = try #require(model.panelSnapshot.configuration.scenes?.first { $0.name == "Verse" })
+        model.clearMonitor()
+        try intent(model.panelIntents.renameScene)(verse.id, "  Intro ")
+        var scenes = try #require(model.panelSnapshot.configuration.scenes)
+        #expect(scenes.map(\.name) == ["Intro", "Chorus"])
+        #expect(scenes[0].id == verse.id && scenes[0].values == verse.values)
+        // Blank and duplicate names are ignored.
+        try intent(model.panelIntents.renameScene)(verse.id, " ")
+        try intent(model.panelIntents.renameScene)(verse.id, "Chorus")
+        scenes = try #require(model.panelSnapshot.configuration.scenes)
+        #expect(scenes.map(\.name) == ["Intro", "Chorus"])
+        #expect(motorOutputs(model).isEmpty)
+
+        // Saving a link under its existing ID replaces it in place.
+        try intent(model.panelIntents.saveLink)(ParameterLink(id: "l", name: "Bus", leader: "a.Fader.1", members: ["a.Fader.2"]))
+        try intent(model.panelIntents.saveLink)(ParameterLink(id: "l", name: "Drums", leader: "a.Fader.1", members: ["a.Fader.3", "a.Fader.4"]))
+        let links = try #require(model.panelSnapshot.configuration.links)
+        #expect(links.count == 1 && links[0].name == "Drums" && links[0].members == ["a.Fader.3", "a.Fader.4"])
+        #expect(model.panelSnapshot.fader(2)?.linkRole == nil)
+        #expect(model.panelSnapshot.fader(3)?.linkRole == .member("Drums"))
+        #expect(model.session.parameters.values["a.Fader.1"] == 55)
+    }
 #endif

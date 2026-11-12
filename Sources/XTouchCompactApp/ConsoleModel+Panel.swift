@@ -319,6 +319,7 @@
                 deleteLink: { [weak self] id in self?.deleteLink(id) },
                 captureScene: { [weak self] name in self?.captureScene(name: name) },
                 recallScene: { [weak self] id in self?.recallScene(id) },
+                renameScene: { [weak self] id, name in self?.renameScene(id, name: name) },
                 deleteScene: { [weak self] id in self?.deleteScene(id) },
                 undo: { [weak self] in self?.undo() },
                 redo: { [weak self] in self?.redo() },
