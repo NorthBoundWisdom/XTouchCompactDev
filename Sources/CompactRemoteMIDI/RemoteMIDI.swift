@@ -187,12 +187,30 @@ public enum RemoteFrame: Equatable, Sendable {
     public var encoded: [UInt8] {
         let (kind, payload): (UInt8, [UInt8]) = switch self {
         case let .hello(version): (1, Self.magic + [version])
-        case let .midi(words): (2, words.flatMap { [UInt8($0 >> 24), UInt8(($0 >> 16) & 0xFF), UInt8(($0 >> 8) & 0xFF), UInt8($0 & 0xFF)] })
+        case let .midi(words): (2, words.flatMap(bigEndianBytes))
         case let .device(source, destination): (3, [source ? 1 : 0, destination ? 1 : 0])
         case .ping: (4, [])
         }
         return [kind, UInt8(payload.count >> 8), UInt8(payload.count & 0xFF)] + payload
     }
+}
+
+/// Spelled out step by step: chained shifts in one expression exceed older compilers'
+/// type-checking time limit (Swift 6.2 on Linux, Xcode 26.6 on CI).
+private func bigEndianBytes(_ word: UInt32) -> [UInt8] {
+    let b0 = UInt8(truncatingIfNeeded: word >> 24)
+    let b1 = UInt8(truncatingIfNeeded: word >> 16)
+    let b2 = UInt8(truncatingIfNeeded: word >> 8)
+    let b3 = UInt8(truncatingIfNeeded: word)
+    return [b0, b1, b2, b3]
+}
+
+private func bigEndianWord(_ bytes: [UInt8], at offset: Int) -> UInt32 {
+    var word: UInt32 = 0
+    for index in offset ..< offset + 4 {
+        word = (word << 8) | UInt32(bytes[index])
+    }
+    return word
 }
 
 /// Incremental decoder. Any malformed input is a fatal protocol error for the connection.
@@ -224,9 +242,12 @@ public struct RemoteFrameDecoder: Sendable {
             return .hello(version: payload[4])
         case 2:
             guard !payload.isEmpty, payload.count % 4 == 0 else { throw RemoteMIDIError.protocolViolation("bad MIDI payload") }
-            return .midi(words: stride(from: 0, to: payload.count, by: 4).map {
-                UInt32(payload[$0]) << 24 | UInt32(payload[$0 + 1]) << 16 | UInt32(payload[$0 + 2]) << 8 | UInt32(payload[$0 + 3])
-            })
+            var words: [UInt32] = []
+            words.reserveCapacity(payload.count / 4)
+            for offset in stride(from: 0, to: payload.count, by: 4) {
+                words.append(bigEndianWord(payload, at: offset))
+            }
+            return .midi(words: words)
         case 3:
             guard payload.count == 2, payload.allSatisfy({ $0 <= 1 }) else { throw RemoteMIDIError.protocolViolation("bad device status") }
             return .device(source: payload[0] == 1, destination: payload[1] == 1)
