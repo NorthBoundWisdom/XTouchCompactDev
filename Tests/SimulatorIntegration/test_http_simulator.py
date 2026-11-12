@@ -691,8 +691,13 @@ class SurfaceSimulatorStartupTests(unittest.TestCase):
         ready = self.directory / "ready.json"
         running = RunningSimulator(self.directory, "car.ready", mutations=False, extra=("--ready-file", str(ready)))
         try:
+            # Unlink plus immediate creation deliberately exercises inode reuse on Linux.
+            # The simulator must retain an open descriptor to its original inode.
+            original = ready.stat()
             ready.unlink()
             ready.write_text("other process")
+            replacement = ready.stat()
+            self.assertNotEqual((original.st_dev, original.st_ino), (replacement.st_dev, replacement.st_ino))
             running.process.terminate()
             running.process.wait(timeout=5)
             self.assertEqual(ready.read_text(), "other process")

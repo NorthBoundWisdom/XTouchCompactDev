@@ -27,9 +27,12 @@ private struct RPCError: Error {
 private nonisolated(unsafe) var ownedReadyPath: UnsafeMutablePointer<CChar>?
 private nonisolated(unsafe) var ownedReadyDevice: dev_t = 0
 private nonisolated(unsafe) var ownedReadyInode: ino_t = 0
+// Keep this inode alive until process exit. Closing it after creation lets Linux reuse the
+// inode for an unrelated replacement at the same path, defeating the ownership check.
+private nonisolated(unsafe) var ownedReadyDescriptor: Int32 = -1
 
 private func removeOwnedReadyFile() {
-    guard let path = ownedReadyPath else { return }
+    guard ownedReadyDescriptor >= 0, let path = ownedReadyPath else { return }
     var info = stat()
     if lstat(path, &info) == 0, info.st_dev == ownedReadyDevice, info.st_ino == ownedReadyInode {
         unlink(path)
@@ -79,8 +82,9 @@ private func removeOwnedReadyFile() {
         var info = stat()
         guard fstat(descriptor, &info) == 0 else { close(descriptor); unlink(path); throw StartupError.readyFile }
         ownedReadyPath = strdup(path); ownedReadyDevice = info.st_dev; ownedReadyInode = info.st_ino
+        ownedReadyDescriptor = descriptor
         let written = bytes.withUnsafeBytes { write(descriptor, $0.baseAddress, $0.count) }
-        close(descriptor)
+        // The descriptor is intentionally held for this process lifetime (see ownership guard).
         guard written == bytes.count else { throw StartupError.readyFile }
     }
 

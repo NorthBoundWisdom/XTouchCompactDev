@@ -83,7 +83,9 @@ stdout after binding, including PID, URL, and the public identity pin; credentia
 are omitted. `--ready-file` is optional, is created exclusively (an existing file or
 symlink at the path is refused), and is removed when the process exits through a
 startup failure, SIGTERM, or SIGINT. Only the exact file this process created is
-removed: if the path was replaced by another file, it is left alone. A SIGKILL or crash
+removed: if the path was replaced by another file, it is left alone. The process retains
+an open descriptor to the original ready inode until exit so immediate replacement cannot
+reuse that inode and be mistaken for the owned file on Linux. A SIGKILL or crash
 cannot clean up; remove a stale ready file explicitly before reusing its path.
 `--token-file` is an alternative to `--token-stdin`; use only one. The file must be a
 regular file (not a symlink) owned by the current user with no group/other permission
