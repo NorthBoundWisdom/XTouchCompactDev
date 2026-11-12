@@ -56,14 +56,15 @@ one JSON line per packet with raw UMP words, SysEx included, and a monotonic `t`
 python3 configs/setup_local_project.py
 mkdir -p captures/private          # ignored by Git
 # Controller on this Mac:
-python3 tools/remote_hardware.py listen > captures/private/readback-<case>.jsonl
+python3 tools/remote_hardware.py listen --seconds 20 > captures/private/readback-<case>.jsonl
 # Controller on another Mac (after `deploy`):
 python3 tools/remote_hardware.py listen --ssh henrys-mac-mini > captures/private/readback-<case>.jsonl
 ```
 
 Quit XTouchCompactApp and any other MIDI software first, so nothing else writes to the
 device. Put the nine faders at distinct, noted positions (for example a staircase), do not
-touch them during a case, and stop each capture with Ctrl-C about 10 s after the event.
+touch them during a case, and let `--seconds` end each capture (or press Ctrl-C about 10 s
+after the event).
 
 | Case | Start the listener, then… | File |
 | --- | --- | --- |
@@ -100,7 +101,13 @@ listed raw. It is a reading aid that assumes the factory preset, not a sign-off.
 | --- | --- | --- | --- |
 | 2026-11-12 | C client attach | remote, `henrys-mac-mini` | `source-connected` at 0.585 s, then no message for 12 s. Fader positions were not noted and control case D was not run, so this shows only that this attach produced no unsolicited report; it does not yet prove the route delivers input. |
 
-Cases A, B and D need someone at the unit.
+| 2026-11-12 | C client attach | local USB | `source-connected` at 0.020 s, then no message for 15 s. |
+| 2026-11-12 | idle | local USB | A 240 s capture with nobody operating the unit: no message at all, so the idle device sends no periodic or keep-alive traffic that the listener can see. |
+
+Three attach captures (one remote, two local) agree: attaching a client to an
+already-powered, idle controller triggers no unsolicited position report. **Control case D
+is still missing**, so none of these captures has yet been shown to receive input over
+the same route. Cases A, B and D need someone at the unit.
 
 ## Current fallback and safety policy
 

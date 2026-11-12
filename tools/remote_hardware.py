@@ -5,7 +5,7 @@
     python3 tools/remote_hardware.py devices --ssh henrys-mac-mini
     python3 tools/remote_hardware.py connect --ssh henrys-mac-mini [--listen-only]
     python3 tools/remote_hardware.py status  --ssh henrys-mac-mini
-    python3 tools/remote_hardware.py listen [--ssh henrys-mac-mini] > capture.jsonl
+    python3 tools/remote_hardware.py listen [--ssh henrys-mac-mini] [--seconds 20] > capture.jsonl
     python3 tools/remote_hardware.py summarize capture.jsonl
 
 `status` is read-only: it compares the deployed binary with a local build, lists bridges
@@ -26,6 +26,7 @@ import argparse
 import hashlib
 import json
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -218,15 +219,34 @@ def summarize(path: Path) -> int:
     return 0
 
 
-def listen(host: str | None) -> None:
+def listen(host: str | None, seconds: float | None = None) -> None:
     if host is None:
         command = [str(build()), "listen"]
     else:
-        command = ["ssh", *SSH_OPTIONS, "-T", "--", host, f"{REMOTE_DIRECTORY}/{PRODUCT}", "listen"]
+        # -tt gives the remote listener a terminal, so closing ssh also ends it.
+        command = [
+            "ssh",
+            *SSH_OPTIONS,
+            "-tt" if seconds else "-T",
+            "--",
+            host,
+            f"{REMOTE_DIRECTORY}/{PRODUCT}",
+            "listen",
+        ]
+    process = subprocess.Popen(command, stdin=subprocess.DEVNULL)
     try:
-        subprocess.run(command, check=True)
+        process.wait(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        pass  # The requested duration elapsed.
     except KeyboardInterrupt:
         pass
+    finally:
+        if process.poll() is None:
+            process.send_signal(signal.SIGINT)  # The listener writes its "stopped" line.
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
 
 
 def connect(host: str, label: str | None, listen_only: bool = False) -> None:
@@ -252,13 +272,16 @@ def main() -> None:
     parser.add_argument(
         "--listen-only", action="store_true", help="connect: drop everything the local app sends to the controller"
     )
+    parser.add_argument("--seconds", type=float, help="listen: stop by itself after this many seconds")
     args = parser.parse_args()
     if args.action == "summarize":
         if args.capture is None:
             parser.error("summarize requires a capture file")
         sys.exit(summarize(args.capture))
     if args.action == "listen":
-        listen(args.ssh)
+        if args.seconds is not None and args.seconds <= 0:
+            parser.error("--seconds must be positive")
+        listen(args.ssh, args.seconds)
         return
     if args.ssh is None:
         parser.error(f"{args.action} requires --ssh")

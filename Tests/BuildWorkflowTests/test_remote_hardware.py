@@ -1,6 +1,8 @@
 """Remote hardware helper: argument validation and status parsing, without SSH or a build."""
 
 import argparse
+import signal
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -44,15 +46,30 @@ class RemoteHardwareTests(unittest.TestCase):
     def test_listen_runs_locally_without_ssh_and_remotely_with_it(self):
         with (
             patch.object(remote_hardware, "build", return_value="/bin/XTouchRemoteMIDI"),
-            patch("subprocess.run") as run,
+            patch("subprocess.Popen") as popen,
         ):
+            popen.return_value.poll.return_value = 0
             remote_hardware.listen(None)
-            self.assertEqual(run.call_args.args[0], ["/bin/XTouchRemoteMIDI", "listen"])
+            self.assertEqual(popen.call_args.args[0], ["/bin/XTouchRemoteMIDI", "listen"])
             remote_hardware.listen("mini")
-            command = run.call_args.args[0]
+            command = popen.call_args.args[0]
             self.assertEqual(command[0], "ssh")
             self.assertIn("BatchMode=yes", command)
             self.assertEqual(command[command.index("--") + 1 :], ["mini", ".xtouch-remote/XTouchRemoteMIDI", "listen"])
+
+    def test_timed_listen_interrupts_the_listener_when_time_is_up(self):
+        with patch.object(remote_hardware, "build", return_value="/bin/X"), patch("subprocess.Popen") as popen:
+            process = popen.return_value
+            process.wait.side_effect = [subprocess.TimeoutExpired("x", 3), 0]
+            process.poll.return_value = None
+            remote_hardware.listen(None, 3)
+            self.assertEqual(process.wait.call_args_list[0].kwargs, {"timeout": 3})
+            process.send_signal.assert_called_once_with(signal.SIGINT)
+            process.kill.assert_not_called()
+
+    def test_listen_rejects_a_non_positive_duration(self):
+        with patch("sys.argv", ["remote_hardware.py", "listen", "--seconds", "0"]), self.assertRaises(SystemExit):
+            remote_hardware.main()
 
     def test_connect_passes_listen_only_through(self):
         with patch.object(remote_hardware, "build", return_value="/bin/X"), patch("subprocess.run") as run:
