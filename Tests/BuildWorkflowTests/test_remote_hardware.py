@@ -63,6 +63,37 @@ class RemoteHardwareTests(unittest.TestCase):
                 run.call_args.args[0], ["/bin/X", "client", "--ssh", "mini", "--listen-only", "--label", "lab"]
             )
 
+    def test_decode_word_follows_the_factory_tx_table(self):
+        decode = remote_hardware.decode_word
+        self.assertEqual(decode(0x20B00140), ("a", "fader 1", 1, 0x40))
+        self.assertEqual(decode(0x20B21C08), ("b", "fader 1", 3, 8))
+        self.assertEqual(decode(0x20B0657F), ("a", "touch 1", 1, 127))
+        self.assertEqual(decode(0x20B07700), ("b", "touch 9", 1, 0))
+        self.assertEqual(decode(0x20B01A05), ("a", "expression", 1, 5))
+        self.assertEqual(decode(0x20B0407F), ("b", "footswitch", 1, 127))
+        self.assertEqual(decode(0x2090107F), ("a", "button 1", 1, 127))
+        self.assertEqual(decode(0x2080107F), ("a", "button 1", 1, 0))  # Note Off reads as release.
+        self.assertEqual(decode(0x20906D7F), ("b", "button 39", 1, 127))
+        self.assertEqual(decode(0x2090377F), ("b", "push 1", 1, 127))
+        for word in (0x20B07F01, 0x20C00001, 0x20906E7F, 0x30160000, 0x10F80000):
+            self.assertIsNone(decode(word))
+
+    def test_summarize_capture_aggregates_and_never_guesses(self):
+        lines = [
+            '{"event":"listening","t":0.1}',
+            '{"event":"midi","t":1.0,"words":["20B00100","20B0017F","20B0657F"]}',
+            '{"event":"midi","t":1.5,"words":["20B00140","20C00001","zz"]}',
+            "not json",
+            "",
+        ]
+        summary = remote_hardware.summarize_capture(lines)
+        self.assertEqual(summary["messages"], 6)
+        self.assertEqual(summary["malformed"], 1)
+        self.assertEqual(summary["undecoded"], ["20C00001", "zz"])
+        fader = summary["controls"][("a", "fader 1")]
+        self.assertEqual((fader["count"], fader["min"], fader["max"], fader["channels"]), (3, 0, 127, {1}))
+        self.assertEqual(summary["events"], [(0.1, "listening")])
+
     def test_only_listen_may_omit_the_host(self):
         with patch("sys.argv", ["remote_hardware.py", "status"]), self.assertRaises(SystemExit):
             remote_hardware.main()

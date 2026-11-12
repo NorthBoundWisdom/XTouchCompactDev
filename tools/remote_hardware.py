@@ -6,12 +6,16 @@
     python3 tools/remote_hardware.py connect --ssh henrys-mac-mini [--listen-only]
     python3 tools/remote_hardware.py status  --ssh henrys-mac-mini
     python3 tools/remote_hardware.py listen [--ssh henrys-mac-mini] > capture.jsonl
+    python3 tools/remote_hardware.py summarize capture.jsonl
 
 `status` is read-only: it compares the deployed binary with a local build, lists bridges
 already running on the remote Mac and local clients, and shows whether the controller is
 visible to CoreMIDI there. It starts nothing.
 `listen` is a passive raw capture (JSON lines on stdout, SysEx included; it cannot send
 MIDI). Without --ssh it listens on this Mac; with --ssh on the remote Mac. Ctrl-C stops it.
+`summarize` decodes a `listen` capture offline with the factory Standard TX table: which
+control, which layer, how many messages, value range, channels. It is a reading aid, not
+hardware sign-off, and it assumes the factory preset.
 `deploy` builds XTouchRemoteMIDI and copies it to ~/.xtouch-remote/ on the remote Mac.
 `connect` runs the local client in the foreground; while the remote controller is present,
 this Mac shows a MIDI port pair named "X-TOUCH COMPACT (via <host>)". Stop with Ctrl-C.
@@ -20,6 +24,7 @@ No listening port is opened on either Mac: the MIDI stream is the SSH session's 
 
 import argparse
 import hashlib
+import json
 import re
 import subprocess
 import sys
@@ -127,6 +132,92 @@ def status(host: str) -> int:
     return 0
 
 
+# Factory Standard TX table (docs/MIDI_PROTOCOL.md): (first number, count, name) per layer.
+_CC_RANGES = {
+    "a": [(1, 9, "fader"), (10, 16, "encoder"), (26, 1, "expression"), (27, 1, "footswitch"), (101, 9, "touch")],
+    "b": [(28, 9, "fader"), (37, 16, "encoder"), (63, 1, "expression"), (64, 1, "footswitch"), (111, 9, "touch")],
+}
+_NOTE_RANGES = {"a": [(0, 16, "push"), (16, 39, "button")], "b": [(55, 16, "push"), (71, 39, "button")]}
+
+
+def decode_word(word: int) -> tuple[str, str, int, int] | None:
+    """(layer, control, channel 1-16, value) for a MIDI 1.0 channel-voice UMP word, else None."""
+    if (word >> 28) & 0xF != 0x2:
+        return None
+    status, number, value = (word >> 16) & 0xFF, (word >> 8) & 0x7F, word & 0x7F
+    kind, channel = status & 0xF0, (status & 0x0F) + 1
+    table = _CC_RANGES if kind == 0xB0 else _NOTE_RANGES if kind in (0x80, 0x90) else None
+    if table is None:
+        return None
+    if kind == 0x80:
+        value = 0
+    for layer, ranges in table.items():
+        for first, count, name in ranges:
+            if first <= number < first + count:
+                index = number - first + 1
+                return layer, name if count == 1 else f"{name} {index}", channel, value
+    return None
+
+
+def summarize_capture(lines) -> dict:
+    """Aggregate a `listen` capture. Malformed lines are counted, never guessed at."""
+    controls: dict = {}
+    summary = {"messages": 0, "undecoded": [], "malformed": 0, "events": [], "controls": controls}
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+            event = record["event"]
+        except (ValueError, KeyError, TypeError):
+            summary["malformed"] += 1
+            continue
+        if event != "midi":
+            summary["events"].append((record.get("t"), event))
+            continue
+        for text in record.get("words", []):
+            summary["messages"] += 1
+            try:
+                decoded = decode_word(int(text, 16))
+            except (ValueError, TypeError):
+                decoded = None
+            if decoded is None:
+                if text not in summary["undecoded"]:
+                    summary["undecoded"].append(text)
+                continue
+            layer, name, channel, value = decoded
+            entry = controls.setdefault((layer, name), {"count": 0, "min": value, "max": value, "channels": set()})
+            entry["count"] += 1
+            entry["min"], entry["max"] = min(entry["min"], value), max(entry["max"], value)
+            entry["channels"].add(channel)
+    return summary
+
+
+def summarize(path: Path) -> int:
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        summary = summarize_capture(handle)
+    for time, event in summary["events"]:
+        print(f"{time if time is not None else '?':>10}  {event}")
+    print(f"{summary['messages']} MIDI message(s), {len(summary['controls'])} control(s) seen (factory Standard table)")
+
+    def order(item):
+        (layer, name), _ = item
+        kind, _, index = name.partition(" ")
+        return layer, kind, int(index or 0)
+
+    for (layer, name), entry in sorted(summary["controls"].items(), key=order):
+        channels = ",".join(str(channel) for channel in sorted(entry["channels"]))
+        print(
+            f"  layer {layer.upper()}  {name:<14} x{entry['count']:<5} values {entry['min']}..{entry['max']}  ch {channels}"
+        )
+    if summary["undecoded"]:
+        print(f"  not in the factory table: {' '.join(summary['undecoded'][:20])}")
+    if summary["malformed"]:
+        print(f"  {summary['malformed']} malformed line(s) skipped")
+    return 0
+
+
 def listen(host: str | None) -> None:
     if host is None:
         command = [str(build()), "listen"]
@@ -152,7 +243,8 @@ def connect(host: str, label: str | None, listen_only: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=["deploy", "devices", "connect", "status", "listen"])
+    parser.add_argument("action", choices=["deploy", "devices", "connect", "status", "listen", "summarize"])
+    parser.add_argument("capture", nargs="?", type=Path, help="summarize: a JSON-lines file written by listen")
     parser.add_argument(
         "--ssh", type=validated_host, help="SSH host alias of the Mac with the controller (optional for listen)"
     )
@@ -161,6 +253,10 @@ def main() -> None:
         "--listen-only", action="store_true", help="connect: drop everything the local app sends to the controller"
     )
     args = parser.parse_args()
+    if args.action == "summarize":
+        if args.capture is None:
+            parser.error("summarize requires a capture file")
+        sys.exit(summarize(args.capture))
     if args.action == "listen":
         listen(args.ssh)
         return

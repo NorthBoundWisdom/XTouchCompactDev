@@ -52,6 +52,8 @@ automatically and immediately sends its layer assertion and LED sync.
 `listen` (with or without `--ssh`) is a passive raw capture to stdout as JSON lines; it
 cannot send MIDI. See [the startup readback procedure](STARTUP_READBACK_INVESTIGATION.md).
 
+`summarize FILE` decodes a `listen` capture offline (control, layer, count, value range).
+
 `status` starts nothing. It reports whether the deployed bridge matches a local build
 (`current` / `outdated, run deploy` / `not deployed`), which bridges are running on the
 remote Mac, which local clients are running, and whether the controller is visible there.

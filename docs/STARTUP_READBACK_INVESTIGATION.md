@@ -84,6 +84,16 @@ configuration; it still says nothing about request-triggered readback.
 A remote capture adds network delay to `t` ordering only on the SSH stream, not to the
 timestamps, which are taken on the Mac with the controller.
 
+To read a capture without decoding hex by hand:
+
+```sh
+python3 tools/remote_hardware.py summarize captures/private/readback-<case>.jsonl
+```
+
+It lists the listener events, then each control seen with its layer, message count, value
+range and channel, using the factory Standard TX table. Words outside that table are
+listed raw. It is a reading aid that assumes the factory preset, not a sign-off.
+
 ### Results so far
 
 | Date | Case | Route | Result |
