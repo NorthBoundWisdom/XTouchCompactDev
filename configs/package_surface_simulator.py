@@ -46,10 +46,25 @@ SHARED_FILES = {
     "surface-control.md": "docs/surface-control.md",
     "surface-control-scenarios.md": "docs/surface-control-scenarios.md",
     "surface-control-delivery.md": "docs/surface-control-delivery.md",
+    "surface-control-conformance.md": "docs/surface-control-conformance.md",
+    "surface-control-conformance-report.schema.json": "docs/surface-control-conformance-report.schema.json",
+    "versioning.md": "docs/versioning.md",
+    "CHANGELOG.md": "CHANGELOG.md",
+    "release-checklist.md": "docs/release-checklist.md",
 }
 SDK_SOURCE = "clients/python/surface_control/__init__.py"
 # Common manifest fields follow SurfacePlugins docs/surface-control-delivery.md.
 ARTIFACT = "surface-control-simulator"
+
+
+def sdk_sources(shared=SHARED):
+    """Stable member order and metadata match the other host's SDK archive."""
+    python_root = shared / "clients/python"
+    return sorted(
+        str(path.relative_to(shared))
+        for package in ("surface_control", "surface_conformance")
+        for path in (python_root / package).rglob("*.py")
+    )
 
 
 def stage_shared_files(stage, root=ROOT, shared=SHARED):
@@ -60,12 +75,14 @@ def stage_shared_files(stage, root=ROOT, shared=SHARED):
     shutil.copy2(root / "configs/surface_plugins.lock.json", stage)
     for name, source in SHARED_FILES.items():
         shutil.copy2(shared / source, stage / name)
-    # Fixed timestamp and mode keep the zip reproducible for one shared revision.
-    entry = zipfile.ZipInfo("surface_control/__init__.py", date_time=(1980, 1, 1, 0, 0, 0))
-    entry.compress_type = zipfile.ZIP_DEFLATED
-    entry.external_attr = 0o644 << 16
+    shutil.copy2(root / "examples/surface_simulator/conformance-roles.json", stage)
+    # Fixed timestamp, mode and full relative member order keep both hosts' zip bytes equal.
     with zipfile.ZipFile(stage / SDK_ZIP, "w") as sdk:
-        sdk.writestr(entry, (shared / SDK_SOURCE).read_bytes())
+        for source in sdk_sources(shared):
+            entry = zipfile.ZipInfo(str(Path(source).relative_to("clients/python")), date_time=(1980, 1, 1, 0, 0, 0))
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.external_attr = 0o644 << 16
+            sdk.writestr(entry, (shared / source).read_bytes())
     (stage / "examples").mkdir()
     shutil.copy2(root / "Clients/Python/examples/surface_roundtrip.py", stage / "examples" / "surface_roundtrip.py")
     shutil.copy2(root / "examples/surface_simulator/chassis.json", stage / "examples/chassis.json")
@@ -89,7 +106,7 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED
     revision = json.loads((root / "configs/surface_plugins.lock.json").read_text())["revision"]
     shared_sources = {
         source: hashlib.sha256((shared / source).read_bytes()).hexdigest()
-        for source in [*SHARED_FILES.values(), SDK_SOURCE]
+        for source in [*SHARED_FILES.values(), *sdk_sources(shared)]
     }
     manifest = {
         "schema_version": 1,

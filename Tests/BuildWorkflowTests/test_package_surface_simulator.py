@@ -73,7 +73,13 @@ class DeliveryContentTests(unittest.TestCase):
         for name, source in package_surface_simulator.SHARED_FILES.items():
             self.assertEqual((self.stage / name).read_bytes(), (shared / source).read_bytes(), name)
         with zipfile.ZipFile(self.stage / "surface-control-sdk-1.3.0.zip") as sdk:
-            self.assertEqual(sdk.namelist(), ["surface_control/__init__.py"])
+            expected_members = [
+                str(Path(source).relative_to("clients/python"))
+                for source in package_surface_simulator.sdk_sources(shared)
+            ]
+            self.assertEqual(sdk.namelist(), expected_members)
+            for member, source in zip(expected_members, package_surface_simulator.sdk_sources(shared), strict=True):
+                self.assertEqual(sdk.read(member), (shared / source).read_bytes())
             body = sdk.read("surface_control/__init__.py")
         self.assertEqual(body, (shared / package_surface_simulator.SDK_SOURCE).read_bytes())
         self.assertIn(b'__version__ = "1.3.0"', body)
@@ -136,7 +142,10 @@ class DeliveryContentTests(unittest.TestCase):
         """Field names and rules of SurfacePlugins docs/surface-control-delivery.md at the locked revision."""
         shared = package_surface_simulator.SHARED
         convention = (shared / "docs/surface-control-delivery.md").read_text()
-        table = [line.split("|")[1].strip().strip("`") for line in convention.splitlines() if line.startswith("| `")]
+        manifest_section = convention.split("## Unified delivery root and index", 1)[0]
+        table = [
+            line.split("|")[1].strip().strip("`") for line in manifest_section.splitlines() if line.startswith("| `")
+        ]
         self.assertEqual(len(table), 13)
         manifest = self.manifest
         # Every documented common field is present; the rest are documented private fields.
@@ -157,13 +166,45 @@ class DeliveryContentTests(unittest.TestCase):
         for name in files:
             self.assertFalse(name.startswith("/") or "\\" in name or ".." in Path(name).parts, name)
         # Every copied shared file is covered, by its path inside the shared package, and identical.
-        copied = set(package_surface_simulator.SHARED_FILES.values()) | {package_surface_simulator.SDK_SOURCE}
+        copied = set(package_surface_simulator.SHARED_FILES.values()) | set(
+            package_surface_simulator.sdk_sources(shared)
+        )
         self.assertEqual(set(manifest["surface_plugins_files_sha256"]), copied)
         for name, source in package_surface_simulator.SHARED_FILES.items():
             self.assertEqual(files[name], manifest["surface_plugins_files_sha256"][source])
         with zipfile.ZipFile(self.stage / "surface-control-sdk-1.3.0.zip") as sdk:
             member = hashlib.sha256(sdk.read("surface_control/__init__.py")).hexdigest()
         self.assertEqual(member, manifest["surface_plugins_files_sha256"][package_surface_simulator.SDK_SOURCE])
+
+    def test_role_map_matches_each_fixture_subset_and_public_default_controls(self):
+        role_map = json.loads((self.stage / "conformance-roles.json").read_text())
+        self.assertEqual(role_map["schema_version"], 1)
+        self.assertEqual(set(role_map), {"schema_version", "fixtures"})
+        expected = {
+            "input_a": "a.encoder.1",
+            "input_b": "a.encoder.2",
+            "input_c": "a.encoder.3",
+            "input_d": "a.encoder.4",
+            "feedback_state": "a.button.1",
+            "feedback_progress": "a.encoder.5",
+            "feedback_link": "a.button.2",
+            "hold_input": "a.touch.1",
+            "blocked_input": None,
+        }
+        fixture_ids = set()
+        for name in package_surface_simulator.SHARED_FILES:
+            if not name.startswith("surface-control-software-"):
+                continue
+            fixture = json.loads((self.stage / name).read_text())
+            fixture_ids.add(fixture["scenario_id"])
+            entry = role_map["fixtures"][fixture["scenario_id"]]
+            self.assertEqual(set(entry), {"roles"})
+            self.assertEqual(entry["roles"], {role: expected[role] for role in fixture["roles"]})
+        self.assertEqual(set(role_map["fixtures"]), fixture_ids)
+        self.assertEqual(
+            (self.stage / "conformance-roles.json").read_bytes(),
+            (package_surface_simulator.ROOT / "examples/surface_simulator/conformance-roles.json").read_bytes(),
+        )
 
     def test_manifest_refuses_a_binary_serving_another_contract_version(self):
         contract = self.stage / "control-contract.json"

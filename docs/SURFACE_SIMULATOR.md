@@ -45,11 +45,13 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 
 | Delivery file | Shared source |
 | --- | --- |
-| `surface-control-sdk-1.3.0.zip` (`surface_control/__init__.py`) | `clients/python/surface_control/__init__.py` |
+| `surface-control-sdk-1.3.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/` Python sources |
 | `control-tools.json` | `docs/surface-control-tools.json` |
 | `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
 | `surface-control-software-v1.json`, `surface-control-software-v1.1.json`, `surface-control-software-v1.2.json`, `surface-control-software-v1.3.json` | `fixtures/` |
 | `surface-control.md`, `surface-control-scenarios.md`, `surface-control-delivery.md` | `docs/` |
+| `surface-control-conformance.md`, `surface-control-conformance-report.schema.json` | `docs/` |
+| `versioning.md`, `release-checklist.md`, `CHANGELOG.md` | `docs/versioning.md`, `docs/release-checklist.md`, `CHANGELOG.md` |
 
 The shared SDK tests and the Pipe integration example (`integrations/pipe/`) are not part
 of this generic delivery. The manifest's common fields have the same names and meanings as
@@ -372,6 +374,34 @@ the SDK from `build/dependencies/SurfacePlugins/clients/python` without writing 
 The retained legacy global-CAS tests also run two real HTTP writers concurrently: all unsequenced feedback is
 accepted, and a stale input is proven unexecuted before an explicit SDK refresh and new input.
 No test here starts a production Pipe service or connects physical hardware.
+
+## Live conformance from a delivery
+
+The SDK zip also contains the shared standard-library checker. The host-owned
+`conformance-roles.json` has one role subset per fixture. Default controls all accept
+input, so the v1.2/v1.3 `blocked_input` role is explicitly null; its checks skip with
+a reason. Clock injection, process-local probes and unavailable trusted writer
+identities also produce explicit skips. Skips do not establish conformance for
+those steps. No private principal record or random runtime writer ID is packaged.
+
+Against a separately started isolated delivery with input, feedback and reset
+permissions, run from the delivery directory (use a fresh process and private token
+as described above):
+
+```sh
+PYTHONPATH=surface-control-sdk-1.3.0.zip python3 -B -m surface_conformance \
+  --url http://127.0.0.1:PORT/mcp --token-file /path/to/private/token \
+  --instance-id INSTANCE --fixture surface-control-software-v1.3.json \
+  --roles conformance-roles.json --report /path/to/evidence/conformance-v1.3.json
+```
+
+Repeat with each of the four fixture files; keep reports outside the immutable
+delivery directory. The checker never retries a mutation. Its exit status is zero
+for pass/skip only, one for a failed step, and two for configuration/discovery
+failure. Inspect the per-step reasons and counts even after exit zero. The real
+HTTP integration suite runs all four fixtures and asserts that every skip has a
+reason, independently of the injected-clock Swift runner.
+
 
 ## Chassis mapping example
 
