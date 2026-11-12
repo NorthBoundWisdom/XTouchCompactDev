@@ -34,7 +34,7 @@
         func routeMCP(_ request: [String: Any]) throws -> [String: Any] {
             var tools: [[String: Any]] = [
                 ["name": "get_state", "description": "Read active layer, parameters and physical touch state.", "inputSchema": ["type": "object", "properties": [:], "additionalProperties": false]],
-                ["name": "set_parameter", "description": "Write a parameter; touched faders defer motors until release.", "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "value": ["type": "number"]], "required": ["id", "value"], "additionalProperties": false]],
+                ["name": "set_parameter", "description": "Write a parameter; touched faders defer motors until release. Motors move only when the host grants Agent motor moves; otherwise motorsWithheld lists the faders left in place.", "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "value": ["type": "number"]], "required": ["id", "value"], "additionalProperties": false]],
                 ["name": "agent_primary", "description": "Start or interrupt a Mock Agent slot. Approval requires the user interface.", "inputSchema": ["type": "object", "properties": ["slot": ["type": "integer", "minimum": 1, "maximum": 8]], "required": ["slot"], "additionalProperties": false]],
             ]
             tools += try plugins.remoteTools.map { tool in
@@ -69,12 +69,15 @@
                               "layerMismatch": session.state.layerMismatch,
                               "observedLayer": session.state.observedLayer?.rawValue ?? "unknown",
                               "touchedFaders": (1 ... 9).filter { session.state.isTouched($0) },
+                              "permissions": ["writes": mcpWritesAllowed, "motors": mcpMotorWritesAllowed,
+                                              "simulationAdministration": mcpSimulationControlAllowed],
                               "pendingMotors": (1 ... 9).filter { session.state.isMotorPending($0) }]
             case "set_parameter":
                 guard mcpWritesAllowed, Set(args.keys) == ["id", "value"], let id = args["id"] as? String,
                       let value = args["value"] as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(), value.doubleValue.isFinite else { throw MCPError.denied }
                 try applyAgentParameter(id, value: value.doubleValue)
-                result = ["value": session.parameters.values[id]!, "deferredFaders": (1 ... 9).filter { session.state.isMotorPending($0) }]
+                result = ["value": session.parameters.values[id]!, "deferredFaders": (1 ... 9).filter { session.state.isMotorPending($0) },
+                          "motorsWithheld": mcpMotorWritesAllowed ? [] : session.motorFaders(boundTo: id)]
             case "agent_primary":
                 guard mcpWritesAllowed, Set(args.keys) == ["slot"], let number = args["slot"] as? NSNumber,
                       CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.rounded() == number.doubleValue,

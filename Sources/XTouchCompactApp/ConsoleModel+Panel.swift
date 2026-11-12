@@ -45,6 +45,7 @@
                 configuration: session.parameters.configuration,
                 mcpPort: mcpPort,
                 mcpEnabled: mcpEnabled, mcpWritesAllowed: mcpWritesAllowed, mcpSimulationControlAllowed: mcpSimulationControlAllowed,
+                mcpMotorWritesAllowed: mcpMotorWritesAllowed,
                 oscEnabled: oscEnabled, oscHost: oscHost, oscPort: oscPort,
                 oscParameter: oscParameter, oscOutput: oscOutput,
                 agents: agents.slots, businessPlugins: plugins.businessPresentations,
@@ -124,7 +125,9 @@
                 },
                 faderPositions: hardwareObserver.faderPositions, faderTouches: hardwareObserver.faderTouches,
                 encoderValues: hardwareObserver.encoderValues, encoderPushes: hardwareObserver.encoderPushes,
-                buttonPresses: hardwareObserver.buttonPresses, seenControls: hardwareObserver.seenControls,
+                buttonPresses: hardwareObserver.buttonPresses,
+                expressionValue: hardwareObserver.expressionValue, footswitchDown: hardwareObserver.footswitchDown,
+                seenControls: hardwareObserver.seenControls,
                 inputLayer: hardwareObserver.inputLayer,
                 reviewLayers: CompactLayer.allCases.map { layer in
                     LayerInputReviewPresentation(layer: layer, rows: CompactInputGroup.allCases.flatMap { group in
@@ -252,6 +255,7 @@
                 setMCPEnabled: { [weak self] in self?.setMCPEnabled($0) },
                 setMCPWritesAllowed: { [weak self] in self?.mcpWritesAllowed = $0 },
                 setMCPSimulationControlAllowed: { [weak self] in self?.mcpSimulationControlAllowed = $0 },
+                setMCPMotorWritesAllowed: { [weak self] in self?.mcpMotorWritesAllowed = $0 },
                 copyMCPToken: { [weak self] in self?.copyMCPToken() },
                 setOSCEnabled: { [weak self] in self?.setOSCEnabled($0) },
                 configureOSC: { [weak self] host, port, parameter in

@@ -11,3 +11,5 @@ build.local.json
 .freecm/
 __pycache__/
 *.pyc
+# Third-party reference checkouts (untrusted, never committed)
+Downloads/

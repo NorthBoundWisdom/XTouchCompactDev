@@ -1,6 +1,7 @@
 # Native mouse acceptance (N5)
 
-Status on 2026-11-11: **the five N5 cases below remain incomplete**. Code-level
+Status on 2026-11-12: **the seven N5 cases below remain incomplete** (two added for
+Agent motor permission and value persistence). Code-level
 tests pass, but they do not substitute for these mouse/visual acceptance cases.
 The separate hardware-observation workspace has since been accepted by the
 operator on a physical unit; see [the session record](HARDWARE_SESSION_2026-11-11.md).
@@ -13,6 +14,22 @@ The isolated processes were stopped; the pre-existing user app was left running.
 Sampling the isolated process showed an idle AppKit run loop, not a main-thread
 rendering deadlock. This is evidence of a window-access/startup issue, not proof
 that the interactions below pass or fail.
+
+## Operator quick run (about 10 minutes)
+
+Do the rows in order in Mock mode. Fill in **Actual result** with what you saw and
+`pass` / `fail`; a screenshot filename is enough evidence. The persistence row needs
+a normal (non-`--integration-test`) launch because isolated mode disables storage.
+For the MCP rows, any local client works; for example:
+
+```sh
+TOKEN=<paste token>
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_state","arguments":{}}}' \
+  http://127.0.0.1:8765/mcp
+```
+
+Do not paste the token into this file or any committed evidence.
 
 ## Reproduce in an isolated instance
 
@@ -28,6 +45,8 @@ explicitly enabled. Use a local UDP receiver if exercising OSC.
 | Preset replacement | Write a non-default parameter, choose Audio example, cancel; repeat and confirm | Cancel preserves configuration/value; confirm uses pending preset defaults once, no motor recall | Pending desktop access |
 | OSC stop | Enable output to local receiver, then apply an invalid destination or induce scheduler gap >1 s in fixture | Output disables, visible stop notification; re-enable is explicit | Pending desktop access |
 | MCP switch/token | Enable MCP in Settings, copy token, use local read-only integration client, disable | Loopback listener answers authenticated reads; disabling closes it; token is not logged | Pending desktop access |
+| Agent motor permission | With Agent writes on and motor moves off, `set_parameter` a fader parameter; then turn motor moves on and repeat | Off: value and panel target change, mock fader cap stays; on: cap moves. Motor toggle is disabled while Agent writes is off | Pending desktop access |
+| Value persistence | Change a fader and an encoder, quit normally, relaunch | Values and ring restored; fader caps do not move on launch; panel shows the restored target | Pending desktop access |
 
 Deterministic coverage: PanelPresentationTests (mock gestures and held fader),
 ServiceTests (layer realignment and touch), ConfigurationImportTests (preset

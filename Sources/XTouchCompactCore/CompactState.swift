@@ -134,6 +134,7 @@ public struct CompactState: Sendable {
             } else {
                 pushedEncoders.remove(i)
             }
+        case .expression, .footswitch: break // No LED, ring or motor is associated with a pedal.
         }
         return event
     }
@@ -196,6 +197,13 @@ public struct CompactState: Sendable {
 
     public mutating func setInputTouches(_ touches: Set<Int>) {
         touchedFaders = touches
+    }
+
+    /// Forget a withheld motor intent without claiming a physical observation, so a later
+    /// touch release cannot replay an older target over a newer, motor-less write.
+    public mutating func discardMotorIntent(_ index: Int) {
+        desiredFader.removeValue(forKey: index)
+        pendingMotor.remove(index)
     }
 
     /// A physical fader report owns its own position. Parameter snapping must never echo a motor command.

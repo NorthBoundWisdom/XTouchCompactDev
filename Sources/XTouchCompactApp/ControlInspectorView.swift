@@ -65,6 +65,9 @@
                 if let button = snapshot.button(index) {
                     buttonState(button)
                 }
+            case .expression, .footswitch:
+                // Pedals are rear-panel accessories without a panel state or feedback address.
+                EmptyView()
             }
         }
 

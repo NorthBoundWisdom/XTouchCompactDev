@@ -24,6 +24,10 @@
             Section("MCP · 127.0.0.1:\(String(snapshot.mcpPort))/mcp") {
                 Toggle(l.text("Enable MCP"), isOn: Binding(get: { snapshot.mcpEnabled }, set: { intents.setMCPEnabled?($0) }))
                 Toggle(l.text("Allow Agent writes"), isOn: Binding(get: { snapshot.mcpWritesAllowed }, set: { intents.setMCPWritesAllowed?($0) }))
+                Toggle(l.text("Allow Agent motor moves"), isOn: Binding(get: { snapshot.mcpMotorWritesAllowed }, set: { intents.setMCPMotorWritesAllowed?($0) }))
+                    .disabled(!snapshot.mcpWritesAllowed)
+                Text(l.text("Off by default and never restored on launch. Without it, Agent writes update values, rings and LEDs but leave faders in place."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(l.text("Allow simulation administration"), isOn: Binding(get: { snapshot.mcpSimulationControlAllowed }, set: { intents.setMCPSimulationControlAllowed?($0) }))
                 Text(l.text("Simulation reset also requires Agent writes. Remote time advance is unavailable while the host drives the clock."))
                     .font(.caption).foregroundStyle(.secondary)

@@ -14,6 +14,8 @@ public struct MockXTouchCompact: Sendable {
     public private(set) var rings: [RingDisplay] = Array(repeating: .off, count: 16)
     public private(set) var ringStyles: [RingStyle] = Array(repeating: .single, count: 16)
     public private(set) var ignoredMotorCommands = 0
+    public private(set) var expression: UInt8?
+    public private(set) var footswitchDown = false
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) {
         self.map = map
@@ -77,6 +79,18 @@ public struct MockXTouchCompact: Sendable {
         }
         buttons[index - 1] = isDown ? .on : .off
         return [note(base: layer == .a ? 16 : 71, index: index, isDown: isDown)]
+    }
+
+    /// Optional accessories. Values follow the factory table; pedal polarity is untested.
+    public mutating func moveExpression(_ value: UInt8) throws -> [MIDIMessage] {
+        try validate(value)
+        expression = value
+        return [.controlChange(channel: map.transmitChannel, number: layer == .a ? 26 : 63, value: value)]
+    }
+
+    public mutating func pressFootswitch(isDown: Bool) -> [MIDIMessage] {
+        footswitchDown = isDown
+        return [.controlChange(channel: map.transmitChannel, number: layer == .a ? 27 : 64, value: isDown ? 127 : 0)]
     }
 
     /// Physical A/B selectors are local: no outbound MIDI event and no motor recall.

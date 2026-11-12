@@ -89,6 +89,8 @@
                         Text(l.text("button")).tag("button")
                         Text(l.text("Touch")).tag("touch")
                         Text(l.text("Encoder push")).tag("push")
+                        Text(l.text("表情踏板")).tag("expression")
+                        Text(l.text("脚踏开关")).tag("footswitch")
                     }
                     Stepper(l.text("First: %@", String(first)), value: $first, in: 1 ... 39)
                     Stepper(l.text("Last: %@", String(last)), value: $last, in: 1 ... 39)
@@ -136,6 +138,8 @@
                 case "encoder": .encoder(index)
                 case "touch": .faderTouch(index)
                 case "push": .encoderPush(index)
+                case "expression": .expression
+                case "footswitch": .footswitch
                 default: .button(index)
                 }
                 draft.assignments.removeAll { $0.control == control && $0.layer == snapshot.layer }

@@ -487,3 +487,7 @@
 "Last input · awaiting confirmation" = "上次輸入，等待裝置確認";
 "Last input layer: %@ · awaiting confirmation" = "上次輸入層：%@ · 待確認";
 "Last hardware input: %@" = "上次實體輸入：%@";
+"表情踏板" = "表情踏板";
+"脚踏开关" = "腳踏開關";
+"Allow Agent motor moves" = "允許 Agent 驅動推桿馬達";
+"Off by default and never restored on launch. Without it, Agent writes update values, rings and LEDs but leave faders in place." = "預設關閉，啟動時不恢復。關閉時 Agent 寫入只更新數值、燈環和 LED，推桿保持不動。";

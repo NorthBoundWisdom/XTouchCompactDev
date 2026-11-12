@@ -18,8 +18,9 @@ targets on both layers. Presets and imported configurations instead use the new
 configuration's declared defaults, even for matching IDs: there is no proportional
 unit conversion. When the current workspace has non-default values, replacement
 requests one confirmation using the reset dialog; cancellation leaves it unchanged.
-Fresh startup also uses the saved configuration's defaults, since parameter values
-are session state. Reset parameter values remains a separate confirmed action.
+Startup restores saved parameter values (see Persistence) as host intent only:
+banks, rings and LEDs follow, motors do not move. Reset parameter values remains a
+separate confirmed action.
 Loading refreshes only
 non-motor feedback and cancels previous deferred motor intents. It does not recall
 motors. Applying only a MIDI channel/LED profile preserves both banks' values.
@@ -45,8 +46,13 @@ The normal app stores configuration and applied device profile together in
 `~/Library/Application Support/XTouchCompactConsole/workspace.json`. It saves
 only applied MIDI channels, LED protocol and explicit port selections; port
 selection drafts do not silently change the saved profile. Missing manual
-endpoints stay missing instead of selecting another controller. Parameter values,
-Agent activity and external-output enable flags are intentionally session state.
+endpoints stay missing instead of selecting another controller. Parameter values
+are saved as optional `parameterValues` (validated against the saved configuration's
+IDs; older files without it load defaults). They are flushed at most once per second
+by the runtime tick and on normal termination; a file is not created for untouched
+defaults. Restored values are software intent: they never produce a motor command on
+launch, reconnect or hardware mode entry. Physical recall stays explicit. Agent
+activity, MCP permissions and external-output enable flags remain session state.
 
 Writes are atomic. Invalid files remain untouched and gain a deterministic
 FNV-1a fingerprint backup (`*.invalid-<fingerprint>.backup`). This fingerprint
@@ -91,6 +97,13 @@ The stateless JSON Streamable HTTP endpoint supports `initialize`, `ping`,
 The legacy tools remain `get_state`, `set_parameter` and `agent_primary`. State exposes
 layer, parameter permissions, touched and deferred faders. Writes use the same
 parameter/session pipeline as UI writes; they do not bypass touch ownership.
+Allow Agent motor moves is a separate, session-only switch, off by default, that
+requires Allow Agent writes. Without it, `set_parameter` still updates the value,
+banks, rings and LEDs, but no motor command is sent or queued for faders bound to
+that parameter, and any older withheld target for those faders is discarded so a touch
+release cannot replay it. The result lists those faders in `motorsWithheld`;
+`get_state.permissions` reports `writes`, `motors` and `simulationAdministration`.
+Local interface and hardware writes are not affected.
 Calls appear in the monitor without credentials or request arguments. Remote
 `agent_primary` can start or interrupt but cannot approve a waiting slot, even
 when Agent writes are enabled. Local interface and hardware actions can approve; remote actions cannot.

@@ -228,3 +228,36 @@
         #expect(midi.sent.contains(.controlChange(channel: 0, number: 1, value: 90))) // Explicit reassertion is not suppressed by old send history.
     }
 #endif
+#if os(macOS)
+    @Test @MainActor func parameterValuesPersistAcrossLaunchWithoutMotorRecall() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = ConsoleModel(startsMIDI: false, storageRoot: root, isolated: true)
+        let store = ProtectedWorkspaceStore(directory: root)
+        first.advanceAgents()
+        #expect(try store.load() == nil) // Defaults alone never create a workspace file.
+        first.setParameter("a.Fader.1", value: 100)
+        first.setParameter("a.Encoder.2", value: 64)
+        #expect(first.parameterValuesDirty)
+        first.flushHardwareValues()
+        #expect(!first.parameterValuesDirty)
+        #expect(try store.load()?.parameterValues?["a.Fader.1"] == 100)
+
+        let midi = FakeMIDIService()
+        let restored = ConsoleModel(startsMIDI: false, midi: midi, storageRoot: root, isolated: true)
+        #expect(restored.session.parameters.values["a.Fader.1"] == 100)
+        #expect(restored.session.parameters.values["a.Encoder.2"] == 64)
+        #expect(restored.bank.faders[0] == 100)
+        // Restored intent: no motor command on launch or on hardware connection.
+        #expect(!restored.events.contains { $0.direction == .output && $0.control == .fader(1) })
+        midi.connect()
+        restored.setListenOnly(false); restored.useHardware(true)
+        #expect(!midi.sent.contains {
+            if case .controlChange(_, 1 ... 9, _) = $0 {
+                return true
+            }
+            return false
+        })
+        #expect(!restored.session.state.isMotorPending(1))
+    }
+#endif

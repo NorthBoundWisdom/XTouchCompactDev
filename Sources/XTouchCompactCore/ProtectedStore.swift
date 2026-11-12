@@ -17,6 +17,9 @@ public struct SavedWorkspace: Codable, Equatable, Sendable {
     public var configuration: SurfaceConfiguration
     public var profile: DeviceProfile
     public var hardwareValues: HardwareValueCache?
+    /// Host parameter values (software intent), keyed by parameter ID. Optional for
+    /// files written before values were persisted. Restoring them never moves a motor.
+    public var parameterValues: [String: Double]?
     public init(configuration: SurfaceConfiguration, profile: DeviceProfile) {
         self.configuration = configuration; self.profile = profile
     }
@@ -25,6 +28,12 @@ public struct SavedWorkspace: Codable, Equatable, Sendable {
         guard version == 1 else { throw ParameterError.wrongDeviceOrVersion }
         try configuration.validate(); try profile.validate()
         try hardwareValues?.validate()
+        if let parameterValues {
+            let ids = Set(configuration.parameters.map(\.id))
+            guard parameterValues.allSatisfy({ ids.contains($0.key) && $0.value.isFinite }) else {
+                throw ParameterError.invalidAssignment
+            }
+        }
     }
 }
 

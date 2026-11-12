@@ -86,7 +86,7 @@ public struct SurfaceConfiguration: Codable, Equatable, Sendable {
             guard map.inputAddress(for: assignment.control, layer: assignment.layer) != nil,
                   keys.insert("\(assignment.layer.rawValue):\(assignment.control)").inserted else { throw ParameterError.invalidAssignment }
             switch assignment.control {
-            case .fader, .encoder:
+            case .fader, .encoder, .expression:
                 guard case .parameter = assignment.action else { throw ParameterError.invalidAssignment }
             default: break
             }

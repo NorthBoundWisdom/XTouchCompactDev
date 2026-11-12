@@ -38,6 +38,9 @@ public enum CompactControl: Codable, Hashable, Sendable, CustomStringConvertible
     case encoder(Int) // 1...16
     case encoderPush(Int) // 1...16
     case button(Int) // 1...39
+    /// Optional rear-panel accessories. Not part of the 89 built-in bring-up actions.
+    case expression
+    case footswitch
 
     public var description: String {
         switch self {
@@ -46,6 +49,8 @@ public enum CompactControl: Codable, Hashable, Sendable, CustomStringConvertible
         case let .encoder(i): "Encoder \(i)"
         case let .encoderPush(i): "Encoder \(i) push"
         case let .button(i): "Button \(i)"
+        case .expression: "Expression pedal"
+        case .footswitch: "Footswitch"
         }
     }
 }

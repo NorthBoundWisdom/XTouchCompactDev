@@ -34,12 +34,16 @@ public extension FactoryStandardMap {
         case let .button(index):
             guard (1 ... 39).contains(index) else { return nil }
             type = .note; number = (layer == .a ? 16 : 71) + index - 1
+        case .expression:
+            type = .controlChange; number = layer == .a ? 26 : 63
+        case .footswitch:
+            type = .controlChange; number = layer == .a ? 27 : 64
         }
         return MIDIAddress(messageType: type, channel: transmitChannel, number: UInt8(number))
     }
 
     /// Factory Global RX address, independent of layer. Encoder feedback means ring display;
-    /// ring style is a separate address. Touch and encoder push have no feedback of their own.
+    /// ring style is a separate address. Touch, encoder push and pedals have no feedback of their own.
     func feedbackAddress(for control: CompactControl) -> MIDIAddress? {
         guard globalReceiveChannel < 16 else { return nil }
         let type: MIDIAddress.MessageType
@@ -54,7 +58,7 @@ public extension FactoryStandardMap {
         case let .button(index):
             guard (1 ... 39).contains(index) else { return nil }
             type = .note; number = index - 1
-        case .faderTouch, .encoderPush: return nil
+        case .faderTouch, .encoderPush, .expression, .footswitch: return nil
         }
         return MIDIAddress(messageType: type, channel: globalReceiveChannel, number: UInt8(number))
     }

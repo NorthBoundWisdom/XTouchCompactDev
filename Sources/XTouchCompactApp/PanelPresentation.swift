@@ -130,6 +130,9 @@
         var encoderValues: [CompactLayer: [Int: UInt8]] = [:]
         var encoderPushes: [Int: Bool] = [:]
         var buttonPresses: [Int: Bool] = [:]
+        /// Optional accessories; nil means no report since observation started.
+        var expressionValue: UInt8?
+        var footswitchDown: Bool?
         var seenControls: Set<CompactControl> = []
         var inputLayer: CompactLayer?
         var isPreview = false
@@ -352,6 +355,7 @@
         var mcpEnabled = false
         var mcpWritesAllowed = false
         var mcpSimulationControlAllowed = false
+        var mcpMotorWritesAllowed = false
         var oscEnabled = false
         var oscHost = "127.0.0.1"
         var oscPort: UInt16 = 9000
@@ -417,6 +421,7 @@
         var setMCPEnabled: ((Bool) -> Void)?
         var setMCPWritesAllowed: ((Bool) -> Void)?
         var setMCPSimulationControlAllowed: ((Bool) -> Void)?
+        var setMCPMotorWritesAllowed: ((Bool) -> Void)?
         var copyMCPToken: (() -> Void)?
         var setOSCEnabled: ((Bool) -> Void)?
         var configureOSC: ((String, UInt16, String) -> Void)?
@@ -442,6 +447,8 @@
             case let .encoder(index): "E\(index)"
             case let .encoderPush(index): "E\(index)⏎"
             case let .button(index): "B\(index)"
+            case .expression: "EXP"
+            case .footswitch: "SW"
             }
         }
 
@@ -456,6 +463,8 @@
             case let .encoder(index): l.text("编码器 %@", String(index))
             case let .encoderPush(index): l.text("编码器 %@ 按下", String(index))
             case let .button(index): PanelLayout.buttonName(index, using: l)
+            case .expression: l.text("表情踏板")
+            case .footswitch: l.text("脚踏开关")
             }
         }
     }

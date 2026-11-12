@@ -206,6 +206,16 @@
                     case let .button(index):
                         Text("B\(index)").font(.title.bold())
                         stateBadge(observation.buttonPresses[index], down: "Pressed", up: "Released")
+                    case .expression:
+                        HStack {
+                            Text("EXP").font(.title2.bold())
+                            Spacer()
+                            Text(observation.expressionValue.map { String($0) } ?? "—")
+                                .font(.system(size: 40, design: .monospaced)).foregroundStyle(Theme.value)
+                        }
+                    case .footswitch:
+                        Text("SW").font(.title.bold())
+                        stateBadge(observation.footswitchDown, down: "Pressed", up: "Released")
                     }
                 } else {
                     Text(l.text("No physical state reported yet")).foregroundStyle(.secondary)
@@ -277,8 +287,8 @@
             guard let input = event.input else { return l.text("Raw MIDI input") }
             switch input.control {
             case .faderTouch: return l.text(input.isPressed == true ? "Touched" : "Released")
-            case .encoderPush, .button: return l.text(input.isPressed == true ? "Pressed" : "Released")
-            case .fader, .encoder: return l.text("Value %@", String(input.value))
+            case .encoderPush, .button, .footswitch: return l.text(input.isPressed == true ? "Pressed" : "Released")
+            case .fader, .encoder, .expression: return l.text("Value %@", String(input.value))
             }
         }
     }

@@ -22,6 +22,7 @@
         let call: [String: Any] = ["method": "tools/call", "params": ["name": "set_parameter", "arguments": ["id": "a.Fader.1", "value": 90]]]
         #expect(throws: MCPError.self) { _ = try model.routeMCP(call) }
         model.mcpWritesAllowed = true
+        model.mcpMotorWritesAllowed = true // Deferral is only meaningful once motors are granted.
         model.touchFader(1, isTouched: true)
         _ = try model.routeMCP(call)
         #expect(model.session.state.isMotorPending(1))
@@ -87,6 +88,7 @@
         #expect(model.agents.slots[0].phase == .waitingApproval)
         model.agentPrimary(1) // Explicit user-interface approval remains supported.
         #expect(model.agents.slots[0].statusKey == "agent.mock.approved")
+        model.mcpMotorWritesAllowed = true
         model.touchFader(1, isTouched: true)
         _ = try model.routeMCP(call("set_parameter", ["id": "a.Fader.1", "value": 90]))
         let response = try model.routeMCP(call("get_state"))
@@ -103,4 +105,58 @@
         #expect((rpc["error"] as? [String: Any])?["code"] as? Int == -32601)
     }
 
+    @Test @MainActor func agentMotorMovesNeedSeparateDefaultOffPermission() throws {
+        let model = ConsoleModel(startsMIDI: false)
+        func call(_ name: String, _ args: [String: Any] = [:]) -> [String: Any] {
+            ["method": "tools/call", "params": ["name": name, "arguments": args]]
+        }
+        func payload(_ response: [String: Any]) throws -> [String: Any] {
+            let content = try #require(response["content"] as? [[String: Any]])
+            let text = try #require(content[0]["text"] as? String)
+            return try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        }
+        func motorOutputs() -> [MonitorEvent] {
+            model.events.filter { $0.direction == .output && $0.control == .fader(1) }
+        }
+        #expect(!model.mcpMotorWritesAllowed && !model.panelSnapshot.mcpMotorWritesAllowed)
+        model.mcpWritesAllowed = true
+
+        // Without motor permission: value, bank and state change; no motor command, no queue.
+        let withheld = try payload(model.routeMCP(call("set_parameter", ["id": "a.Fader.1", "value": 90])))
+        #expect(withheld["value"] as? Double == 90)
+        #expect(withheld["motorsWithheld"] as? [Int] == [1])
+        #expect(model.bank.faders[0] == 90)
+        #expect(motorOutputs().isEmpty)
+        #expect(model.mock.faders[0] == 0)
+        // A touch-and-release cannot replay a withheld Agent target either.
+        model.touchFader(1, isTouched: true)
+        _ = try model.routeMCP(call("set_parameter", ["id": "a.Fader.1", "value": 70]))
+        #expect(!model.session.state.isMotorPending(1))
+        model.touchFader(1, isTouched: false)
+        #expect(motorOutputs().isEmpty)
+        let state = try payload(model.routeMCP(call("get_state")))
+        let permissions = try #require(state["permissions"] as? [String: Bool])
+        #expect(permissions == ["writes": true, "motors": false, "simulationAdministration": false])
+
+        // Encoders still get ring feedback without motor permission.
+        model.clearMonitor()
+        _ = try model.routeMCP(call("set_parameter", ["id": "a.Encoder.1", "value": 127]))
+        #expect(model.events.contains { $0.direction == .output && $0.control == .encoder(1) })
+
+        // Granting through the panel intent lets the next write drive the motor.
+        // Two statements: Swift 6.4.2 asserts when a #require result is called directly.
+        let grantMotors = try #require(model.panelIntents.setMCPMotorWritesAllowed)
+        grantMotors(true)
+        #expect(model.panelSnapshot.mcpMotorWritesAllowed)
+        let granted = try payload(model.routeMCP(call("set_parameter", ["id": "a.Fader.1", "value": 100])))
+        #expect(granted["motorsWithheld"] as? [Int] == [])
+        #expect(model.mock.faders[0] == 100)
+        // Local (interface) writes were never gated by the Agent permission.
+        model.mcpMotorWritesAllowed = false
+        model.setParameter("a.Fader.1", value: 30)
+        #expect(model.mock.faders[0] == 30)
+        // Revoking writes also revokes everything regardless of the motor toggle.
+        model.mcpWritesAllowed = false
+        #expect(throws: MCPError.self) { _ = try model.routeMCP(call("set_parameter", ["id": "a.Fader.1", "value": 5])) }
+    }
 #endif

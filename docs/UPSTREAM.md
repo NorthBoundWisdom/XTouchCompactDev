@@ -58,6 +58,24 @@ Verified against repository content and product documentation on 2026-11-11.
 - URL: https://github.com/xetyr/MIDI2LR-X-Touch-Compact-config
 - Real-world X-TOUCH Editor preset data for Lightroom MIDI2LR; useful to check imported presets and mapping variability.
 
+## Different model — design reference only
+
+### Aldaviva/BehringerXTouchExtender (Apache-2.0)
+
+- URL: https://github.com/Aldaviva/BehringerXTouchExtender
+- Reviewed 2026-11-12 at commit `029a5a5` (local ignored checkout under `Downloads/`).
+- C#/.NET Standard 2.0 library for the **X-TOUCH EXTENDER** in `Ctrl`, `CtrlRel` and HUI modes (no MC mode), built on DryWetMIDI and KoKo. Bundles the shared X-TOUCH/EXTENDER MIDI-mode PDF and EXTENDER firmware images.
+- **Protocol is not applicable to the COMPACT.** EXTENDER `Ctrl` mode uses symmetric addresses (fader CC 70–77 in and out, touch Note 110–117, rings and encoders both CC 80–87, LED velocity 0–63 off / 64 blink / 65–127 on, LCD SysEx `F0 00 20 32 15 4C …`). The COMPACT Standard map uses asymmetric TX/RX addresses, CC touch, and 0/1/2 (manual) or 0/2/3 (observed 1.14) LED velocities; see [MIDI_PROTOCOL.md](MIDI_PROTOCOL.md).
+- Useful design patterns: separate `DesiredPosition` and `ActualPosition` fader properties; motor writes skipped while the fader is touched; one codec class per hardware mode behind a shared control interface, a possible shape for a future MC codec; the relative encoder accepts only 65 (clockwise) and 1 (counterclockwise) and drops other values, so acceleration needs explicit handling; device I/O behind a mockable factory for full deterministic coverage; and a documented vendor SysEx device-ID error (`0x42` documented, `0x15` actual), which supports keeping firmware-observed encodings selectable.
+- Cross-check result (2026-11-12): every applicable pattern already exists in this repository, so nothing was ported:
+  - Desired and observed state: `CompactState` keeps `desiredFader`, `lastMotorCommands` and `observedFaders` separate. `StatePresentationTests.stateQueriesDistinguishDesiredObservedAndHeldControls` pins that a command never forges an observation.
+  - Touch guard: `CompactState.setFader` withholds writes while touched, and `reconcileReleasedFader` replays them on release. The EXTENDER library drops them instead. Covered by `SurfaceStateTests.noMotorDriveWhileUserTouchesFader` and `MockDeviceTests.mockRejectsMotorCommandsWhileTouchedAndCountsThem`.
+  - Per-mode codec: `FactoryStandardMap` is the only codec because MC mode and editor-modified (for example relative-encoder) presets are out of scope until characterized. Extract a shared codec interface only when a second characterized mode is added; relative 65/1 decoding and acceleration belong in that work, not in Standard mode, whose encoders send absolute 0–127.
+  - Mockable I/O: the app `MIDIService` protocol and the core `MockXTouchCompact` device already fill this role.
+  - Firmware-observed encodings: `ButtonLightProtocol.manual` / `.observed114` keeps both LED velocity encodings selectable.
+- Counter-examples, not to copy: `CtrlFader` records the commanded value as `ActualPosition` immediately after sending, which treats the last transmitted command as an observation. A target requested while the fader is touched is dropped with no reconciliation on release. `Open()` rewrites all output state, which must never extend to motor recall here.
+- Do not use its firmware files. Copying code is permitted under Apache-2.0 with notices, but nothing here justifies it, and its .NET runtime dependencies are out of scope.
+
 ## Official
 
 - Behringer X-TOUCH COMPACT product/software: https://behringer.com/en/products/0808-AAE

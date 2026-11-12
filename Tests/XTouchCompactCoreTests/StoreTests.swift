@@ -36,3 +36,30 @@ import Testing
     #expect(throws: StoreError.self) { try store.save(SavedWorkspace(configuration: .neutral, profile: .init())) }
     #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("missing").path))
 }
+
+@Test func savedParameterValuesValidateAgainstConfigurationAndStayOptional() throws {
+    var workspace = SavedWorkspace(configuration: .neutral, profile: .init())
+    try workspace.validate()
+    workspace.parameterValues = ["a.Fader.1": 12]
+    try workspace.validate()
+    workspace.parameterValues = ["missing": 1]
+    #expect(throws: ParameterError.self) { try workspace.validate() }
+    workspace.parameterValues = ["a.Fader.1": .infinity]
+    #expect(throws: ParameterError.self) { try workspace.validate() }
+}
+
+@Test func restoringParameterValuesClampsAndNeverCommandsMotors() throws {
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = try session.connect()
+    let messages = try session.restoreParameterValues(["a.Fader.1": 500, "a.Encoder.1": 127, "unknown": 3])
+    #expect(session.parameters.values["a.Fader.1"] == 127)
+    #expect(session.bank(.a).faders[0] == 127)
+    #expect(!messages.contains {
+        if case .controlChange(_, 1 ... 9, _) = $0 {
+            return true
+        }
+        return false
+    })
+    #expect(messages.contains(.controlChange(channel: 0, number: 26, value: 13)))
+    #expect(!session.state.isMotorPending(1))
+}

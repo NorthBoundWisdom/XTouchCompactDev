@@ -30,6 +30,8 @@
         @Published private(set) var liveHardwareValues: HardwareValueCache?
         @Published private(set) var reportedHardwarePresses: [CompactControl: Bool] = [:]
         private var hardwareValuesDirty = false
+        /// Parameter values last written to disk; differences are flushed with the runtime tick.
+        private var savedParameterValues: [String: Double]?
         private var hardwareValuesSavedAt: TimeInterval = 0
         var logs: [LocalizedMessage] {
             events.map(\.text)
@@ -78,6 +80,8 @@
         @Published var mcpEnabled = false
         @Published var mcpWritesAllowed = false
         @Published var mcpSimulationControlAllowed = false
+        /// Session-only, default off: Agent parameter writes may move motors only when granted.
+        @Published var mcpMotorWritesAllowed = false
         private var surfaceWriteBudget = SurfaceWriteBudget()
         @Published var oscHost = "127.0.0.1"
         @Published var oscPort: UInt16 = 9000
@@ -166,9 +170,19 @@
                         let map = try FactoryStandardMap(transmitChannel: UInt8(transmitChannel - 1), globalReceiveChannel: UInt8(feedbackChannel - 1))
                         _ = try session.reconfigure(map: map, lightProtocol: saved.profile.ledProtocol)
                         _ = try session.loadConfiguration(saved.configuration, resetValues: true)
+                        if let values = saved.parameterValues {
+                            // Host intent only. The following connect() sends rings/LEDs; motors
+                            // stay where they are until the user explicitly recalls them.
+                            _ = try session.restoreParameterValues(values)
+                        }
+                        savedParameterValues = session.parameters.values
                         mock = MockXTouchCompact(map: map, lightProtocol: saved.profile.ledProtocol)
                     }
                 } catch { storageFailure(error) }
+                // Without a saved file, defaults are not a change worth creating one for.
+                if savedParameterValues == nil {
+                    savedParameterValues = session.parameters.values
+                }
             }
             if startsMIDI {
                 do { try self.midi.start() } catch { self.error = error }
@@ -479,6 +493,9 @@
         func advanceAgents() {
             if hardwareValuesDirty, runtimeTime - hardwareValuesSavedAt >= 1 {
                 flushHardwareValues()
+            } else if parameterValuesDirty, runtimeTime - hardwareValuesSavedAt >= 1 {
+                hardwareValuesSavedAt = runtimeTime
+                saveWorkspace()
             }
             tickOSC()
             do {
@@ -506,7 +523,8 @@
 
         func setParameter(_ id: String, value: Double, fromAgent: Bool = false) {
             do {
-                let messages = try session.setParameter(id, value: value, fromAgent: fromAgent)
+                let messages = try session.setParameter(id, value: value, fromAgent: fromAgent,
+                                                        drivesMotors: !fromAgent || mcpMotorWritesAllowed)
 
                 if fromAgent {
                     sendAgentFeedback(messages)
@@ -774,7 +792,7 @@
         }
 
         func applyAgentParameter(_ id: String, value: Double) throws {
-            try sendAgentFeedback(session.setParameter(id, value: value, fromAgent: true))
+            try sendAgentFeedback(session.setParameter(id, value: value, fromAgent: true, drivesMotors: mcpMotorWritesAllowed))
         }
 
         func notificationsForOSC(_ key: String) {
@@ -909,15 +927,22 @@
             do {
                 var workspace = SavedWorkspace(configuration: session.parameters.configuration, profile: profile)
                 workspace.hardwareValues = hardwareValueCache
+                workspace.parameterValues = session.parameters.values
                 try store.save(workspace)
+                savedParameterValues = workspace.parameterValues
                 hardwareValuesDirty = false
                 hardwareValuesSavedAt = runtimeTime
                 notifications.removeAll { $0.id == "storage" }
             } catch { storageFailure(error) }
         }
 
+        var parameterValuesDirty: Bool {
+            store != nil && savedParameterValues != session.parameters.values
+        }
+
+        /// Flush pending hardware readings and parameter values (runtime tick and app termination).
         func flushHardwareValues() {
-            guard hardwareValuesDirty, store != nil else { return }
+            guard hardwareValuesDirty || parameterValuesDirty, store != nil else { return }
             // Limit retries too; a failed save remains visible and never overwrites corrupt data.
             hardwareValuesSavedAt = runtimeTime
             saveWorkspace()

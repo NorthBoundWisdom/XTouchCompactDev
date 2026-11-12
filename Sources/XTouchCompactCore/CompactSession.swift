@@ -98,9 +98,25 @@ public struct CompactSession: Sendable {
         return try syncVisibleNonMotorFeedback()
     }
 
-    public mutating func setParameter(_ id: String, value: Double, fromAgent: Bool = false) throws -> [MIDIMessage] {
+    /// `drivesMotors: false` updates the value, bank, rings and LEDs but never commands or
+    /// queues a motor for this parameter (used when a remote caller lacks motor permission).
+    public mutating func setParameter(_ id: String, value: Double, fromAgent: Bool = false, drivesMotors: Bool = true) throws -> [MIDIMessage] {
         try parameters.set(id, value: value, fromAgent: fromAgent)
-        return try synchronizeParameters(ids: [id])
+        if !drivesMotors {
+            for index in motorFaders(boundTo: id) {
+                state.discardMotorIntent(index)
+            }
+        }
+        return try synchronizeParameters(includeMotors: drivesMotors, ids: [id])
+    }
+
+    /// Faders on the active layer whose motor follows this parameter.
+    public func motorFaders(boundTo id: String) -> [Int] {
+        parameters.configuration.assignments.compactMap { assignment -> Int? in
+            guard assignment.layer == state.layer, case let .fader(index) = assignment.control,
+                  case let .parameter(bound) = assignment.action, bound == id else { return nil }
+            return index
+        }.sorted()
     }
 
     public var hasNonDefaultValues: Bool {
@@ -138,6 +154,16 @@ public struct CompactSession: Sendable {
         // Loading a preset is not permission to move motors.
         state = state.reconfigured(map: state.map, lightProtocol: state.lightProtocol)
         return try synchronizeParameters(includeMotors: false) + syncVisibleNonMotorFeedback()
+    }
+
+    /// Restore saved host intent after a configuration load. Values are clamped by their
+    /// definitions; unknown IDs are ignored. Banks and non-motor feedback follow, but no
+    /// motor command is produced: physical recall remains an explicit `recallFaders()`.
+    public mutating func restoreParameterValues(_ saved: [String: Double]) throws -> [MIDIMessage] {
+        for (id, value) in saved where parameters.definition(id) != nil && value.isFinite {
+            try parameters.set(id, value: value)
+        }
+        return try synchronizeParameters(includeMotors: false)
     }
 
     private mutating func synchronizeParameters(includeMotors: Bool = true, ids: Set<String>? = nil, excludingFader: Int? = nil) throws -> [MIDIMessage] {
@@ -249,7 +275,7 @@ public struct CompactSession: Sendable {
                 // Local release/transport presses can overwrite feedback without a message
                 // describing which other LEDs were redrawn. Reassert invalidated desired state.
                 result.feedback += try state.restoreNonMotorFeedback()
-            case .encoderPush:
+            case .encoderPush, .expression, .footswitch:
                 let previous = parameters.values
                 if let slot = try parameters.receive(event) {
                     result.actionIntents.append(slot)

@@ -12,7 +12,7 @@ Manufacturer sources: X-TOUCH COMPACT Quick Start Guide V6.0, MIDI maps and RX M
 | Encoder push actions | 16 | `encoderPush(1...16)` |
 | Lighted buttons | 39 | `button(1...39)` |
 | Physical A/B selector buttons | 2 | Local layer selection, not a dedicated outbound MIDI event |
-| Footswitch / expression pedal | 2 | Reserved; typed input not yet implemented |
+| Footswitch / expression pedal | 2 | `footswitch`, `expression` (optional accessories, outside the 89 bring-up actions) |
 
 ## TX (device → host; MIDI Channel 1 in default factory preset)
 
@@ -24,6 +24,8 @@ Manufacturer sources: X-TOUCH COMPACT Quick Start Guide V6.0, MIDI maps and RX M
 | Encoder 1...16 push | Note 0...15 | Note 55...70 |
 | Buttons 1...39 push | Note 16...54 | Note 71...109 |
 | Expression / footswitch | CC 26 / CC 27 | CC 63 / CC 64 |
+
+Pedals: expression decodes as an absolute 0...127 value; footswitch decodes as pressed when the CC value is above 0. Footswitch polarity, expression range and whether a disconnected jack transmits anything are **not physically tested**. Pedals have no RX feedback address: CC 26 / 27 on RX are encoder 1 / 2 ring displays on the Global channel, a different address space from TX CC 26 / 27.
 
 Inputs encoded as Note On velocity 127 for press and Note Off velocity 0 for release (empirical firmware 1.14), fader touch CC 127 and release CC 0. Encoder rotations are typically accelerated **absolute** 0...127 values under stock preset: turning an endless knob does not guarantee limitless software parameter increments.
 

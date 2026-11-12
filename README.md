@@ -96,6 +96,8 @@ motor tests. A successful send and an operator's reported response are recorded 
 2. Copy the access token and give it to your agent as a bearer token.
 3. To let the agent change values, also turn on **Allow Agent writes**. Each parameter additionally has
    its own agent-write permission.
+4. Agent writes move fader motors only if you also turn on **Allow Agent motor moves** (off by default,
+   never restored on launch). Without it, values, rings and LEDs update and the faders stay put.
 
 The legacy tools are `get_state`, `set_parameter` and `agent_primary`. Shared
 `surface_` tools add plugin discovery, snapshots, actions and cursor-based events;

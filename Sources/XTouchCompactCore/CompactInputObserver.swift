@@ -22,6 +22,8 @@ public struct CompactInputObserver: Equatable, Sendable {
     public private(set) var encoderValues: [CompactLayer: [Int: UInt8]] = [:]
     public private(set) var encoderPushes: [Int: Bool] = [:]
     public private(set) var buttonPresses: [Int: Bool] = [:]
+    public private(set) var expressionValue: UInt8?
+    public private(set) var footswitchDown: Bool?
     public private(set) var seenControls: Set<CompactControl> = []
     public private(set) var inputLayer: CompactLayer?
     public private(set) var reviews: [CompactLayer: [CompactControl: ControlInputReview]] = [:]
@@ -55,6 +57,8 @@ public struct CompactInputObserver: Equatable, Sendable {
         case let .encoder(i): encoderValues[input.layer, default: [:]][i] = input.value
         case let .encoderPush(i): encoderPushes[i] = input.isPressed
         case let .button(i): buttonPresses[i] = input.isPressed
+        case .expression: expressionValue = input.value
+        case .footswitch: footswitchDown = input.isPressed
         }
     }
 

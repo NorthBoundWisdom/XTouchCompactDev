@@ -7,6 +7,8 @@ import Foundation
 /// - Layer B transmits faders on CC 28...36, but motor feedback is always CC 1...9.
 /// - Layer A button 1 transmits Note 16, but its LED receives Note 0.
 /// - Encoder rotation CC 10...25, LED-value CC 26...41, ring style CC 10...25.
+/// - Expression / footswitch TX CC 26 / 27 (layer A) and CC 63 / 64 (layer B). On RX,
+///   CC 26 / 27 are encoder 1 / 2 ring displays: pedals have no feedback address.
 public struct FactoryStandardMap: Sendable {
     public var transmitChannel: UInt8
     public var globalReceiveChannel: UInt8
@@ -34,6 +36,7 @@ public struct FactoryStandardMap: Sendable {
             let positionBase: UInt8 = layer == .a ? 1 : 28
             let touchBase: UInt8 = layer == .a ? 101 : 111
             let encoderBase: UInt8 = layer == .a ? 10 : 37
+            let expression: UInt8 = layer == .a ? 26 : 63
             if number >= positionBase, number <= positionBase + 8 {
                 return CompactInput(control: .fader(Int(number - positionBase) + 1), layer: layer, value: value)
             }
@@ -43,6 +46,13 @@ public struct FactoryStandardMap: Sendable {
             }
             if number >= encoderBase, number <= encoderBase + 15 {
                 return CompactInput(control: .encoder(Int(number - encoderBase) + 1), layer: layer, value: value)
+            }
+            if number == expression {
+                return CompactInput(control: .expression, layer: layer, value: value)
+            }
+            if number == expression + 1 {
+                // Polarity is from the factory table and has not been physically tested.
+                return CompactInput(control: .footswitch, layer: layer, value: value, isPressed: value > 0)
             }
             return nil
         case let .noteOn(channel, number, velocity):

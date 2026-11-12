@@ -118,3 +118,19 @@ private func motors(_ messages: [MIDIMessage]) -> [MIDIMessage] {
         }
     }
 }
+
+@Test func motorlessParameterWriteNeverQueuesOrReplaysAnOlderTarget() throws {
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = try session.connect()
+    #expect(session.motorFaders(boundTo: "a.Fader.1") == [1])
+    #expect(session.motorFaders(boundTo: "b.Fader.1").isEmpty) // Inactive layer has no live motor.
+    _ = try session.receive([.controlChange(channel: 0, number: 101, value: 127)])
+    #expect(try motors(session.setParameter("a.Fader.1", value: 80)).isEmpty)
+    #expect(session.state.isMotorPending(1))
+    // A later motor-less write supersedes the queued target instead of leaving it to replay.
+    #expect(try motors(session.setParameter("a.Fader.1", value: 20, fromAgent: true, drivesMotors: false)).isEmpty)
+    #expect(!session.state.isMotorPending(1))
+    #expect(session.bank(.a).faders[0] == 20)
+    let release = try session.receive([.controlChange(channel: 0, number: 101, value: 0)])
+    #expect(motors(release.feedback).isEmpty)
+}

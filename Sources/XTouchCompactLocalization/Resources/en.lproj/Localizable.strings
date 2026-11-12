@@ -487,3 +487,7 @@
 "Last input · awaiting confirmation" = "Last input · awaiting confirmation";
 "Last input layer: %@ · awaiting confirmation" = "Last input layer: %@ · awaiting confirmation";
 "Last hardware input: %@" = "Last hardware input: %@";
+"表情踏板" = "Expression pedal";
+"脚踏开关" = "Footswitch";
+"Allow Agent motor moves" = "Allow Agent motor moves";
+"Off by default and never restored on launch. Without it, Agent writes update values, rings and LEDs but leave faders in place." = "Off by default and never restored on launch. Without it, Agent writes update values, rings and LEDs but leave faders in place.";

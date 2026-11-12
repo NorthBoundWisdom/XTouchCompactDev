@@ -487,3 +487,7 @@
 "Last input · awaiting confirmation" = "上次输入，等待设备确认";
 "Last input layer: %@ · awaiting confirmation" = "上次输入层：%@ · 待确认";
 "Last hardware input: %@" = "上次实体输入：%@";
+"表情踏板" = "表情踏板";
+"脚踏开关" = "脚踏开关";
+"Allow Agent motor moves" = "允许 Agent 驱动推子电机";
+"Off by default and never restored on launch. Without it, Agent writes update values, rings and LEDs but leave faders in place." = "默认关闭，启动时不恢复。关闭时 Agent 写入只更新数值、灯环和 LED，推子保持不动。";
