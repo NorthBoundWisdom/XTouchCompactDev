@@ -33,14 +33,17 @@ local software delivery, without a release tag or notarization claim.
 ## Start, readiness, stop
 
 Every process receives a fresh random instance ID by default. Use a separate process, credential, and ready path per simulator. `--surface-instance-id` is an explicit test override; consumers must still pin the fresh epoch and should not reuse a test instance identity for a restarted production-like session.
+Like the BCR Provider, an explicit instance ID must be 1–128 bytes of visible ASCII
+(33–126); anything else is refused at startup.
 The process has no persistent state directory and does not access user stores.
 Read-only is the default. Each mutation category has a separate explicit flag.
-Generate a private token of at least 16 characters and send it on stdin:
+The token has the same shape as the BCR Provider's: exactly 64 lowercase hexadecimal
+characters. Generate a private token and send it on stdin:
 
 ```sh
 umask 077
-python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > build/simulator-token
-cat build/simulator-token | .build/debug/XTouchSurfaceSimulator \
+python3 -c 'import secrets; print(secrets.token_hex(32))' > build/simulator-token
+.build/debug/XTouchSurfaceSimulator < build/simulator-token \
   --token-stdin --surface-instance-id car.a --port 0 \
   --ready-file build/simulator-a.ready.json \
   --allow-surface-input --allow-surface-feedback --allow-surface-reset
@@ -49,11 +52,16 @@ cat build/simulator-token | .build/debug/XTouchSurfaceSimulator \
 The executable binds only `127.0.0.1`. Port `0` chooses an available port; an
 explicit UInt16 port is also supported. It prints one compact ready JSON line to
 stdout after binding, including PID, URL, and the public identity pin; credentials
-are omitted. `--ready-file` is optional and refuses to overwrite an existing file.
-`--token-file` is an alternative to `--token-stdin`; use only one. Stop by
-terminating this isolated process. A restart receives a fresh random epoch and
-never replays input, restores control authority, or touches another instance.
-Remove an old ready file explicitly before reusing its path.
+are omitted. `--ready-file` is optional, is created exclusively (an existing file or
+symlink at the path is refused), and is removed when the process exits through a
+startup failure, SIGTERM, or SIGINT. Only the exact file this process created is
+removed: if the path was replaced by another file, it is left alone. A SIGKILL or crash
+cannot clean up; remove a stale ready file explicitly before reusing its path.
+`--token-file` is an alternative to `--token-stdin`; use only one. The file must be a
+regular file (not a symlink) owned by the current user with no group/other permission
+bits (`mode & 0o077 == 0`, e.g. `0600`). Stop by terminating this isolated process.
+A restart receives a fresh random epoch and never replays input, restores control
+authority, or touches another instance.
 
 ```sh
 python3 minimal_consumer.py --ready-file build/simulator-a.ready.json \
@@ -90,14 +98,21 @@ sequence; a duplicate old request fails `stale_sequence`. Get a fresh snapshot
 before choosing a *new* operation. Do not retry an uncertain operation by updating
 its sequence. Failed validation leaves engine, Mock, and journal unchanged.
 Failures use the shared stable code in `structuredContent`, with `isError: true`.
-A transport failure means the operation's outcome is unknown.
+A transport failure means the operation's outcome is unknown. Malformed JSON-RPC uses
+standard codes instead: `-32700` parse error (body is not JSON), `-32600` invalid
+request (not a JSON-RPC 2.0 request object, invalid `id`, or non-structured `params`),
+`-32601` unknown method, and `-32602` invalid params (`tools/call` without a tool name).
+An unknown tool name remains a tool result with the stable code `unsupported_tool`.
 
 A reset rotates epoch and sets the event cursor to zero. Input state is seeded
 from the new Mock, without generating input events. Snapshot input values contain initial Mock state and last accepted raw input; they are not actual telemetry or operations that should be replayed. Consumers
 react only to subsequent `accepted` input events. Remapping, restart, and local
 layer selection invalidate old pins; event gaps require snapshot/re-arm rather
 than event replay. The journal retains at most 1024 events; queries report
-`event_gap` for lost or future cursors. Mutations share a 60-per-second budget.
+`event_gap` for lost or future cursors. Successful mutations share a 60-per-second
+budget. A mutation is charged only after it has been fully validated and processed on a
+copy of the simulator, immediately before commit; permission, CAS, value, mapping,
+and other failures never consume budget. A `rate_limited` mutation changes nothing.
 
 ## XTouch profile and semantics
 
@@ -183,6 +198,9 @@ Run the latter with
 executable. The tests copy the binary to an isolated working directory, exercise
 both public MCP versions, discard a write response, reject stale CAS, restart a
 default instance at the same port, and isolate A/B processes. They also cover layer
-keys and pedals, and that the pinned SDK 1.0.0 copy fails closed on profile 1.1. The original SDK round-trip test is kept and skipped until
-the shared SDK 1.1 replaces the copy.
+keys and pedals, JSON-RPC error codes, write-budget ordering, instance-ID and token
+rules, private token files, ready-file ownership and cleanup on SIGTERM/SIGINT,
+`minimal_consumer.py --exercise`, and that the pinned SDK 1.0.0 copy fails closed on
+profile 1.1. The original SDK round-trip test is kept and skipped until the shared SDK
+1.1 replaces the copy.
 No test here starts a production Pipe service or connects physical hardware.

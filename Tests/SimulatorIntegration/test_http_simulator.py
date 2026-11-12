@@ -2,7 +2,9 @@
 import json
 import os
 from pathlib import Path
+import secrets
 import shutil
+import signal
 import socket
 import sys
 import subprocess
@@ -18,23 +20,38 @@ sys.path.insert(0, str(ROOT / "Clients/Python"))
 from surface_control import Client, CommandCursor, SurfaceError
 
 BINARY = Path(os.environ.get("XTOUCH_SIMULATOR_BINARY", ROOT / ".build/debug/XTouchSurfaceSimulator")).resolve()
-TOKEN = "isolated-simulation-test-token"
+# Same credential shape as the BCR Provider: 64 lowercase hexadecimal characters.
+TOKEN = secrets.token_hex(32)
+
+
+def copy_binary(directory):
+    binary = Path(directory) / "XTouchSurfaceSimulator"
+    if not binary.exists():
+        shutil.copy2(BINARY, binary)
+    return binary
+
+
+def start_failure(directory, arguments, stdin=TOKEN + "\n"):
+    """Run a startup expected to be refused; return its exit status and stderr."""
+    completed = subprocess.run([str(copy_binary(directory)), *arguments], input=stdin, capture_output=True,
+        text=True, cwd=directory, timeout=10)
+    return completed.returncode, completed.stdout, completed.stderr
 
 
 class RunningSimulator:
-    def __init__(self, directory, instance=None, mutations=True, port=0):
+    def __init__(self, directory, instance=None, mutations=True, port=0, extra=(), token_file=None):
         self.directory = Path(directory)
-        binary = self.directory / "XTouchSurfaceSimulator"
-        if not binary.exists():
-            shutil.copy2(BINARY, binary)
-        command = [str(binary), "--token-stdin", "--port", str(port)]
+        binary = copy_binary(self.directory)
+        command = [str(binary), "--port", str(port), *extra]
+        command += ["--token-file", str(token_file)] if token_file else ["--token-stdin"]
         if instance is not None:
             command += ["--surface-instance-id", instance]
         if mutations:
             command += ["--allow-surface-input", "--allow-surface-feedback", "--allow-surface-reset"]
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, cwd=self.directory)
-        self.process.stdin.write(TOKEN + "\n")
+        if not token_file:
+            self.process.stdin.write(TOKEN + "\n")
         self.process.stdin.close()
         self.ready = json.loads(self.process.stdout.readline())
         assert self.ready["status"] == "ready" and self.ready["source"] == "simulation"
@@ -241,6 +258,56 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(self.a.request("surface_control_input", self.a.input(5, "a.expression.1"))["structuredContent"]["reason"],
             "inactive_layer")
 
+    def test_json_rpc_error_codes(self):
+        cases = [
+            (b"{not json", -32700),
+            (json.dumps([1, 2]).encode(), -32600),
+            (json.dumps({"jsonrpc": "1.0", "id": 1, "method": "ping"}).encode(), -32600),
+            (json.dumps({"jsonrpc": "2.0", "id": {"x": 1}, "method": "ping"}).encode(), -32600),
+            (json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": 3}).encode(), -32600),
+            (json.dumps({"jsonrpc": "2.0", "id": 7, "method": "resources/list"}).encode(), -32601),
+            (json.dumps({"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"arguments": {}}}).encode(), -32602),
+        ]
+        for raw, code in cases:
+            with self.subTest(code=code, raw=raw):
+                reply = self.a.rpc(None, raw=raw)
+                self.assertEqual(reply["error"]["code"], code)
+                self.assertNotIn("result", reply)
+        self.assertEqual(self.a.rpc({"jsonrpc": "2.0", "id": 7, "method": "resources/list"})["id"], 7)
+        # A tool-level failure is still a result with the shared stable code, not a JSON-RPC error.
+        unknown = self.a.request("surface_control_missing")
+        self.assertTrue(unknown["isError"])
+        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")
+
+    def test_failed_mutations_do_not_consume_write_budget(self):
+        # Budget window: 60 committed writes per second. Failed validation never consumes it,
+        # so 61 rejected writes followed by 60 valid ones all fit one window; the 61st valid
+        # write is the first rate-limited one and leaves the journal unchanged.
+        expected = self.a.discover()["expected"]
+        def write(sequence, value, encoding="scalar"):
+            return self.a.request("surface_control_input", {"expected": expected, "expected_sequence": str(sequence),
+                "control_id": "a.encoder.1", "encoding": encoding, "value": value})["structuredContent"]
+        for attempt in range(3):
+            started = time.monotonic()
+            base = int(self.a.snapshot()["latest_sequence"])
+            for index in range(61):
+                failure = write(base + 1, 1) if index % 2 else write(base, 1, "signedDelta")
+                self.assertIn(failure["code"], {"stale_sequence", "unsupported_encoding"})
+            accepted = []
+            for index in range(61):
+                reply = write(base + len(accepted), (len(accepted) + 1) % 2 * 127)
+                if reply.get("code") == "rate_limited":
+                    break
+                self.assertEqual(reply["disposition"], "accepted")
+                accepted.append(reply)
+            if time.monotonic() - started < 0.9:
+                break
+            time.sleep(1.1)  # A slow host straddled the window; retry in a fresh one.
+        else:
+            self.skipTest("loopback too slow to fit one budget window")
+        self.assertEqual(len(accepted), 60)
+        self.assertEqual(self.a.snapshot()["latest_sequence"], str(base + 60))
+
     def test_default_instance_changes_when_same_port_restarts(self):
         self.a.close()
         self.a = RunningSimulator(self.temporary.name)
@@ -279,6 +346,121 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
                     self.assertEqual(after_b[key], before_b[key])
             finally:
                 b.close()
+
+
+
+class SurfaceSimulatorStartupTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.directory = Path(self.temporary.name)
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def private_token_file(self, name="token", mode=0o600, content=TOKEN + "\n"):
+        path = self.directory / name
+        path.write_text(content)
+        path.chmod(mode)
+        return path
+
+    def test_instance_identity_is_bounded_visible_ascii(self):
+        for instance in ("", "x" * 129, "car a", "car\u00e9", "car\tb"):
+            with self.subTest(instance=instance):
+                status, stdout, _ = start_failure(self.directory, ["--token-stdin", "--surface-instance-id", instance])
+                self.assertNotEqual(status, 0)
+                self.assertEqual(stdout, "")
+        running = RunningSimulator(self.directory, "!" + "~" * 127, mutations=False)
+        try:
+            self.assertEqual(running.discover()["expected"]["instance_id"], "!" + "~" * 127)
+        finally:
+            running.close()
+
+    def test_token_must_be_64_lowercase_hex(self):
+        for token in ("isolated-simulation-test-token", TOKEN.upper(), TOKEN[:-1], TOKEN + "0", "g" * 64, ""):
+            with self.subTest(token=token):
+                status, stdout, _ = start_failure(self.directory, ["--token-stdin"], stdin=token + "\n")
+                self.assertNotEqual(status, 0)
+                self.assertEqual(stdout, "")
+        status, _, _ = start_failure(self.directory, [])
+        self.assertNotEqual(status, 0)
+        both = self.private_token_file()
+        status, _, _ = start_failure(self.directory, ["--token-stdin", "--token-file", str(both)])
+        self.assertNotEqual(status, 0)
+
+    def test_token_file_must_be_private_owned_regular_file(self):
+        good = self.private_token_file()
+        running = RunningSimulator(self.directory, "car.file", mutations=False, token_file=good)
+        try:
+            self.assertEqual(running.discover()["source"], "simulation")
+        finally:
+            running.close()
+        for mode in (0o640, 0o604, 0o644, 0o610, 0o601):
+            with self.subTest(mode=oct(mode)):
+                path = self.private_token_file("token-%o" % mode, mode)
+                status, stdout, _ = start_failure(self.directory, ["--token-file", str(path)])
+                self.assertNotEqual(status, 0)
+                self.assertEqual(stdout, "")
+        link = self.directory / "token-link"
+        link.symlink_to(good)
+        status, _, _ = start_failure(self.directory, ["--token-file", str(link)])
+        self.assertNotEqual(status, 0)
+        status, _, _ = start_failure(self.directory, ["--token-file", str(self.directory)])
+        self.assertNotEqual(status, 0)
+        fifo = self.directory / "token-fifo"
+        os.mkfifo(fifo, 0o600)
+        status, _, _ = start_failure(self.directory, ["--token-file", str(fifo)])
+        self.assertNotEqual(status, 0)
+        weak = self.private_token_file("weak", 0o600, "isolated-simulation-test-token\n")
+        status, _, _ = start_failure(self.directory, ["--token-file", str(weak)])
+        self.assertNotEqual(status, 0)
+
+    def test_ready_file_is_exclusive_and_removed_on_termination(self):
+        for stop in (signal.SIGTERM, signal.SIGINT):
+            with self.subTest(signal=stop):
+                ready = self.directory / ("ready-%d.json" % stop)
+                running = RunningSimulator(self.directory, "car.ready", mutations=False, extra=("--ready-file", str(ready)))
+                try:
+                    self.assertEqual(json.loads(ready.read_text()), running.ready)
+                    self.assertNotIn(TOKEN, ready.read_text())
+                    running.process.send_signal(stop)
+                    running.process.wait(timeout=5)
+                    self.assertFalse(ready.exists())
+                finally:
+                    running.close()
+        occupied = self.directory / "occupied.json"
+        occupied.write_text("{}")
+        status, stdout, _ = start_failure(self.directory, ["--token-stdin", "--ready-file", str(occupied)])
+        self.assertNotEqual(status, 0)
+        self.assertEqual(stdout, "")
+        self.assertEqual(occupied.read_text(), "{}")
+
+    def test_minimal_consumer_example_uses_private_token_file_and_ready_file(self):
+        token = self.private_token_file()
+        ready = self.directory / "ready.json"
+        running = RunningSimulator(self.directory, "car.example", token_file=token, extra=("--ready-file", str(ready)))
+        try:
+            example = ROOT / "examples/surface_simulator/minimal_consumer.py"
+            completed = subprocess.run([sys.executable, "-I", str(example), "--ready-file", str(ready),
+                "--token-file", str(token), "--exercise"], capture_output=True, text=True, timeout=20, check=True)
+            result = json.loads(completed.stdout)
+            self.assertEqual(result["source"], "simulation")
+            self.assertEqual((result["input"]["disposition"], result["input"]["control_id"]), ("accepted", "a.encoder.1"))
+            self.assertEqual(result["feedback"]["control_id"], "a.button.2")
+            self.assertEqual(running.snapshot()["latest_sequence"], "2")
+        finally:
+            running.close()
+
+    def test_termination_never_removes_a_ready_file_it_did_not_create(self):
+        ready = self.directory / "ready.json"
+        running = RunningSimulator(self.directory, "car.ready", mutations=False, extra=("--ready-file", str(ready)))
+        try:
+            ready.unlink()
+            ready.write_text("other process")
+            running.process.terminate()
+            running.process.wait(timeout=5)
+            self.assertEqual(ready.read_text(), "other process")
+        finally:
+            running.close()
 
 
 if __name__ == "__main__":
