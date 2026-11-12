@@ -540,3 +540,9 @@ travel. Existing evidence can be checked with the
 [read-only motor safety audit](CAPTURE_MOTOR_AUDIT.md); absence of motor CC cannot
 prove absence of firmware travel. H1–H7, full HW-1…HW-5/HW-7 and N5 are not signed
 off by this work. Begin the next attended review with H1 and H6.
+
+Normal hardware output now pins both endpoint IDs and the connection generation,
+just like diagnostic output (U10; 未在实机复核). A changed route detected before the
+UI callback refuses the send; a missing input or output cannot authorize a write.
+A failure stops the batch, discards deferred motor targets and leaves sync pending.
+This is a software transport check, not touch/readback evidence from the device.

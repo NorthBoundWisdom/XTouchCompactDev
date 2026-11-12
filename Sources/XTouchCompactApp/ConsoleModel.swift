@@ -823,6 +823,7 @@
         private func send(_ messages: [MIDIMessage], authorizedTest: AuthorizedNonMotorTest? = nil,
                           testAudit: NonMotorTestAudit? = nil) -> MonitorEvent.Delivery
         {
+            let route = connection // Pin the entire batch, including synchronous service callbacks.
             let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
             var testAllowed = false
             if let authorizedTest {
@@ -861,7 +862,9 @@
                     if let authorizedTest {
                         try midi.sendPinned(message, inputID: authorizedTest.approval.inputID, outputID: authorizedTest.approval.outputID, generation: authorizedTest.approval.generation)
                     } else {
-                        try midi.send(message)
+                        guard let inputID = route.connectedInput?.id,
+                              let outputID = route.connectedOutput?.id else { throw ConsoleError.noConnection }
+                        try midi.sendPinned(message, inputID: inputID, outputID: outputID, generation: route.generation)
                     }
                     if case .programChange = message {
                         session.didTransmitLayerAssertion()
@@ -873,6 +876,7 @@
                     record(message, direction: .output, source: source, ignored: true, delivery: .failed,
                            nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control)
                     hardwareFeedbackNeedsSync = true
+                    session.discardPendingMotorWrites()
                     session.invalidateTransportFeedback()
                     lockNonMotorTests("MIDI send failed; test output locked.")
                     return .failed

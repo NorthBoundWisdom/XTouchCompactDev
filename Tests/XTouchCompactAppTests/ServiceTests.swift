@@ -11,6 +11,9 @@
         var fails = false
         var starts = 0
         var sendAttempts = 0
+        var unpinnedSendAttempts = 0
+        var beforePinnedSend: (() -> Void)?
+        var afterPinnedSend: (() -> Void)?
         var actualInputID: Int32? = 1
         var actualOutputID: Int32? = 1
         var actualGeneration: UInt64 = 0
@@ -21,6 +24,7 @@
         func select(inputID _: Int32?, outputID _: Int32?) {}
         func send(_ message: MIDIMessage) throws {
             sendAttempts += 1
+            unpinnedSendAttempts += 1
             if fails {
                 throw CompactMIDIError.outputUnavailable
             }
@@ -29,17 +33,96 @@
 
         func sendPinned(_ message: MIDIMessage, inputID: Int32, outputID: Int32, generation: UInt64) throws {
             sendAttempts += 1
+            beforePinnedSend?()
             guard actualInputID == inputID, actualOutputID == outputID, actualGeneration == generation else { throw CompactMIDIError.routeChanged }
             if fails {
                 throw CompactMIDIError.outputUnavailable
             }
             sent.append(message)
+            afterPinnedSend?()
         }
 
         func connect() {
             let endpoint = CompactMIDIEndpoint(id: 1, name: "Test Compact")
             onConnection?(CompactMIDIConnection(connectedInput: endpoint, connectedOutput: endpoint))
         }
+    }
+
+    @Test @MainActor func ordinaryOutputPinsBothEndpointsAndGenerationBeforeTheConnectionCallback() {
+        for changed in 0 ... 2 {
+            let midi = FakeMIDIService()
+            let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+            midi.connect(); model.setConsoleMode(.hardwareSend)
+            midi.onMessages?([.controlChange(channel: 0, number: 101, value: 127)])
+            model.faderChanged(1, value: 81)
+            #expect(model.session.state.isMotorPending(1))
+            // The transport changes before its queued status callback reaches the model.
+            if changed == 0 {
+                midi.actualInputID = 2
+            }
+            if changed == 1 {
+                midi.actualOutputID = 2
+            }
+            if changed == 2 {
+                midi.actualGeneration = 1
+            }
+            model.faderChanged(2, value: 42)
+            #expect(midi.sent.isEmpty)
+            #expect(midi.unpinnedSendAttempts == 0)
+            #expect(model.error as? CompactMIDIError != nil)
+            #expect(!model.session.state.isMotorPending(1))
+            #expect(model.session.state.isTouched(1))
+            midi.actualInputID = 1; midi.actualOutputID = 1; midi.actualGeneration = 0
+            midi.onMessages?([.controlChange(channel: 0, number: 101, value: 0)])
+            #expect(midi.sent.isEmpty) // Failed output never leaves an old release target queued.
+        }
+    }
+
+    @Test @MainActor func ordinaryHardwareOutputRequiresACompleteInputAndOutputRoute() {
+        for inputMissing in [true, false] {
+            let midi = FakeMIDIService()
+            let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+            let endpoint = CompactMIDIEndpoint(id: 1, name: "Partial route")
+            midi.onConnection?(CompactMIDIConnection(connectedInput: inputMissing ? nil : endpoint,
+                                                     connectedOutput: inputMissing ? endpoint : nil))
+            model.setListenOnly(false); model.useHardware(true)
+            model.faderChanged(1, value: 42)
+            #expect(midi.sent.isEmpty && midi.sendAttempts == 0)
+            #expect(model.error != nil)
+        }
+    }
+
+    @Test @MainActor func ordinaryBatchKeepsItsOriginalPinAcrossASynchronousStatusCallback() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareSend)
+        midi.afterPinnedSend = { [weak midi, weak model] in
+            guard let midi, let model, midi.sent.count == 1 else { return }
+            midi.actualGeneration = 1
+            var route = model.connection; route.generation = 1
+            midi.onConnection?(route)
+        }
+        model.setLayer(.b)
+        #expect(midi.sent == [.programChange(channel: 0, number: 1)])
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == true)
+        #expect(midi.unpinnedSendAttempts == 0)
+    }
+
+    @Test @MainActor func ordinaryBatchStopsIfTheRouteChangesAfterTheFirstMessage() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareSend)
+        midi.onMessages?([.controlChange(channel: 0, number: 37, value: 42)])
+        midi.beforePinnedSend = {
+            if midi.sendAttempts == 2 {
+                midi.actualGeneration = 1
+            }
+        }
+        model.setLayer(.b)
+        #expect(midi.sent == [.programChange(channel: 0, number: 1)])
+        #expect(midi.sendAttempts == 2 && midi.unpinnedSendAttempts == 0)
+        #expect(model.session.state.observedLayer == nil) // First assertion was accepted.
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == true)
     }
 
     @Test @MainActor func fakeServiceReconnectAndFailureNeverRecallMotors() {
