@@ -4,6 +4,7 @@
 //   XTouchRemoteMIDI bridge                (started by the client over SSH, beside the device)
 //   XTouchRemoteMIDI devices               (lists what CoreMIDI sees on this Mac)
 //   XTouchRemoteMIDI listen                (passive raw capture as JSON lines; never sends)
+//   XTouchRemoteMIDI button-light …        (one button-LED Note On; the only sender, no CC)
 //
 // Raw MIDI 1.0 UMP packets are carried verbatim over the SSH stdio stream. Nothing is
 // parsed, filtered, synthesized or acknowledged here; all safety policy stays in the app.
@@ -531,6 +532,41 @@ import Foundation
         }
     }
 
+    // MARK: - Single button-light command (bring-up LED encoding check)
+
+    /// Sends exactly one button-LED Note On and prints what was sent as a JSON line.
+    func sendButtonLight(_ command: ButtonLightCommand) throws {
+        var client: MIDIClientRef = 0
+        var port: MIDIPortRef = 0
+        try check(MIDIClientCreateWithBlock("XTouchRemoteMIDI button-light" as CFString, &client) { _ in }, "Create MIDI client")
+        defer { MIDIClientDispose(client) }
+        try check(MIDIOutputPortCreate(client, "Button Light Out" as CFString, &port), "Create MIDI output")
+        let matcher = RemoteBridgeOptions(deviceName: command.deviceName)
+        var destination: MIDIEndpointRef = 0
+        var name = ""
+        for index in 0 ..< MIDIGetNumberOfDestinations() {
+            let endpoint = MIDIGetDestination(index)
+            guard endpoint != 0, !isOffline(endpoint), let text = endpointName(endpoint), matcher.matchesDevice(text) else { continue }
+            destination = endpoint; name = text
+            break
+        }
+        guard destination != 0 else {
+            throw NSError(domain: "XTouchRemoteMIDI", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Controller output not found; nothing was sent"])
+        }
+        let word = command.word
+        guard withEventList([word], { MIDISendEventList(port, destination, $0) }) else {
+            throw NSError(domain: "XTouchRemoteMIDI", code: 2, userInfo: [NSLocalizedDescriptionKey: "MIDI send failed"])
+        }
+        Thread.sleep(forTimeInterval: 0.2) // Let CoreMIDI deliver before the client goes away.
+        let record: [String: Any] = ["event": "sent-button-light", "destination": name, "button": command.button,
+                                     "velocity": command.velocity, "channel": command.channel,
+                                     "word": String(format: "%08X", word),
+                                     "wallClock": ISO8601DateFormatter().string(from: Date())]
+        let data = try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys])
+        print(String(decoding: data, as: UTF8.self))
+    }
+
     // MARK: - Entry
 
     func listDevices() throws {
@@ -572,13 +608,16 @@ import Foundation
             parkOnMainRunLoop()
         case "devices":
             try listDevices()
+        case "button-light":
+            try sendButtonLight(ButtonLightCommand.parse(Array(arguments.dropFirst())))
         case "listen":
             try Listener(options: RemoteBridgeOptions.parse(Array(arguments.dropFirst()))).run()
         default:
             log("usage: XTouchRemoteMIDI client --ssh HOST [--listen-only] [--remote-binary PATH] [--label NAME] [--device NAME]\n"
                 + "       XTouchRemoteMIDI bridge [--listen-only] [--device NAME] [--status PATH]\n"
                 + "       XTouchRemoteMIDI devices\n"
-                + "       XTouchRemoteMIDI listen [--device NAME]")
+                + "       XTouchRemoteMIDI listen [--device NAME]\n"
+                + "       XTouchRemoteMIDI button-light --button 1-39 --velocity 0-3 --channel 1-16")
             exit(64)
         }
     } catch {

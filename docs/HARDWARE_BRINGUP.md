@@ -94,9 +94,12 @@ or an independently verified record; **do not derive it from TX**.
 Expected: input events captured; zero transmitted MIDI while listening, including
 connect, reconnect, port/profile application and layer controls.
 
-Actual: __________
-Capture filename(s): __________
-Conclusion / deviations / follow-up: __________
+Actual (2026-11-12, partial): TX channel 1 on both layers. **Global RX channel 2**, found
+by sending one button-LED Note On per channel: only channel 2 lit a button. The operator
+had expected the default 1. Firmware version still unread.
+Capture filename(s): `control-d2-2026-11-12.jsonl`, `button-light-2026-11-12.jsonl` (private)
+Conclusion / deviations / follow-up: RX ≠ TX on this unit; see
+[the session record](HARDWARE_SESSION_2026-11-12.md). Firmware remains open.
 
 ## HW-7 — physical layers and touch address (Stage 1)
 
@@ -156,10 +159,14 @@ Expected / assumption 2 (unverified): Program Change really selects requested la
 Host assertion alone is not proof. Manual LED velocities 0/1/2 and observed firmware
 1.14 velocities 0/2/3 remain distinct choices until observed on this unit.
 
-Actual / firmware / selected encoding / blink period: __________
-Assumption 2 established or rejected: __________
-Capture filename(s): __________
-Conclusion / corrections: __________
+Actual / firmware / selected encoding / blink period (2026-11-12, LED half only): on
+Global RX channel 2, velocity 0 = off, 1 = off, 2 = steady on, 3 = blink. Selected
+encoding: **observed 1.14 (0/2/3)**; the manual's 0/1/2 is rejected for this unit. Firmware
+unread; blink period not timed. Sent with the single-purpose `button-light` command, not
+through the app's Nonmotor tests page.
+Assumption 2 established or rejected: not tested (no Program Change was sent).
+Capture filename(s): `button-light-2026-11-12.jsonl` (private)
+Conclusion / corrections: use `observed114`; layer assertion still to be characterized.
 
 ## HW-4 — ring styles and colors (Stage 2)
 

@@ -108,3 +108,30 @@ import Testing
     #expect(try RemoteBridgeOptions.parse(["--listen-only"]).listenOnly)
     #expect(try !RemoteBridgeOptions.parse([]).listenOnly)
 }
+
+@Test func buttonLightCommandCanOnlyExpressAButtonLEDNoteOn() throws {
+    let command = try ButtonLightCommand.parse(["--button", "1", "--velocity", "2", "--channel", "1"])
+    #expect(command.word == 0x2090_0002)
+    #expect(try ButtonLightCommand.parse(["--button", "39", "--velocity", "3", "--channel", "16"]).word == 0x209F_2603)
+    // Every expressible word is a Note On (status 0x9n) for notes 0…38 with velocity 0…3.
+    for button in 1 ... 39 {
+        for velocity in 0 ... 3 {
+            for channel in [1, 7, 16] {
+                let word = ButtonLightCommand(button: button, velocity: velocity, channel: channel).word
+                #expect(word >> 28 == 0x2 && (word >> 20) & 0xF == 0x9)
+                #expect((word >> 8) & 0xFF == UInt32(button - 1) && word & 0xFF == UInt32(velocity))
+            }
+        }
+    }
+    // The channel is never defaulted or inferred, and out-of-range values are refused.
+    let invalid: [[String]] = [
+        ["--button", "1", "--velocity", "1"], ["--button", "0", "--velocity", "1", "--channel", "1"],
+        ["--button", "40", "--velocity", "1", "--channel", "1"], ["--button", "1", "--velocity", "4", "--channel", "1"],
+        ["--button", "1", "--velocity", "127", "--channel", "1"], ["--button", "1", "--velocity", "1", "--channel", "0"],
+        ["--button", "1", "--velocity", "1", "--channel", "17"], ["--button", "x", "--velocity", "1", "--channel", "1"],
+        ["--button", "1", "--velocity", "1", "--channel", "1", "--cc", "1"],
+    ]
+    for arguments in invalid {
+        #expect(throws: RemoteMIDIError.self) { _ = try ButtonLightCommand.parse(arguments) }
+    }
+}

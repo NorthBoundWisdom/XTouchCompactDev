@@ -52,6 +52,11 @@ automatically and immediately sends its layer assertion and LED sync.
 `listen` (with or without `--ssh`) is a passive raw capture to stdout as JSON lines; it
 cannot send MIDI. See [the startup readback procedure](STARTUP_READBACK_INVESTIGATION.md).
 
+`XTouchRemoteMIDI button-light --button 1-39 --velocity 0-3 --channel 1-16` is the tool's
+only sender, added for the LED-encoding check. It sends one button-LED Note On and prints
+what it sent; it cannot express a Control Change, so it cannot address a motor or ring. The
+channel is always explicit.
+
 `summarize FILE` decodes a `listen` capture offline (control, layer, count, value range).
 
 `status` starts nothing. It reports whether the deployed bridge matches a local build

@@ -176,6 +176,48 @@ public struct RemoteClientOptions: Equatable, Sendable {
     }
 }
 
+/// `XTouchRemoteMIDI button-light --button N --velocity V --channel C [--device NAME]`
+///
+/// The only sender in this tool, for the hardware bring-up LED-encoding check. It can express
+/// nothing but one button-LED Note On: buttons 1…39 (RX notes 0…38), velocities 0…3 (the
+/// union of the manual 0/1/2 and observed-1.14 0/2/3 encodings). It cannot produce a
+/// Control Change, so it can never address a motor, a ring or the mode switch.
+public struct ButtonLightCommand: Equatable, Sendable {
+    public var button: Int
+    public var velocity: Int
+    /// Global RX channel as shown to people, 1…16. Never inferred; always given explicitly.
+    public var channel: Int
+    public var deviceName = RemoteMIDIDefaults.deviceName
+
+    public static func parse(_ arguments: [String]) throws -> Self {
+        var reader = ArgumentReader(iterator: arguments.makeIterator())
+        var button: Int?
+        var velocity: Int?
+        var channel: Int?
+        var device = RemoteMIDIDefaults.deviceName
+        while let argument = reader.next() {
+            switch argument {
+            case "--button": button = try Int(reader.value(for: argument))
+            case "--velocity": velocity = try Int(reader.value(for: argument))
+            case "--channel": channel = try Int(reader.value(for: argument))
+            case "--device": device = try validatedDeviceName(reader.value(for: argument), flag: argument)
+            default: throw RemoteMIDIError.unknownArgument(argument)
+            }
+        }
+        guard let button, (1 ... 39).contains(button) else { throw RemoteMIDIError.missingValue("--button") }
+        guard let velocity, (0 ... 3).contains(velocity) else { throw RemoteMIDIError.missingValue("--velocity") }
+        guard let channel, (1 ... 16).contains(channel) else { throw RemoteMIDIError.missingValue("--channel") }
+        return Self(button: button, velocity: velocity, channel: channel, deviceName: device)
+    }
+
+    /// MIDI 1.0 UMP word: Note On, note = button − 1, on the given channel.
+    public var word: UInt32 {
+        let status = UInt32(0x90 | (channel - 1))
+        let note = UInt32(button - 1)
+        return 0x2000_0000 | (status << 16) | (note << 8) | UInt32(velocity)
+    }
+}
+
 // MARK: - Wire protocol
 
 /// Frames on the SSH stdio stream are `[kind u8][length u16 big-endian][payload]`. MIDI payloads are one CoreMIDI

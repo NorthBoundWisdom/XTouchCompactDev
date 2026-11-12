@@ -40,9 +40,9 @@ Inputs encoded as Note On velocity 127 for press and Note Off velocity 0 for rel
 | Select Layer A/B | Program Change 0 / 1 | Standard mode only; host command, not physical-layer readback; suppressed while listening |
 | Mode (Standard / MC) | CC 127 = 0 / 1 | Do not send automatically during P0 |
 
-**Important documentation conflict:** Manufacturer RX table specifies button LED OFF/ON/BLINK via Note velocity 0/1/2. JetsonHacks measured actual firmware 1.14 behavior 0/2/3. Both modes are selectable in the Swift core to avoid silently assuming a firmware version.
+**Important documentation conflict:** Manufacturer RX table specifies button LED OFF/ON/BLINK via Note velocity 0/1/2. JetsonHacks measured actual firmware 1.14 behavior 0/2/3. Both modes are selectable in the Swift core to avoid silently assuming a firmware version. **Observed on the project's unit (2026-11-12): 0 off, 1 off, 2 on, 3 blink**, i.e. the 0/2/3 encoding; its firmware version is still unread.
 
-**Global Channel:** RX messages use GLOBAL CH rather than necessarily the same channel as TX preset events. This is an explicit configuration field in the model.
+**Global Channel:** RX messages use GLOBAL CH rather than necessarily the same channel as TX preset events. This is an explicit configuration field in the model. **Observed on the project's unit (2026-11-12): it transmits on channel 1 and receives button LEDs only on channel 2.**
 
 ## Device state traps observed on real hardware
 
