@@ -1,10 +1,12 @@
 # Implementation plan — full XTouchCompactDev application
 
+> Historical architecture and acceptance outline. Current executable work is in [TODO.md](../TODO.md); P0 is delivered and physical characterization has started.
+
 ## Architectural decision
 
-Create a **sibling project** (`NorthBoundWisdom/XTouchCompactDev` when a new remote repository is available), not an invasive rewrite of `BCR2000Dev` during its current BCR hardware validation. Reuse the BCR **application/domain** concepts, while implementing a distinct hardware `CompactDeviceProfile` and mock. After both stabilize, evaluate extracting a shared `SurfaceCore` package.
+The sibling repository and native app now exist. Both hosts share the delivered `SurfacePlugins` business package while retaining separate hardware engines and adapters. Further engine extraction is not scheduled; it requires evidence of additional common behavior.
 
-This seed provides `XTouchCompactCore`, not the final app. Do not conflate a working protocol model with successful real-device interaction.
+The repository provides both `XTouchCompactCore` and the native app. Do not conflate a working protocol model with successful real-device interaction.
 
 ## P0 — software before device arrival
 
@@ -47,6 +49,6 @@ This seed provides `XTouchCompactCore`, not the final app. Do not conflate a wor
 ## Current status and known limitations
 
 - P0 is complete in software: parameter/assignment engine, protected persistence, Mock Agent slots, localhost MCP, guarded OSC output, mock device, native app and local ad-hoc `.app`/ZIP/DMG packaging. See `docs/SOFTWARE_WORKFLOWS.md`; open follow-ups are listed in `TODO.md`.
-- P1 has not started. No behavior in this repository has been verified on a physical unit. Swift tests establish host policies against a deterministic mock, not firmware timing, channel settings or motor behavior.
+- P1 has started: scoped input observations and ring samples are recorded in [the session record](HARDWARE_SESSION_2026-11-11.md) and [ring calibration](RING_CALIBRATION_2026-11-12.md). Full HW acceptance, startup readback and motor behavior remain open. Swift tests do not replace those physical checks.
 - The motor-safety policy depends on three unverified firmware assumptions (other-layer TX addresses after a physical A/B press, Program Change layer selection, and position reports during motor travel). They are listed with the HW checklist in `TODO.md` and must be checked before any wider output test.
 - Production signing/notarization, real external Agent processes, incoming OSC-to-motor feedback and DAW-specific mappings are not implemented.
