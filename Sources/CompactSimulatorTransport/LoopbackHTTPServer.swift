@@ -48,41 +48,76 @@ public final class LoopbackHTTPServer {
         try run(nextDeadline: { nil }, maintenance: {}, handler: handler)
     }
 
-    /// Serve requests serially. While idle, wait for a connection at most until
-    /// `nextDeadline()` (a `systemUptime` value) and then call `maintenance()`, so host
-    /// timers run without a request. A request in progress delays maintenance by at most
-    /// its fixed read budget; the handler is expected to run due maintenance itself first.
-    public func run(nextDeadline: () -> Double?, maintenance: () -> Void, handler: (Data) -> Data) throws -> Never {
-        signal(SIGPIPE, SIG_IGN)
+    /// Host timer hooks, valid only for the duration of `run`.
+    private struct Timers {
+        let nextDeadline: () -> Double?
+        let maintenance: () -> Void
+    }
+
+    /// Wait until `descriptor` is ready for `events`, or `budget` (a `systemUptime` value, nil
+    /// for no limit) passes. Every wait in this server goes through here: whenever the host's
+    /// next deadline arrives first, `maintenance()` runs on this same thread and the wait
+    /// continues. So a peer that is slow to connect, send, or read can never postpone host
+    /// timers; they are late only by poll wake-up latency plus one request's processing time.
+    private func wait(_ descriptor: Int32, _ events: Int32, budget: Double?, timers: Timers) throws -> Bool {
+        var retryAt = 0.0
         while true {
-            var listening = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
-            let wait = nextDeadline().map { deadline -> Int32 in
-                let remaining = (deadline - ProcessInfo.processInfo.systemUptime) * 1000
-                return Int32(min(max(0, remaining.rounded(.up)), 60000))
-            } ?? -1
-            let ready = poll(&listening, 1, wait)
-            if ready < 0 {
-                if errno == EINTR {
+            var now = ProcessInfo.processInfo.systemUptime
+            if let due = timers.nextDeadline(), due <= now, now >= retryAt {
+                timers.maintenance()
+                now = ProcessInfo.processInfo.systemUptime
+                // If maintenance could not clear the deadline, retry later instead of spinning.
+                if let still = timers.nextDeadline(), still <= now {
+                    retryAt = now + 0.05
+                }
+            }
+            if let budget, budget <= now {
+                return false
+            }
+            var limit = budget.map { $0 - now } ?? 60
+            if let due = timers.nextDeadline() {
+                limit = min(limit, max(due, retryAt) - now)
+            }
+            var entry = pollfd(fd: descriptor, events: Int16(events), revents: 0)
+            let ready = poll(&entry, 1, Int32(min(max(0, (limit * 1000).rounded(.up)), 60000)))
+            if ready < 0, errno != EINTR {
+                throw SimulatorHTTPError.socket
+            }
+            if ready > 0 {
+                return true
+            }
+        }
+    }
+
+    private static func setNonBlocking(_ descriptor: Int32) {
+        let flags = fcntl(descriptor, F_GETFL)
+        if flags >= 0 {
+            _ = fcntl(descriptor, F_SETFL, flags | O_NONBLOCK)
+        }
+    }
+
+    /// Serve requests serially on the calling thread. `nextDeadline()` is a `systemUptime`
+    /// value; when it arrives, `maintenance()` runs between I/O waits: while idle, while a
+    /// request is still being read, and while a response is being written. The handler and
+    /// maintenance never run concurrently, so host state keeps one serial mutation order.
+    /// The handler is expected to run due maintenance itself before using host state.
+    public func run(nextDeadline: @escaping () -> Double?, maintenance: @escaping () -> Void, handler: (Data) -> Data) throws -> Never {
+        signal(SIGPIPE, SIG_IGN)
+        let timers = Timers(nextDeadline: nextDeadline, maintenance: maintenance)
+        Self.setNonBlocking(descriptor)
+        while true {
+            _ = try wait(descriptor, POLLIN, budget: nil, timers: timers)
+            let peer = accept(descriptor, nil, nil)
+            if peer < 0 {
+                if [EINTR, EAGAIN, EWOULDBLOCK, ECONNABORTED].contains(errno) {
                     continue
                 }
                 throw SimulatorHTTPError.socket
             }
-            if ready == 0 {
-                maintenance()
-                continue
-            }
-            let peer = accept(descriptor, nil, nil)
-            if peer < 0 {
-                if errno == EINTR {
-                    continue
-                }; throw SimulatorHTTPError.socket
-            }
-            var timeout = timeval(tv_sec: 3, tv_usec: 0)
-            _ = withUnsafePointer(to: &timeout) { setsockopt(peer, SOL_SOCKET, SO_RCVTIMEO, $0, socklen_t(MemoryLayout<timeval>.size)) }
-            _ = withUnsafePointer(to: &timeout) { setsockopt(peer, SOL_SOCKET, SO_SNDTIMEO, $0, socklen_t(MemoryLayout<timeval>.size)) }
+            Self.setNonBlocking(peer)
             let response: (Int, Data)
             do {
-                let request = try readRequest(peer)
+                let request = try readRequest(peer, timers: timers)
                 if request.path != "/mcp" {
                     response = (404, Data())
                 } else if request.headers["origin"] != nil {
@@ -100,38 +135,42 @@ public final class LoopbackHTTPServer {
                 }
             } catch { response = (400, Data()) }
             let head = "HTTP/1.1 \(response.0) Response\r\nContent-Type: application/json\r\nContent-Length: \(response.1.count)\r\nConnection: close\r\n\r\n"
-            let bytes = Data(head.utf8) + response.1
-            bytes.withUnsafeBytes { buffer in
-                var sent = 0
-                while sent < bytes.count {
-                    let count = send(peer, buffer.baseAddress!.advanced(by: sent), bytes.count - sent, 0)
-                    if count <= 0 {
-                        break
-                    }
-                    sent += count
-                }
-            }
+            try? write(Data(head.utf8) + response.1, to: peer, timers: timers)
             close(peer)
         }
     }
 
+    /// One fixed three-second budget for the whole response, so a peer that does not read
+    /// cannot hold the serial listener; host timers keep running while it is slow.
+    private func write(_ bytes: Data, to peer: Int32, timers: Timers) throws {
+        let deadline = ProcessInfo.processInfo.systemUptime + 3
+        var sent = 0
+        while sent < bytes.count {
+            let count = bytes.withUnsafeBytes { send(peer, $0.baseAddress!.advanced(by: sent), bytes.count - sent, 0) }
+            if count > 0 {
+                sent += count
+            } else if count < 0, errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR {
+                guard try wait(peer, POLLOUT, budget: deadline, timers: timers) else { return }
+            } else {
+                return
+            }
+        }
+    }
+
     private struct Request { var method: String; var path: String; var headers: [String: String]; var body: Data }
-    private func readRequest(_ peer: Int32) throws -> Request {
+    private func readRequest(_ peer: Int32, timers: Timers) throws -> Request {
         var bytes = Data()
         var storage = [UInt8](repeating: 0, count: 4096)
         // A per-recv timeout alone permits an unauthenticated slow drip to occupy
         // this serial listener forever. The complete request has one fixed budget.
+        // Host timers still run on time while this budget is being consumed.
         let deadline = ProcessInfo.processInfo.systemUptime + 3
         while bytes.count <= 32768 {
-            let remaining = deadline - ProcessInfo.processInfo.systemUptime
-            guard remaining > 0 else { throw SimulatorHTTPError.read }
-            var readiness = pollfd(fd: peer, events: Int16(POLLIN), revents: 0)
-            let ready = poll(&readiness, 1, Int32(max(1, (remaining * 1000).rounded(.up))))
-            if ready < 0, errno == EINTR {
+            guard try wait(peer, POLLIN, budget: deadline, timers: timers) else { throw SimulatorHTTPError.read }
+            let count = recv(peer, &storage, storage.count, 0)
+            if count < 0, errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR {
                 continue
             }
-            guard ready > 0 else { throw SimulatorHTTPError.read }
-            let count = recv(peer, &storage, storage.count, 0)
             guard ProcessInfo.processInfo.systemUptime <= deadline, count > 0 else { throw SimulatorHTTPError.read }
             bytes.append(contentsOf: storage.prefix(count))
             guard let split = bytes.range(of: Data("\r\n\r\n".utf8)) else {

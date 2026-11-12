@@ -281,6 +281,51 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         reply = self.a.request("surface_control_renew", {"expected": client.expected, "control_id": "a.touch.3", "hold_s": 1})
         self.assertEqual(reply["structuredContent"]["code"], "hold_expired")
 
+    def expiry_lateness_under_slow_drip(self, control, hold_s=0.3):
+        """Seconds between a lease deadline and its hold_expired event while a drip holds the reader."""
+        client = Client(self.a.ready["url"], TOKEN, "car.a")
+        client.discover()
+        stopped = threading.Event()
+        # The lease is acquired on a normal request before the drip takes the reader.
+        held = client.input(control, "boolean", True, hold_s=hold_s)
+        with socket.create_connection(("127.0.0.1", self.a.ready["port"]), timeout=5) as busy:
+            # An unauthenticated peer that never completes its request: it owns the serial
+            # reader for the whole three-second read budget.
+            def drip():
+                while not stopped.wait(0.05):
+                    try:
+                        busy.sendall(b"x")
+                    except OSError:
+                        break
+
+            busy.sendall(b"P")
+            writer = threading.Thread(target=drip, daemon=True)
+            writer.start()
+            try:
+                started = time.monotonic()
+                reply = busy.recv(4096)  # The drip is cut off by its own total budget.
+                occupied = time.monotonic() - started
+            finally:
+                stopped.set()
+                writer.join(timeout=1)
+        self.assertTrue(reply.startswith(b"HTTP/1.1 400"))
+        self.assertGreater(occupied, hold_s + 1.5)  # The reader really was busy across the deadline.
+        self.assertLess(occupied, 4.2)
+        page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": client.expected["epoch"],
+            "after_sequence": held["sequence"], "limit": 100})["structuredContent"]
+        expired = page["events"][0]
+        self.assertEqual((expired["control_id"], expired["reason"], expired["disposition"], expired["value"]),
+            (control, "hold_expired", "accepted", False))
+        return expired["time"] - held["hold_deadline"]
+
+    def test_lease_expires_within_bound_while_a_slow_drip_holds_the_reader(self):
+        lateness = [self.expiry_lateness_under_slow_drip("a.touch.%d" % index) for index in (5, 6, 7)]
+        print("\nhold expiry lateness under slow drip (s):", ", ".join("%.4f" % value for value in lateness), file=sys.stderr)
+        for value in lateness:
+            self.assertGreaterEqual(value, 0)
+            # Documented bound: 100 ms. The expiry is recorded during the drip, not after it.
+            self.assertLess(value, 0.1)
+
     def test_lease_due_before_a_request_is_processed_first_never_pending(self):
         client = Client(self.a.ready["url"], TOKEN, "car.a")
         client.discover()
