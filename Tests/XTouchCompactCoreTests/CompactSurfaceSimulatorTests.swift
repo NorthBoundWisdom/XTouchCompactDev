@@ -4,8 +4,9 @@ import SurfacePluginContracts
 import Testing
 @testable import XTouchCompactCore
 
-private func input(_ simulator: CompactSurfaceSimulator, _ id: String = "a.encoder.1", _ value: JSONValue = .number(127), encoding: String = "scalar") -> ControlInput {
-    .init(expected: simulator.controls.expected, expectedSequence: simulator.controls.discovery().latest_sequence, controlID: id, encoding: encoding, value: value)
+private func input(_ simulator: CompactSurfaceSimulator, _ id: String = "a.encoder.1", _ value: JSONValue = .number(127), encoding: String = "scalar", hold: Double? = nil) -> ControlInput {
+    .init(expected: simulator.controls.expected, expectedSequence: simulator.controls.discovery().latest_sequence, controlID: id, encoding: encoding, value: value,
+          holdSeconds: hold)
 }
 
 private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ value: JSONValue, kind: String = "value") -> ControlFeedback {
@@ -25,6 +26,91 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     #expect(discovery.profile.controls.first { $0.id == "b.touch.9" }?.feedback_kinds.isEmpty == true)
     #expect(simulator.session.parameters.values.values.allSatisfy { $0 == 0 })
     #expect(simulator.mock.faders.allSatisfy { $0 == 0 })
+    // Contract 1.1: registered vocabulary plus one XTouch-private rule; mapping revision derived.
+    #expect(discovery.profile.capabilities == ["simulation", "controls.stable_ids", "controls.layered", "input.absolute", "input.button",
+                                               "input.hold", "feedback.value", "feedback.indicator", "x.xtouch.touch_protection"])
+    #expect(discovery.contract_version == "1.1")
+    #expect(discovery.expected.mapping_revision == discovery.profile.mappingRevision)
+    #expect(discovery.expected.mapping_revision.count == 16 && discovery.expected.mapping_revision != "1")
+    let held = discovery.profile.controls.filter { $0.hold != nil }.map(\.id)
+    #expect(held == (1 ... 9).map { "a.touch.\($0)" } + (1 ... 9).map { "b.touch.\($0)" })
+    #expect(discovery.profile.controls.first { $0.id == "a.touch.1" }?.hold == ControlHold(restValue: .bool(false), maxHoldSeconds: 10))
+}
+
+@Test func mappingRevisionFollowsMappingContentNotIdentity() throws {
+    let first = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "one")
+    let second = try CompactSurfaceSimulator(instanceID: "car.b", epoch: "two")
+    #expect(first.controls.expected.mapping_revision == second.controls.expected.mapping_revision)
+    var remapped = CompactSurfaceSimulator.demonstrationConfiguration
+    remapped.assignments.removeAll { $0.control == .encoder(5) }
+    let third = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "one", configuration: remapped)
+    #expect(third.controls.expected.mapping_revision != first.controls.expected.mapping_revision)
+    var reset = first
+    try reset.reset(epoch: "reset", at: 1)
+    #expect(reset.controls.expected.mapping_revision == first.controls.expected.mapping_revision)
+    #expect(reset.controls.expected.epoch == "reset")
+}
+
+@Test func normalizedNumericInputIsUnchangedRegardlessOfRepresentation() throws {
+    var simulator = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "test-epoch")
+    _ = try simulator.input(input(simulator, "a.encoder.1", .number(80)), at: 1)
+    let same = try simulator.input(input(simulator, "a.encoder.1", .double(80)), at: 2)
+    #expect(same.disposition == .ignored && same.reason == "no_change")
+    #expect(simulator.mock.encoders[0] == 80)
+}
+
+@Test func touchLeaseExpiresToReleasedThroughTheRealGestureAndReconcilesTheMotor() throws {
+    var simulator = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "test-epoch")
+    #expect(throws: ControlContractError("unsupported_hold")) {
+        try simulator.input(input(simulator, "a.button.1", .bool(true), encoding: "boolean", hold: 1), at: 0)
+    }
+    #expect(throws: ControlContractError("invalid_argument")) {
+        try simulator.input(input(simulator, "a.touch.1", .bool(true), encoding: "boolean", hold: 11), at: 0)
+    }
+    let touched = try simulator.input(input(simulator, "a.touch.1", .bool(true), encoding: "boolean", hold: 1), at: 1)
+    #expect(touched.hold_deadline == 2 && simulator.mock.touchedFaders == [1])
+    _ = try simulator.feedback(feedback(simulator, "a.fader.1", .number(90)), at: 1.2)
+    #expect(simulator.mock.faders[0] == 0 && simulator.session.state.isMotorPending(1))
+    let identity = simulator.controls.expected
+    let renewed = try simulator.renew(.init(expected: identity, controlID: "a.touch.1", holdSeconds: 1), at: 1.5)
+    let afterRenew = try simulator.controls.snapshot(at: 1.5)
+    #expect(renewed.hold_deadline == 2.5 && afterRenew.latest_sequence == "2")
+    #expect(simulator.nextHoldDeadline == 2.5)
+    // Nothing is due yet, so nothing changes.
+    #expect(try simulator.processHoldExpiries(at: 2.4).isEmpty)
+    #expect(throws: ControlContractError("hold_expiry_pending")) { try simulator.controls.snapshot(at: 2.5) }
+    let expired = try simulator.processHoldExpiries(at: 2.5)
+    #expect(expired.map(\.control_id) == ["a.touch.1"] && expired.first?.reason == "hold_expired" && expired.first?.origin == .remote)
+    // The same release gesture as an input: touch cleared and the withheld display intent reconciled.
+    #expect(simulator.mock.touchedFaders.isEmpty && simulator.mock.faders[0] == 90)
+    #expect(simulator.session.state.observedFader(1) == nil)
+    let afterExpiry = try simulator.controls.snapshot(at: 2.5)
+    #expect(afterExpiry.inputs["a.touch.1"] == .bool(false) && afterExpiry.holds == nil)
+    #expect(simulator.nextHoldDeadline == nil && simulator.controls.expected == identity)
+    #expect(throws: ControlContractError("hold_expired")) {
+        try simulator.renew(.init(expected: identity, controlID: "a.touch.1", holdSeconds: 1), at: 2.6)
+    }
+}
+
+@Test func touchLeaseSurvivesLayerSwitchAndReleasesThePhysicalSensor() throws {
+    var simulator = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "test-epoch")
+    _ = try simulator.input(input(simulator, "a.touch.2", .bool(true), encoding: "boolean", hold: 2), at: 0)
+    _ = try simulator.input(input(simulator, "global.layer.b", .bool(true), encoding: "boolean"), at: 0.5)
+    #expect(simulator.mock.touchedFaders == [2])
+    _ = try simulator.processHoldExpiries(at: 2)
+    #expect(simulator.mock.touchedFaders.isEmpty && !simulator.session.state.isTouched(2))
+    let released = try simulator.controls.snapshot(at: 2)
+    #expect(released.inputs["a.touch.2"] == .bool(false))
+}
+
+@Test func addingALeaseToTheCurrentTouchDoesNotRepeatTheGesture() throws {
+    var simulator = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "test-epoch")
+    _ = try simulator.input(input(simulator, "a.touch.3", .bool(true), encoding: "boolean"), at: 0)
+    let messages = simulator.mock.touchedFaders
+    let leased = try simulator.input(input(simulator, "a.touch.3", .bool(true), encoding: "boolean", hold: 1), at: 0.5)
+    #expect(leased.disposition == .accepted && leased.hold_deadline == 1.5 && simulator.mock.touchedFaders == messages)
+    let release = try simulator.input(input(simulator, "a.touch.3", .bool(false), encoding: "boolean"), at: 0.8)
+    #expect(release.disposition == .accepted && simulator.nextHoldDeadline == nil && simulator.mock.touchedFaders.isEmpty)
 }
 
 @Test func publicInputTraversesOriginalSessionAndIsExplicitSimulation() throws {

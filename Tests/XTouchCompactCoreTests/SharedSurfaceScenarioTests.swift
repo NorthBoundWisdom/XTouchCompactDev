@@ -23,7 +23,31 @@ private func commandOutput(_ args: [String], root: URL) throws -> String {
 private let scenarioRoles = ["input_a": "simulation.arm", "input_b": "simulation.start", "input_c": "simulation.pause", "input_d": "simulation.cancel",
                              "feedback_state": "simulation.state", "feedback_progress": "simulation.progress", "feedback_link": "simulation.link"]
 
-private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at time: Double) throws -> JSONValue {
+/// The contract 1.1 `hold_input` role: the first lease-bearing control (fader touch on layer A).
+private func holdControl(_ simulator: CompactSurfaceSimulator) -> ControlDescriptor? {
+    simulator.controls.profile.controls.first { $0.hold != nil }
+}
+
+private func roleControl(_ simulator: CompactSurfaceSimulator, _ role: String) -> ControlDescriptor? {
+    role == "hold_input" ? holdControl(simulator) : simulator.controls.profile.controls.first { $0.mapping?.id == scenarioRoles[role] }
+}
+
+/// Control IDs for a fixture list of role names; unknown roles fail the step.
+private func roleIDs(_ simulator: CompactSurfaceSimulator, _ names: [JSONValue]) throws -> [String] {
+    try names.map { name in
+        guard let role = name.stringValue, let id = roleControl(simulator, role)?.id else { throw ScenarioFailure.assertion("unknown role") }
+        return id
+    }
+}
+
+/// A time at which state can be read without processing a due lease: an atomicity probe must
+/// not itself change the host. With a pending lease it is just before the earliest deadline.
+private func probeTime(_ simulator: CompactSurfaceSimulator, _ time: Double) -> Double {
+    simulator.nextHoldDeadline.map { $0 <= time ? $0.nextDown : time } ?? time
+}
+
+private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at requested: Double) throws -> JSONValue {
+    let time = probeTime(simulator, requested)
     let snapshot = try simulator.controls.snapshot(at: time)
     let cursor = UInt64(snapshot.latest_sequence)!
     let first = cursor > UInt64(simulator.controls.eventCapacity) ? cursor - UInt64(simulator.controls.eventCapacity) : 0
@@ -36,12 +60,21 @@ private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at time: 
                         "touches": .encoded(simulator.mock.touchedFaders.sorted()), "buttons": .array(simulator.mock.buttons.map { .number(Int($0.rawValue)) }),
                         "pressed": .encoded(simulator.mock.pressedButtons.sorted()), "pushed": .encoded(simulator.mock.pushedEncoders.sorted()),
                         "rings": .array(simulator.mock.rings.map { .string(String(describing: $0)) }),
-                        "pending": .array((1 ... 9).map { .bool(simulator.session.state.isMotorPending($0)) })])
+                        "pending": .array((1 ... 9).map { .bool(simulator.session.state.isMotorPending($0)) }),
+                        "holds": .encoded(snapshot.holds ?? [:])])
 }
 
 @Test func sharedVersionedFixtureDrivesRealXTouchMockAndSession() throws {
+    try runSharedFixture("surface-control-software-v1.json", report: "surface-scenario-report.json", steps: 40)
+}
+
+@Test func sharedContract11FixtureDrivesLeasesThroughRealXTouchMockAndSession() throws {
+    try runSharedFixture("surface-control-software-v1.1.json", report: "surface-scenario-report-v1.1.json", steps: 65)
+}
+
+private func runSharedFixture(_ fixtureName: String, report reportName: String, steps expectedSteps: Int) throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let fixture = root.appendingPathComponent("build/dependencies/SurfacePlugins/fixtures/surface-control-software-v1.json")
+    let fixture = root.appendingPathComponent("build/dependencies/SurfacePlugins/fixtures/\(fixtureName)")
     let document = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: fixture))
     let scenarios = try #require(document.value(for: "scenarios")?.arrayValue)
     var results: [JSONValue] = []
@@ -63,20 +96,23 @@ private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at time: 
             let operation = try #require(step.value(for: "operation")?.stringValue)
             let expected = try #require(step.value(for: "expect")?.objectValue)
             let before = try scenarioFingerprint(host, at: scheduled)
-            let beforeInputs = try host.controls.snapshot(at: scheduled).inputs
+            let beforeInputs = try host.controls.snapshot(at: probeTime(host, scheduled)).inputs
             let beforeEpoch = host.controls.expected.epoch
             let beforeInstance = host.controls.expected.instance_id
             let countBefore = try #require(accepted[selected])
             var actualError: String?
             var event: ControlEvent?
             var page: ControlEventPage?
+            var renewed: ControlRenewResult?
+            var expired: [ControlEvent] = []
             do {
                 switch operation {
-                case "snapshot": break
+                case "snapshot":
+                    // The real read at the step time: fails closed while a lease is due.
+                    _ = try host.controls.snapshot(at: time)
                 case "input", "feedback":
                     let role = try #require(step.value(for: "role")?.stringValue)
-                    let mappedID = try #require(scenarioRoles[role])
-                    let control = try #require(host.controls.profile.controls.first { $0.mapping?.id == mappedID })
+                    let control = try #require(roleControl(host, role))
                     roles[role] = control.id
                     let suppliedExpected = step.value(for: "expected_scope") == .string("initial") ? initial[selected]! : host.controls.expected
                     let range = operation == "feedback" ? (control.feedback_range ?? control.range) : control.range
@@ -86,12 +122,18 @@ private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at time: 
                         try .number(Int(#require(range?.maximum)))
                     } else if step.value(for: "value") == .string("minimum") {
                         try .number(Int(#require(range?.minimum)))
+                    } else if step.value(for: "value") == .string("rest") {
+                        try #require(control.hold?.rest_value)
+                    } else if step.value(for: "value") == .string("active") {
+                        // One admissible non-rest value: true for a button lease.
+                        try #require(control.hold?.rest_value == .bool(false) ? JSONValue.bool(true) : nil)
                     } else {
                         try #require(step.value(for: "value"))
                     }
                     if operation == "input" {
                         let request = ControlInput(expected: suppliedExpected, expectedSequence: host.controls.discovery().latest_sequence,
-                                                   controlID: control.id, encoding: step.value(for: "encoding")?.stringValue ?? control.encoding.rawValue, value: value)
+                                                   controlID: control.id, encoding: step.value(for: "encoding")?.stringValue ?? control.encoding.rawValue, value: value,
+                                                   holdSeconds: step.value(for: "hold_s")?.finiteNumber)
                         lastInput[selected] = request
                         event = try host.input(request, at: time)
                     } else {
@@ -100,6 +142,15 @@ private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at time: 
                                                         controlID: control.id, kind: kind, value: value), at: time)
                     }
                 case "replay_last_write": event = try host.input(#require(lastInput[selected]), at: time)
+                case "renew":
+                    let role = try #require(step.value(for: "role")?.stringValue)
+                    let control = try #require(roleControl(host, role))
+                    roles[role] = control.id
+                    renewed = try host.renew(.init(expected: host.controls.expected, controlID: control.id,
+                                                   holdSeconds: #require(step.value(for: "hold_s")?.finiteNumber)), at: time)
+                case "advance":
+                    // Exactly what the executable's scheduler does on its own clock.
+                    expired = try host.processHoldExpiries(at: time)
                 case "reset":
                     try host.reset(epoch: "\(name).\(selected).reset.\(index)", at: time)
                     accepted[selected] = 0
@@ -115,7 +166,8 @@ private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at time: 
             if event?.kind == .input, event?.disposition == .accepted {
                 accepted[selected, default: 0] += 1
             }
-            let snapshot = try host.controls.snapshot(at: scheduled)
+            accepted[selected, default: 0] += expired.count(where: { $0.kind == .input && $0.disposition == .accepted })
+            let snapshot = try host.controls.snapshot(at: probeTime(host, scheduled))
             let after = try scenarioFingerprint(host, at: scheduled)
             var checks: [Bool] = [actualError == expected["error"]?.stringValue]
             if let disposition = expected["disposition"]?.stringValue {
@@ -146,20 +198,43 @@ private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at time: 
                 checks.append(page?.events.count == count)
             }
             if let latest = expected["latest_sequence"]?.stringValue {
-                checks.append(page?.latest_sequence == latest)
+                checks.append((page?.latest_sequence ?? snapshot.latest_sequence) == latest)
             }
             if let known = expected["known_inputs"]?.objectValue {
                 for (role, endpoint) in known {
-                    let control = try #require(host.controls.profile.controls.first { $0.mapping?.id == scenarioRoles[role] })
-                    let value = endpoint == .string("minimum") ? control.range!.minimum : control.range!.maximum
-                    checks.append(snapshot.inputs[control.id]?.finiteNumber == value)
+                    let control = try #require(roleControl(host, role))
+                    switch endpoint {
+                    case .string("rest"): checks.append(snapshot.inputs[control.id] == control.hold?.rest_value)
+                    case .string("active"): checks.append(snapshot.inputs[control.id] != nil && snapshot.inputs[control.id] != control.hold?.rest_value)
+                    default:
+                        let value = endpoint == .string("minimum") ? control.range!.minimum : control.range!.maximum
+                        checks.append(snapshot.inputs[control.id]?.finiteNumber == value)
+                    }
                 }
+            }
+            if let deadline = expected["hold_deadline_at_s"]?.finiteNumber {
+                let initialTime = document.value(for: "initial_time_s")?.finiteNumber ?? 0
+                let actual = renewed?.hold_deadline ?? event?.hold_deadline
+                checks.append(actual.map { abs($0 - (initialTime + deadline)) < 1e-9 } ?? false)
+            }
+            if let held = expected["holds"]?.arrayValue {
+                let wanted = try Set(roleIDs(host, held))
+                checks.append(Set((snapshot.holds ?? [:]).keys) == wanted)
+            }
+            if let roleNames = expected["expired"]?.arrayValue {
+                let wanted = try roleIDs(host, roleNames)
+                checks.append(expired.map(\.control_id) == wanted && expired.allSatisfy { $0.reason == "hold_expired" && $0.origin == .remote })
+            }
+            if let reasons = expected["event_reasons"]?.arrayValue {
+                checks.append(page?.events.map { $0.reason.map(JSONValue.string) ?? .null } == reasons)
             }
             let passed = checks.allSatisfy(\.self)
             try results.append(.object(["scenario": .string(name), "step": .number(index), "operation": .string(operation),
                                         "status": .string(passed ? "pass" : "fail"), "actual_error": actualError.map(JSONValue.string) ?? .null,
                                         "disposition": event.map { .string($0.disposition.rawValue) } ?? .null, "accepted_input_count": .number(#require(accepted[selected])),
-                                        "sequence": .string(snapshot.latest_sequence), "epoch_changed": .bool(beforeEpoch != host.controls.expected.epoch)]))
+                                        "sequence": .string(snapshot.latest_sequence), "epoch_changed": .bool(beforeEpoch != host.controls.expected.epoch),
+                                        "hold_deadline": (renewed?.hold_deadline ?? event?.hold_deadline).map(JSONValue.double) ?? .null,
+                                        "expired": .array(expired.map { .string($0.control_id) })]))
             hosts[selected] = host
             #expect(passed, "scenario \(name) step \(index) failed: \(actualError ?? "no error")")
         }
@@ -172,8 +247,9 @@ private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at time: 
                                          "host_revision": .string(commandOutput(["git", "rev-parse", "HEAD"], root: root)),
                                          "host_dirty": .bool(!commandOutput(["git", "status", "--porcelain"], root: root).isEmpty),
                                          "shared_revision": #require(sharedLock.value(for: "revision")), "profile_id": .string(CompactSurfaceSimulator.profileID),
-                                         "profile_version": .string(CompactSurfaceSimulator.profileVersion), "roles": .encoded(roles), "scope": .string("inprocess_real_mock_session"),
+                                         "profile_version": .string(CompactSurfaceSimulator.profileVersion), "contract_version": .string(ControlDiscovery.contractVersion),
+                                         "mapping_revision": .string(CompactSurfaceSimulator.profile(configuration: CompactSurfaceSimulator.demonstrationConfiguration).mappingRevision), "roles": .encoded(roles), "scope": .string("inprocess_real_mock_session"),
                                          "steps": .array(results), "pass": .bool(results.allSatisfy { $0.value(for: "status") == .string("pass") })])
-    try JSONEncoder().encode(report).write(to: root.appendingPathComponent("build/surface-scenario-report.json"))
-    #expect(results.count == 40)
+    try JSONEncoder().encode(report).write(to: root.appendingPathComponent("build/\(reportName)"))
+    #expect(results.count == expectedSteps)
 }

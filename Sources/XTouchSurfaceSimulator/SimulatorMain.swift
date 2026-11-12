@@ -157,7 +157,15 @@ private func removeOwnedReadyFile() {
         }
         FileHandle.standardOutput.write(readyBytes + Data("\n".utf8))
         var budget = SurfaceWriteBudget()
-        return try server.run { body in
+        // Leases expire on this process's monotonic clock even without requests. Every request
+        // processes due expiries at its own time first, so no read or write observes a pending one.
+        func advanceHolds(to time: Double) {
+            do { try simulator.processHoldExpiries(at: time) }
+            catch { FileHandle.standardError.write(Data("XTouchSurfaceSimulator hold expiry failed: \(error)\n".utf8)) }
+        }
+        return try server.run(nextDeadline: { simulator.nextHoldDeadline },
+                              maintenance: { advanceHolds(to: ProcessInfo.processInfo.systemUptime) })
+        { body in
             var id: JSONValue = .null
             do {
                 guard let request = try? JSONDecoder().decode(JSONValue.self, from: body) else { throw RPCError.parse }
@@ -186,6 +194,7 @@ private func removeOwnedReadyFile() {
                     do {
                         let operation = try SurfaceControlTools.parse(name, arguments: params["arguments"] ?? .object([:]))
                         let time = ProcessInfo.processInfo.systemUptime
+                        advanceHolds(to: time)
                         let value: JSONValue
                         // Mutations run on a copy of the value-type simulator. Only a fully
                         // validated, successful operation consumes the write budget and is committed.
@@ -210,6 +219,13 @@ private func removeOwnedReadyFile() {
                             let event = try candidate.feedback(feedback, at: time)
                             try commit(candidate)
                             value = try .encoded(event)
+                        case let .renew(request):
+                            // Silent lease renewal: input permission and write budget, no sequence or event.
+                            guard allowInput else { throw ControlContractError("permission_denied") }
+                            var candidate = simulator
+                            let renewed = try candidate.renew(request, at: time)
+                            try commit(candidate)
+                            value = try .encoded(renewed)
                         case let .events(instanceID, epoch, afterSequence, limit):
                             value = try .encoded(simulator.controls.events(instanceID: instanceID, epoch: epoch, afterSequence: afterSequence, limit: limit, at: time))
                         case let .reset(expected, expectedSequence):

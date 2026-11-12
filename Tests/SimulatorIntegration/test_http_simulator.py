@@ -16,8 +16,10 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "Clients/Python"))
-from surface_control import Client, CommandCursor, SurfaceError
+# The single SDK source is the shared package, materialized at the locked revision (D19-6).
+SHARED = ROOT / "build/dependencies/SurfacePlugins"
+sys.path.insert(0, str(SHARED / "clients/python"))
+from surface_control import Client, CommandCursor, SurfaceError, mapping_revision
 
 BINARY = Path(os.environ.get("XTOUCH_SIMULATOR_BINARY", ROOT / ".build/debug/XTouchSurfaceSimulator")).resolve()
 # Same credential shape as the BCR Provider: 64 lowercase hexadecimal characters.
@@ -181,9 +183,6 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(result["structuredContent"]["code"], "stale_sequence")
         self.assertEqual(self.a.snapshot()["latest_sequence"], "1")
 
-    @unittest.skip("P1-C: pinned SDK 1.0.0 copy accepts only profile 1.0 and fails closed on 1.1 "
-                   "(see test_pinned_1_0_sdk_copy_fails_closed_on_profile_1_1). Re-enable unchanged "
-                   "when P2 replaces Clients/Python with the shared SDK 1.1.")
     def test_same_public_sdk_consumes_both_supported_protocols(self):
         for protocol in ("2025-11-25", "2026-07-28"):
             client = Client(self.a.ready["url"], TOKEN, "car.a", protocol=protocol)
@@ -203,16 +202,92 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
                 cursor.poll()
             self.assertTrue(cursor.invalidated)
 
-    def test_pinned_1_0_sdk_copy_fails_closed_on_profile_1_1(self):
-        # Clients/Python is the pinned SDK 1.0.0 copy; it is replaced by the shared 1.1 SDK in P2.
-        # Until then it must refuse the 1.1 profile before any mutation, never guess.
-        for protocol in ("2025-11-25", "2026-07-28"):
-            client = Client(self.a.ready["url"], TOKEN, "car.a", protocol=protocol)
-            cursor = CommandCursor(client, {name: "simulation." + name for name in ("arm", "start", "pause", "cancel")})
-            with self.assertRaises(SurfaceError) as caught:
-                cursor.bootstrap()
-            self.assertEqual(caught.exception.code, "unsupported_profile")
-        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")
+    def test_shared_sdk_pins_contract_1_1_and_the_derived_mapping_revision(self):
+        client = Client(self.a.ready["url"], TOKEN, "car.a")
+        discovery = client.discover(profiles=("xtouch.compact.standard.simulation",), profile_versions=("1.1",))
+        self.assertEqual(discovery["contract_version"], "1.1")
+        self.assertEqual(discovery["expected"]["mapping_revision"], mapping_revision(discovery["profile"]))
+        self.assertIn("input.hold", discovery["profile"]["capabilities"])
+        self.assertIn("x.xtouch.touch_protection", discovery["profile"]["capabilities"])
+        # A layer key keeps identity, so the pinned client remains valid without rediscovery.
+        client.input("global.layer.b", "boolean", True)
+        self.assertEqual(client.discover()["expected"], discovery["expected"])
+        client.reset()
+        self.assertEqual(client.expected["mapping_revision"], discovery["expected"]["mapping_revision"])
+        self.assertNotEqual(client.expected["epoch"], discovery["expected"]["epoch"])
+
+    def test_renew_is_silent_permissioned_and_budgeted(self):
+        client = Client(self.a.ready["url"], TOKEN, "car.a")
+        client.discover()
+        held = client.input("a.touch.1", "boolean", True, hold_s=5)
+        self.assertEqual(held["sequence"], "1")
+        self.assertAlmostEqual(held["hold_deadline"] - held["time"], 5, places=6)
+        renewed = client.renew("a.touch.1", 5)
+        self.assertGreater(renewed["hold_deadline"], held["hold_deadline"])
+        snapshot = client.snapshot()
+        self.assertEqual(snapshot["latest_sequence"], "1")
+        self.assertEqual(snapshot["holds"], {"a.touch.1": renewed["hold_deadline"]})
+        page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": client.expected["epoch"],
+            "after_sequence": "0", "limit": 100})["structuredContent"]
+        self.assertEqual(len(page["events"]), 1)
+        for control, code in (("a.button.1", "unsupported_hold"), ("a.touch.2", "hold_expired")):
+            reply = self.a.request("surface_control_renew", {"expected": client.expected, "control_id": control, "hold_s": 1})
+            self.assertEqual(reply["structuredContent"]["code"], code)
+        with tempfile.TemporaryDirectory() as other:
+            readonly = RunningSimulator(other, "car.ro", mutations=False)
+            try:
+                expected = readonly.discover()["expected"]
+                reply = readonly.request("surface_control_renew", {"expected": expected, "control_id": "a.touch.1", "hold_s": 1})
+                self.assertEqual(reply["structuredContent"]["code"], "permission_denied")
+            finally:
+                readonly.close()
+        # Renewals are writes: the shared 60/s budget eventually rejects them with rate_limited,
+        # which leaves the lease deadline unchanged.
+        last = client.snapshot()["holds"]["a.touch.1"]
+        limited = None
+        for _ in range(130):
+            reply = self.a.request("surface_control_renew", {"expected": client.expected, "control_id": "a.touch.1",
+                "hold_s": 5})["structuredContent"]
+            if reply.get("code") == "rate_limited":
+                limited = reply
+                break
+            self.assertNotIn("code", reply)
+            last = reply["hold_deadline"]
+        self.assertIsNotNone(limited)
+        snapshot = client.snapshot()
+        self.assertEqual((snapshot["latest_sequence"], snapshot["holds"]["a.touch.1"]), ("1", last))
+
+    def test_lease_expires_on_the_process_clock_without_any_request(self):
+        client = Client(self.a.ready["url"], TOKEN, "car.a")
+        client.discover()
+        held = client.input("a.touch.3", "boolean", True, hold_s=0.3)
+        time.sleep(1.0)
+        # The idle accept loop processed the expiry before this read; the read never sees it pending.
+        snapshot = client.snapshot()
+        self.assertEqual(snapshot["inputs"]["a.touch.3"], False)
+        self.assertNotIn("holds", snapshot)
+        self.assertEqual(snapshot["latest_sequence"], "2")
+        page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": client.expected["epoch"],
+            "after_sequence": "1", "limit": 100})["structuredContent"]
+        expired = page["events"][0]
+        self.assertEqual((expired["kind"], expired["disposition"], expired["reason"], expired["origin"], expired["value"]),
+            ("input", "accepted", "hold_expired", "remote", False))
+        # Processed on schedule, not at the next request: within a small margin of the deadline.
+        self.assertGreaterEqual(expired["time"], held["hold_deadline"])
+        self.assertLess(expired["time"] - held["hold_deadline"], 0.3)
+        reply = self.a.request("surface_control_renew", {"expected": client.expected, "control_id": "a.touch.3", "hold_s": 1})
+        self.assertEqual(reply["structuredContent"]["code"], "hold_expired")
+
+    def test_lease_due_before_a_request_is_processed_first_never_pending(self):
+        client = Client(self.a.ready["url"], TOKEN, "car.a")
+        client.discover()
+        client.input("a.touch.4", "boolean", True, hold_s=0.2)
+        # Hold the serial listener with a slow request so the idle timer cannot fire first.
+        with socket.create_connection(("127.0.0.1", self.a.ready["port"]), timeout=5) as connection:
+            connection.sendall(b"POST /mcp HTTP/1.1\r\n")
+            time.sleep(0.5)
+        snapshot = client.snapshot()
+        self.assertEqual((snapshot["inputs"]["a.touch.4"], snapshot["latest_sequence"]), (False, "2"))
 
     def test_both_protocols_carry_input_feedback_reset_semantics(self):
         for protocol in ("2025-11-25", "2026-07-28"):

@@ -45,8 +45,32 @@ public final class LoopbackHTTPServer {
     deinit { close(descriptor) }
 
     public func run(handler: (Data) -> Data) throws -> Never {
+        try run(nextDeadline: { nil }, maintenance: {}, handler: handler)
+    }
+
+    /// Serve requests serially. While idle, wait for a connection at most until
+    /// `nextDeadline()` (a `systemUptime` value) and then call `maintenance()`, so host
+    /// timers run without a request. A request in progress delays maintenance by at most
+    /// its fixed read budget; the handler is expected to run due maintenance itself first.
+    public func run(nextDeadline: () -> Double?, maintenance: () -> Void, handler: (Data) -> Data) throws -> Never {
         signal(SIGPIPE, SIG_IGN)
         while true {
+            var listening = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+            let wait = nextDeadline().map { deadline -> Int32 in
+                let remaining = (deadline - ProcessInfo.processInfo.systemUptime) * 1000
+                return Int32(min(max(0, remaining.rounded(.up)), 60000))
+            } ?? -1
+            let ready = poll(&listening, 1, wait)
+            if ready < 0 {
+                if errno == EINTR {
+                    continue
+                }
+                throw SimulatorHTTPError.socket
+            }
+            if ready == 0 {
+                maintenance()
+                continue
+            }
             let peer = accept(descriptor, nil, nil)
             if peer < 0 {
                 if errno == EINTR {

@@ -22,6 +22,14 @@ public struct CompactSurfaceSimulator: Sendable {
     public static let layerKeyIDs: [CompactLayer: String] = [.a: "global.layer.a", .b: "global.layer.b"]
     static let layeredKinds: [(kind: String, count: Int)] = [("fader", 9), ("touch", 9), ("encoder", 16), ("push", 16), ("button", 39),
                                                              ("expression", 1), ("footswitch", 1)]
+    /// Fader touch is the momentary simulated hand on a motor fader. A lost client must not
+    /// leave a fader touched (motor withheld) forever, so touch controls declare a contract 1.1
+    /// lease that returns to released. Buttons bound to parameters toggle on press, so a lease
+    /// on them would not restore anything and is deliberately not declared.
+    public static let touchHold = ControlHold(restValue: .bool(false), maxHoldSeconds: 10)
+    /// Contract 1.1 registered capabilities plus the XTouch-private touch protection rule.
+    public static let capabilities = ["simulation", "controls.stable_ids", "controls.layered", "input.absolute", "input.button",
+                                      "input.hold", "feedback.value", "feedback.indicator", "x.xtouch.touch_protection"]
     public static var demonstrationConfiguration: SurfaceConfiguration {
         let roles = ["arm", "start", "pause", "cancel"]
         var parameters = roles.map { ParameterDefinition(id: "simulation.\($0)", name: $0) }
@@ -35,14 +43,15 @@ public struct CompactSurfaceSimulator: Sendable {
         return SurfaceConfiguration(parameters: parameters, assignments: assignments)
     }
 
-    public init(instanceID: String, epoch: String, mappingRevision: String = "1", configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024) throws {
+    /// The mapping revision is derived from the profile (contract 1.1); it is never chosen by the host.
+    public init(instanceID: String, epoch: String, configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024) throws {
         self.configuration = configuration
         let map = try FactoryStandardMap()
         session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:])
         mock = MockXTouchCompact(map: map, lightProtocol: .manual)
         _ = try session.loadConfiguration(configuration, resetValues: true)
         try mock.receive(session.connect())
-        controls = try SurfaceControlSession(instanceID: instanceID, epoch: epoch, mappingRevision: mappingRevision,
+        controls = try SurfaceControlSession(instanceID: instanceID, epoch: epoch,
                                              profile: Self.profile(configuration: configuration), eventCapacity: eventCapacity)
         try controls.seedInputs(mockInputs(), at: 0)
     }
@@ -63,7 +72,7 @@ public struct CompactSurfaceSimulator: Sendable {
                     descriptors.append(.init(id: "\(layer.rawValue).\(kind).\(index)", inputKind: absolute ? .absolute : .button,
                                              encoding: absolute ? .scalar : .boolean,
                                              range: absolute ? .init(minimum: 0, maximum: 127, step: 1) : nil,
-                                             feedbackKinds: feedback, mapping: mapping))
+                                             feedbackKinds: feedback, mapping: mapping, hold: kind == "touch" ? touchHold : nil))
                 }
             }
         }
@@ -71,7 +80,7 @@ public struct CompactSurfaceSimulator: Sendable {
             descriptors.append(.init(id: layerKeyIDs[layer]!, inputKind: .button, encoding: .boolean))
         }
         return .init(id: profileID, version: profileVersion, controls: descriptors,
-                     capabilities: ["simulation", "display_feedback", "absolute_input", "button_input", "layered_controls", "touch_protection"])
+                     capabilities: capabilities)
     }
 
     @discardableResult public mutating func input(_ input: ControlInput, at time: Double) throws -> ControlEvent {
@@ -80,7 +89,10 @@ public struct CompactSurfaceSimulator: Sendable {
         var disposition: ControlDisposition = .accepted
         var reason: String?
         var mapped: JSONValue?
-        let unchanged = try (controls.snapshot(at: time)).inputs[input.control_id] == input.value
+        let unchanged = controls.isUnchanged(input)
+        // Same raw value with only a lease change (hold_s added or renewed by a new input): the
+        // contract session records the lease; the device gesture is not repeated.
+        let sameRaw = try controls.snapshot(at: time).inputs[input.control_id] == SurfaceControlSession.normalized(input.value)
         if let target = Self.layerKey(input.control_id) {
             // A physical layer key is an ordinary input: identity, epoch and mapping are kept.
             if unchanged {
@@ -98,6 +110,8 @@ public struct CompactSurfaceSimulator: Sendable {
                 disposition = .ignored; reason = "inactive_layer"
             } else if unchanged {
                 disposition = .ignored; reason = "no_change"
+            } else if sameRaw {
+                mapped = next.mappedValue(kind: kind, index: index, layer: layer)
             } else {
                 let messages: [MIDIMessage]
                 switch kind {
@@ -120,16 +134,57 @@ public struct CompactSurfaceSimulator: Sendable {
                     next.releasedMotorOverlays.insert(input.control_id)
                 }
                 try next.reassertDisplay(at: time)
-                if case let .parameter(id) = next.session.parameters.assignment(Self.compactControl(kind: kind, index: index)!, layer: layer),
-                   let value = next.session.parameters.values[id]
-                {
-                    mapped = .double(value)
-                }
+                mapped = next.mappedValue(kind: kind, index: index, layer: layer)
             }
         }
         let event = try next.controls.recordInput(input, disposition: disposition, mappedValue: mapped, reason: reason, origin: .remote, at: time)
         self = next
         return event
+    }
+
+    private func mappedValue(kind: String, index: Int, layer: CompactLayer) -> JSONValue? {
+        guard case let .parameter(id) = session.parameters.assignment(Self.compactControl(kind: kind, index: index)!, layer: layer),
+              let value = session.parameters.values[id] else { return nil }
+        return .double(value)
+    }
+
+    /// Earliest unprocessed lease deadline, for the host scheduler.
+    public var nextHoldDeadline: Double? {
+        controls.nextHoldDeadline
+    }
+
+    /// Contract 1.1 silent renewal. No sequence, no event, no engine change.
+    public mutating func renew(_ request: ControlRenew, at time: Double) throws -> ControlRenewResult {
+        var next = controls
+        let result = try next.renew(request, at: time)
+        controls = next
+        return result
+    }
+
+    /// Process every lease due at `time`, as the host scheduler: apply the rest value to the
+    /// Mock and session through the same gesture as an input, then record `hold_expired`.
+    /// Display overlays are reasserted once every due lease is recorded (a pending lease
+    /// blocks contract reads). All or nothing: on failure nothing is committed.
+    @discardableResult public mutating func processHoldExpiries(at time: Double) throws -> [ControlEvent] {
+        let due = controls.dueHoldExpiries(at: time)
+        guard !due.isEmpty else { return [] }
+        var next = self
+        var events: [ControlEvent] = []
+        for expiry in due {
+            let (layer, kind, index) = try Self.address(expiry.controlID)
+            guard kind == "touch", expiry.restValue == .bool(false) else { throw ControlContractError("invalid_transition") }
+            // A touch lease always returns the physical sensor to released, on whichever
+            // layer is active now: the touch state is per fader, not per layer.
+            let messages = try next.mock.touchFader(index, isTouched: false)
+            let update = try next.session.receive(messages)
+            guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
+            next.mock.receive(update.feedback)
+            try events.append(next.controls.recordHoldExpiry(controlID: expiry.controlID,
+                                                             mappedValue: next.mappedValue(kind: kind, index: index, layer: layer), at: time))
+        }
+        try next.reassertDisplay(at: time)
+        self = next
+        return events
     }
 
     /// Mock and session switch together, as after a physical A/B key press. No motor is
@@ -200,8 +255,8 @@ public struct CompactSurfaceSimulator: Sendable {
     /// entropy; a remote reset can never choose or reuse a generation.
     public mutating func reset(expected: ControlExpected, expectedSequence: String, epoch: String, at time: Double) throws {
         var nextControls = controls
-        try nextControls.reset(expected: expected, expectedSequence: expectedSequence, epoch: epoch, mappingRevision: expected.mapping_revision, at: time)
-        var next = try Self(instanceID: expected.instance_id, epoch: epoch, mappingRevision: expected.mapping_revision,
+        try nextControls.reset(expected: expected, expectedSequence: expectedSequence, epoch: epoch, at: time)
+        var next = try Self(instanceID: expected.instance_id, epoch: epoch,
                             configuration: configuration, eventCapacity: controls.eventCapacity)
         try nextControls.seedInputs(next.mockInputs(), at: time)
         next.controls = nextControls
@@ -219,7 +274,7 @@ public struct CompactSurfaceSimulator: Sendable {
         next.releasedMotorOverlays.removeAll() // The epoch rotation clears all display intent.
         let expected = controls.discovery().expected
         try next.controls.reset(expected: expected, expectedSequence: controls.discovery().latest_sequence,
-                                epoch: epoch, mappingRevision: expected.mapping_revision, at: time)
+                                epoch: epoch, at: time)
         try next.controls.seedInputs(next.mockInputs(), at: time)
         self = next
     }

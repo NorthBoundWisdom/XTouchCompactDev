@@ -11,9 +11,12 @@ GUI. No physical controller or actuator qualification is implied.
 Acquire the committed dependency through the normal manager, then build:
 
 ```sh
-SURFACE_PLUGINS_SOURCE=/path/to/committed/SurfacePlugins python3 configs/surface_plugins_dependency.py update
+python3 configs/surface_plugins_dependency.py ensure
 swift build --jobs 2 --product XTouchSurfaceSimulator
 ```
+
+Use `SURFACE_PLUGINS_SOURCE=/path/to/committed/SurfacePlugins` only to fetch a committed
+revision that is not yet published (see `docs/SURFACE_PLUGINS.md`).
 
 For a clean, independently consumable delivery:
 
@@ -76,11 +79,11 @@ Add `--exercise` to send one explicit ordinary input and a separate link display
 update. The example discovers mapping IDs and uses the documented tools; it does
 not import host source. It never retries a mutation after an unknown response.
 
-## Optional control contract 1.0
+## Optional control contract 1.1
 
 `POST /mcp` accepts authenticated stateless JSON-RPC requests using MCP `2025-11-25` or `2026-07-28`. Initialization negotiates these versions; no session ID is required. Set
 `Authorization: Bearer <token>` and `Content-Type: application/json`. Browser
-Origin requests are rejected. Each complete HTTP request has one absolute three-second read budget, including partial headers and bodies. The new executable exposes only these six tools,
+Origin requests are rejected. Each complete HTTP request has one absolute three-second read budget, including partial headers and bodies. Discovery reports `contract_version: "1.1"`. The new executable exposes only these seven tools,
 alongside `initialize`, `ping`, and `tools/list`:
 
 | Tool | Operation |
@@ -90,6 +93,7 @@ alongside `initialize`, `ping`, and `tools/list`:
 | `surface_control_input` | Explicit simulated gesture through the existing Mock/session |
 | `surface_control_feedback` | Display intent only; never an input or parameter write |
 | `surface_control_events` | Bounded input/feedback journal with server time |
+| `surface_control_renew` | Silent lease renewal: no sequence, no event (contract 1.1) |
 | `surface_control_reset` | Clear isolated state and rotate epoch |
 
 The GUI's existing three tools and shared business tools retain their own
@@ -110,13 +114,56 @@ An unknown tool name remains a tool result with the stable code `unsupported_too
 
 A reset rotates epoch and sets the event cursor to zero. Input state is seeded
 from the new Mock, without generating input events. Snapshot input values contain initial Mock state and last accepted raw input; they are not actual telemetry or operations that should be replayed. Consumers
-react only to subsequent `accepted` input events. Remapping, restart, and local
-layer selection invalidate old pins; event gaps require snapshot/re-arm rather
+react only to subsequent `accepted` input events. Remapping, restart, and the in-process
+`selectLayer(_:epoch:)` invalidate old pins (layer keys do not); event gaps require snapshot/re-arm rather
 than event replay. The journal retains at most 1024 events; queries report
 `event_gap` for lost or future cursors. Successful mutations share a 60-per-second
 budget. A mutation is charged only after it has been fully validated and processed on a
 copy of the simulator, immediately before commit; permission, CAS, value, mapping,
 and other failures never consume budget. A `rate_limited` mutation changes nothing.
+`surface_control_renew` needs `--allow-surface-input` and is charged to the same budget.
+
+The mapping revision is derived from the profile (FNV-1a of the canonical mapping
+document, shared `ControlProfile.mappingRevision`). It is the same for every instance and
+restart with the same configuration, changes only when the mapping content changes, and
+is unchanged by reset, layer keys, and epoch rotation. A request whose mapping changed
+returns `stale_mapping`; `stale_epoch` means same mapping, new epoch. Numbers are
+normalized by the shared session (`80` and `80.0` are the same value), and
+`ignored/no_change` uses the shared `isUnchanged`.
+
+### Leases (`input.hold`)
+
+The fader touch controls `a.touch.1` … `a.touch.9` and `b.touch.1` … `b.touch.9` declare
+`hold: {rest_value: false, max_hold_s: 10}`. A touch is the simulated hand on a motor
+fader: while touched, fader feedback is withheld. A lease ensures that a lost client cannot
+leave a fader touched indefinitely. Other controls declare no lease, and `hold_s` on them
+fails `unsupported_hold`; in particular parameter buttons toggle on press, so a lease on
+them would restore nothing.
+
+`surface_control_input` with `value: true` and `hold_s` in (0, 10] touches the fader and
+returns `hold_deadline = time + hold_s`. If the fader is already touched, the same input only
+attaches or replaces the lease; the touch gesture is not repeated. Any other accepted input on
+that control, including `false` or `true` without `hold_s`, clears the lease. `surface_control_renew({expected, control_id, hold_s})`
+moves the deadline to `now + hold_s` for a held, unexpired lease and returns
+`{control_id, hold_deadline, server_time}`; otherwise it returns `hold_expired`. Renewal never
+consumes a sequence or writes an event. Snapshots list active leases in `holds`.
+
+Expiry runs on the process's monotonic clock. The serial accept loop waits for a connection
+at most until the earliest deadline and then processes every due lease, even with no client
+connected. Each request also processes due leases at its own time before doing anything else.
+A due lease is released through the same Mock touch-release gesture as an input, on whichever
+layer is active (touch is per fader), so a withheld motor intent reconciles as on a real
+release. The shared session then records `input / accepted / origin remote / reason
+hold_expired` with value `false`. A request held up by another connection's read budget
+(at most three seconds) delays expiry until its own processing, never past it; the shared
+`hold_expiry_pending` code is passed through unchanged if it ever occurs. Reset clears every
+lease. Consumers renew well before the deadline and treat `hold_expired` as "released, prepare
+a new input"; a lost renewal response is an unknown outcome.
+
+Capabilities use the shared 1.1 vocabulary: `simulation`, `controls.stable_ids`,
+`controls.layered`, `input.absolute`, `input.button`, `input.hold`, `feedback.value`,
+`feedback.indicator`, plus the XTouch-private `x.xtouch.touch_protection` (motor commands
+are withheld while a fader is touched).
 
 ## XTouch profile and semantics
 
@@ -191,12 +238,14 @@ production operator bridges that require hardware input remain ineligible.
 
 ## Verification
 
-`swift test --jobs 2` includes a runner for the pinned shared versioned fixture,
+`swift test --jobs 2` includes a runner for both pinned shared versioned fixtures,
 using real Mock/session values and an injected clock. It emits
-`build/surface-scenario-report.json` with exact source/fixture hashes and per-step
-results. This deterministic report is separate from real HTTP/process evidence.
-The fixture addresses mapped roles only, so the layer keys and pedals added in 1.1 do
-not change its 40 steps.
+`build/surface-scenario-report.json` (v1, 40 steps) and
+`build/surface-scenario-report-v1.1.json` (v1.1, 65 steps, including the lease
+scenarios) with exact source/fixture hashes, mapping revision, role mapping
+(`hold_input` is `a.touch.1`), and per-step results. The `advance` operation calls
+the same `processHoldExpiries` the executable's scheduler uses. These deterministic
+reports are separate from real HTTP/process evidence.
 Run the latter with
 `python3 -m unittest discover -s Tests/SimulatorIntegration -v` after building the
 executable. The tests copy the binary to an isolated working directory, exercise
@@ -204,7 +253,8 @@ both public MCP versions, discard a write response, reject stale CAS, restart a
 default instance at the same port, and isolate A/B processes. They also cover layer
 keys and pedals, JSON-RPC error codes, write-budget ordering, instance-ID and token
 rules, private token files, ready-file ownership and cleanup on SIGTERM/SIGINT,
-`minimal_consumer.py --exercise`, and that the pinned SDK 1.0.0 copy fails closed on
-profile 1.1. The original SDK round-trip test is kept and skipped until the shared SDK
-1.1 replaces the copy.
+`minimal_consumer.py --exercise`, the stdin-pipe requirement, the shared SDK 1.1 round trip
+over both MCP versions, mapping-revision pinning, `surface_control_renew` (silent,
+permissioned, budgeted), and real-clock lease expiry with no request in flight. They import
+the SDK from `build/dependencies/SurfacePlugins/clients/python`.
 No test here starts a production Pipe service or connects physical hardware.
