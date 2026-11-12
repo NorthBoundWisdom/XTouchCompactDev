@@ -106,3 +106,28 @@ On 2026-11-12, with no controller plugged into the Mac mini, a temporary virtual
 CC from the remote device arrived in order, and a Note On sent locally reached the remote
 device. The temporary device and its files were then removed. **A physical controller on the
 remote Mac has not been tested yet.** Run `devices` once it is plugged in.
+
+## Command event logs (U5, software verification only)
+
+`button-light`, `ring-display`, `ring-style`, `select-layer`, `fader-move`, `bridge`
+and `client` accept `--log PATH`. The local file is opened for append before
+CoreMIDI/SSH starts; existing contents are preserved, new files use mode 0600,
+and symlink destinations are rejected. Parent directories must already exist.
+The option is not passed through SSH: a client log lives on the client Mac; a
+bridge log lives on the bridge Mac. One-shot commands append the same JSONL as
+stdout, including a refused fader move (exit 3). Forwarders append `midi-forward`
+records without contaminating the binary stdout stream. `forwarded` means only
+the local transport operation succeeded, never device acknowledgement.
+
+Every `listen` event now includes fractional ISO-8601 `wallClock` alongside the
+existing monotonic `t`. Fader observation records retain their receive wall time,
+even though they are printed after the window. The final `stopped` record has
+`touchMessages` and `positionMessages` for the selected physical fader on either
+TX layer, in the interval from send through `--observe` seconds. A zero count is
+silence in that window, not proof of arrival or a hand being absent.
+
+Logging failures stop with exit 2; a command may already have been sent, so do
+not automatically retry it. Synchronous log writes add latency; this development
+journal provides no realtime or lossless-sniffer guarantee. This round exercises
+argument parsing, JSON format and summary counting only. No sender, listener or
+forwarder was run against hardware. 未在实机复核。

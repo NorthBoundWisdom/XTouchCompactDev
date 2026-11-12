@@ -4,7 +4,7 @@
 //   XTouchRemoteMIDI bridge                (started by the client over SSH, beside the device)
 //   XTouchRemoteMIDI devices               (lists what CoreMIDI sees on this Mac)
 //   XTouchRemoteMIDI listen                (passive raw capture as JSON lines; never sends)
-//   XTouchRemoteMIDI button-light …        (one button-LED Note On; the only sender, no CC)
+//   XTouchRemoteMIDI button-light …        (one button-LED Note On)
 //
 // Raw MIDI 1.0 UMP packets are carried verbatim over the SSH stdio stream. Nothing is
 // parsed, filtered, synthesized or acknowledged here; all safety policy stays in the app.
@@ -28,6 +28,40 @@ import Foundation
 
     func log(_ text: String) {
         FileHandle.standardError.write(Data("XTouchRemoteMIDI: \(text)\n".utf8))
+    }
+
+    /// Optional append-only JSONL journal. Open before CoreMIDI or SSH starts; errors
+    /// stop the command and are never retried as MIDI. Bridge/client logs stay off stdout.
+    final class EventJournal: @unchecked Sendable {
+        private let handle: FileHandle?
+        private let lock = NSLock()
+
+        init(path: String?) throws {
+            if let path {
+                let fd = Darwin.open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, 0o600)
+                guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+                handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            } else {
+                handle = nil
+            }
+        }
+
+        func emit(_ fields: [String: Any], at date: Date = Date(), stdout: Bool = true) {
+            guard stdout || handle != nil else { return }
+            lock.lock(); defer { lock.unlock() }
+            do {
+                let data = try RemoteEventJSON.line(fields, at: date)
+                if let handle {
+                    try handle.write(contentsOf: data); try handle.synchronize()
+                }
+                if stdout {
+                    try FileHandle.standardOutput.write(contentsOf: data)
+                }
+            } catch {
+                log("event logging failed: \(error.localizedDescription); command stopped, do not retry an already sent MIDI command")
+                exit(2)
+            }
+        }
     }
 
     /// Serialized, complete writes of frames to one file descriptor.
@@ -129,6 +163,7 @@ import Foundation
 
     final class Bridge: @unchecked Sendable {
         private let options: RemoteBridgeOptions
+        private let journal: EventJournal
         private let out = FrameWriter(fd: STDOUT_FILENO)
         private let queue = DispatchQueue(label: "dev.xtouchcompact.remote.bridge")
         private let lock = NSLock()
@@ -147,8 +182,9 @@ import Foundation
         private var toDevice: UInt64 = 0
         private var dropped: UInt64 = 0
 
-        init(options: RemoteBridgeOptions) {
+        init(options: RemoteBridgeOptions, journal: EventJournal) {
             self.options = options
+            self.journal = journal
         }
 
         func run() throws -> Never {
@@ -189,6 +225,7 @@ import Foundation
         private func fromDevice(_ list: UnsafePointer<MIDIEventList>) {
             for words in packets(list) {
                 guard out.write(.midi(words: words)) else { finish("client stream closed") }
+                journal.emit(RemoteEventJSON.forwarding(words: words, direction: "device-to-client", delivery: "forwarded"), stdout: false)
                 lock.lock(); toClient &+= 1; lock.unlock()
             }
         }
@@ -207,6 +244,7 @@ import Foundation
                 lock.lock(); let target = destination; let port = outputPort; lock.unlock()
                 // Listen-only: the controller is never written, whatever the client sends.
                 let sent = !options.listenOnly && target != 0 && withEventList(words) { MIDISendEventList(port, target, $0) }
+                journal.emit(RemoteEventJSON.forwarding(words: words, direction: "client-to-device", delivery: sent ? "sent" : "dropped"), stdout: false)
                 lock.lock()
                 if sent {
                     toDevice &+= 1
@@ -289,6 +327,7 @@ import Foundation
 
     final class Client: @unchecked Sendable {
         private let options: RemoteClientOptions
+        private let journal: EventJournal
         private let lock = NSLock()
         private var client: MIDIClientRef = 0
         private var source: MIDIEndpointRef = 0
@@ -300,8 +339,9 @@ import Foundation
         private var online = false
         private var suppressed: UInt64 = 0
 
-        init(options: RemoteClientOptions) {
+        init(options: RemoteClientOptions, journal: EventJournal) {
             self.options = options
+            self.journal = journal
         }
 
         func setUp() throws {
@@ -351,6 +391,9 @@ import Foundation
 
         private func toBridge(_ list: UnsafePointer<MIDIEventList>) {
             if options.listenOnly {
+                for words in packets(list) {
+                    journal.emit(RemoteEventJSON.forwarding(words: words, direction: "app-to-bridge", delivery: "suppressed"), stdout: false)
+                }
                 lock.lock(); suppressed &+= UInt64(packets(list).count); let total = suppressed; lock.unlock()
                 if total == 1 || total % 100 == 0 {
                     log("listen-only: suppressed \(total) packet(s) from the local app")
@@ -360,7 +403,8 @@ import Foundation
             lock.lock(); let current = writer; let ready = helloReceived; lock.unlock()
             guard let current, ready else { return } // Offline: nothing reaches the device.
             for words in packets(list) {
-                current.write(.midi(words: words))
+                let sent = current.write(.midi(words: words))
+                journal.emit(RemoteEventJSON.forwarding(words: words, direction: "app-to-bridge", delivery: sent ? "forwarded" : "failed"), stdout: false)
             }
         }
 
@@ -380,7 +424,8 @@ import Foundation
                 guard ready else { process.terminate(); return }
                 lock.lock(); let endpoint = source; lock.unlock()
                 if endpoint != 0 {
-                    withEventList(words) { MIDIReceivedEventList(endpoint, $0) }
+                    let sent = withEventList(words) { MIDIReceivedEventList(endpoint, $0) }
+                    journal.emit(RemoteEventJSON.forwarding(words: words, direction: "bridge-to-app", delivery: sent ? "forwarded" : "failed"), stdout: false)
                 }
             case .ping:
                 break
@@ -476,8 +521,7 @@ import Foundation
         private func emit(_ fields: [String: Any]) {
             var line = fields
             line["t"] = ((ProcessInfo.processInfo.systemUptime - started) * 1_000_000).rounded() / 1_000_000
-            guard var data = try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys]) else { return }
-            data.append(0x0A)
+            guard let data = try? RemoteEventJSON.line(line, at: Date()) else { return }
             lock.lock(); defer { lock.unlock() }
             FileHandle.standardOutput.write(data)
         }
@@ -495,7 +539,7 @@ import Foundation
                     emit(["event": "midi", "source": name, "words": words.map { String(format: "%08X", $0) }])
                 }
             }, "Create MIDI input")
-            emit(["event": "listening", "device": options.deviceName, "wallClock": ISO8601DateFormatter().string(from: Date())])
+            emit(["event": "listening", "device": options.deviceName])
             queue.sync { rescan() }
             for signalNumber in [SIGINT, SIGTERM, SIGHUP] {
                 signal(signalNumber, SIG_IGN)
@@ -536,7 +580,7 @@ import Foundation
 
     /// Sends exactly one UMP word to the controller and prints what was sent as a JSON line.
     /// Callers pass words built by `ButtonLightCommand` or `NonMotorFeedbackCommand` only.
-    func sendOne(word: UInt32, deviceName: String, record: [String: Any]) throws {
+    func sendOne(word: UInt32, deviceName: String, record: [String: Any], journal: EventJournal) throws {
         var client: MIDIClientRef = 0
         var port: MIDIPortRef = 0
         try check(MIDIClientCreateWithBlock("XTouchRemoteMIDI send" as CFString, &client) { _ in }, "Create MIDI client")
@@ -555,6 +599,7 @@ import Foundation
             throw NSError(domain: "XTouchRemoteMIDI", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Controller output not found; nothing was sent"])
         }
+        let sentAt = Date()
         guard withEventList([word], { MIDISendEventList(port, destination, $0) }) else {
             throw NSError(domain: "XTouchRemoteMIDI", code: 2, userInfo: [NSLocalizedDescriptionKey: "MIDI send failed"])
         }
@@ -562,34 +607,33 @@ import Foundation
         var line = record
         line["destination"] = name
         line["word"] = String(format: "%08X", word)
-        line["wallClock"] = ISO8601DateFormatter().string(from: Date())
-        let data = try JSONSerialization.data(withJSONObject: line, options: [.sortedKeys])
-        print(String(decoding: data, as: UTF8.self))
+        journal.emit(line, at: sentAt)
     }
 
-    func sendButtonLight(_ command: ButtonLightCommand) throws {
+    func sendButtonLight(_ command: ButtonLightCommand, journal: EventJournal) throws {
         try sendOne(word: command.word, deviceName: command.deviceName,
                     record: ["event": "sent-button-light", "button": command.button, "velocity": command.velocity,
-                             "channel": command.channel])
+                             "channel": command.channel], journal: journal)
     }
 
     // MARK: - Single fader move with touch guard (bring-up HW-6)
 
     /// Listens for `guardSeconds`, refuses on any touch message for the fader, sends one motor
     /// position, then prints everything received for `observe` seconds as JSON lines.
-    func moveFader(_ command: FaderMoveCommand, guardSeconds: Double = 1.0) throws {
+    func moveFader(_ command: FaderMoveCommand, journal: EventJournal, guardSeconds: Double = 1.0) throws {
         var client: MIDIClientRef = 0
         var input: MIDIPortRef = 0
         var output: MIDIPortRef = 0
         let lock = NSLock()
-        var received: [(Double, [UInt32])] = []
+        var received: [(time: Double, wallClock: Date, words: [UInt32])] = []
         let started = ProcessInfo.processInfo.systemUptime
         try check(MIDIClientCreateWithBlock("XTouchRemoteMIDI fader-move" as CFString, &client) { _ in }, "Create MIDI client")
         defer { MIDIClientDispose(client) }
         try check(MIDIInputPortCreateWithProtocol(client, "Move In" as CFString, ._1_0, &input) { list, _ in
             let now = ProcessInfo.processInfo.systemUptime - started
             let all = packets(list)
-            lock.lock(); received += all.map { (now, $0) }; lock.unlock()
+            let wallClock = Date()
+            lock.lock(); received += all.map { (now, wallClock, $0) }; lock.unlock()
         }, "Create MIDI input")
         try check(MIDIOutputPortCreate(client, "Move Out" as CFString, &output), "Create MIDI output")
         let matcher = RemoteBridgeOptions()
@@ -609,33 +653,31 @@ import Foundation
                           userInfo: [NSLocalizedDescriptionKey: "Controller input or output not found; nothing was sent"])
         }
         try check(MIDIPortConnectSource(input, source, nil), "Connect controller input")
-        func emit(_ fields: [String: Any]) {
-            if let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) {
-                print(String(decoding: data, as: UTF8.self))
-            }
-        }
         Thread.sleep(forTimeInterval: guardSeconds)
-        lock.lock(); let before = received.flatMap(\.1); lock.unlock()
+        lock.lock(); let before = received.flatMap(\.words); lock.unlock()
         let touch = command.touchState(in: before)
         guard !command.mustRefuse(afterListeningTo: before) else {
-            emit(["event": "fader-move-refused", "reason": "touch activity while listening", "fader": command.fader,
-                  "lastTouch": touch == true ? "down" : "up", "messagesDuringGuard": before.count])
+            journal.emit(["event": "fader-move-refused", "reason": "touch activity while listening", "fader": command.fader,
+                          "lastTouch": touch == true ? "down" : "up", "messagesDuringGuard": before.count])
             exit(3)
         }
         let word = command.word
         let sentAt = ProcessInfo.processInfo.systemUptime - started
+        let sentWallClock = Date()
         guard withEventList([word], { MIDISendEventList(output, destination, $0) }) else {
             throw NSError(domain: "XTouchRemoteMIDI", code: 2, userInfo: [NSLocalizedDescriptionKey: "MIDI send failed"])
         }
-        emit(["event": "fader-move-sent", "fader": command.fader, "value": command.value, "channel": command.channel,
-              "word": String(format: "%08X", word), "t": 0, "touchBeforeSend": touch.map { $0 ? "down" : "up" } ?? "unknown",
-              "messagesDuringGuard": before.count, "wallClock": ISO8601DateFormatter().string(from: Date())])
+        journal.emit(["event": "fader-move-sent", "fader": command.fader, "value": command.value, "channel": command.channel,
+                      "word": String(format: "%08X", word), "t": 0, "touchBeforeSend": touch.map { $0 ? "down" : "up" } ?? "unknown",
+                      "messagesDuringGuard": before.count], at: sentWallClock)
         Thread.sleep(forTimeInterval: command.observe)
-        lock.lock(); let after = received.filter { $0.0 >= sentAt }; lock.unlock()
-        for (time, words) in after {
-            emit(["event": "midi", "t": ((time - sentAt) * 1000).rounded() / 1000, "words": words.map { String(format: "%08X", $0) }])
+        lock.lock(); let after = received.filter { $0.time >= sentAt && $0.time <= sentAt + command.observe }; lock.unlock()
+        for (time, wallClock, words) in after {
+            journal.emit(["event": "midi", "t": ((time - sentAt) * 1000).rounded() / 1000, "words": words.map { String(format: "%08X", $0) }], at: wallClock)
         }
-        emit(["event": "stopped", "t": command.observe])
+        var summary = FaderObservationSummary(command: command, words: after.flatMap(\.words)).fields
+        summary["event"] = "stopped"; summary["t"] = command.observe; summary["fader"] = command.fader
+        journal.emit(summary)
     }
 
     // MARK: - Entry
@@ -660,13 +702,18 @@ import Foundation
     }
 
     signal(SIGPIPE, SIG_IGN)
-    let arguments = Array(CommandLine.arguments.dropFirst())
+    let rawArguments = Array(CommandLine.arguments.dropFirst())
     do {
+        let supportsLog = ["bridge", "client", "fader-move", "button-light"].contains(rawArguments.first ?? "")
+            || NonMotorFeedbackCommand.names.contains(rawArguments.first ?? "")
+        let logging = try RemoteLoggingArguments(supportsLog ? Array(rawArguments.dropFirst()) : [])
+        let arguments = supportsLog ? Array(rawArguments.prefix(1)) + logging.arguments : rawArguments
+        let journal = try EventJournal(path: logging.logPath)
         switch arguments.first {
         case "bridge":
-            try Bridge(options: RemoteBridgeOptions.parse(Array(arguments.dropFirst()))).run()
+            try Bridge(options: RemoteBridgeOptions.parse(Array(arguments.dropFirst())), journal: journal).run()
         case "client":
-            let client = try Client(options: RemoteClientOptions.parse(Array(arguments.dropFirst())))
+            let client = try Client(options: RemoteClientOptions.parse(Array(arguments.dropFirst())), journal: journal)
             try client.setUp()
             for signalNumber in [SIGINT, SIGTERM, SIGHUP] {
                 signal(signalNumber, SIG_IGN)
@@ -680,18 +727,20 @@ import Foundation
         case "devices":
             try listDevices()
         case "fader-move":
-            try moveFader(FaderMoveCommand.parse(Array(arguments.dropFirst())))
+            try moveFader(FaderMoveCommand.parse(Array(arguments.dropFirst())), journal: journal)
         case "button-light":
-            try sendButtonLight(ButtonLightCommand.parse(Array(arguments.dropFirst())))
+            try sendButtonLight(ButtonLightCommand.parse(Array(arguments.dropFirst())), journal: journal)
         case let name? where NonMotorFeedbackCommand.names.contains(name):
             let command = try NonMotorFeedbackCommand.parse(name, Array(arguments.dropFirst()))
             var record = command.summary
             record["event"] = "sent-feedback"
-            try sendOne(word: command.word, deviceName: RemoteMIDIDefaults.deviceName, record: record)
+            try sendOne(word: command.word, deviceName: RemoteMIDIDefaults.deviceName, record: record, journal: journal)
         case "listen":
             try Listener(options: RemoteBridgeOptions.parse(Array(arguments.dropFirst()))).run()
         default:
-            log("usage: XTouchRemoteMIDI client --ssh HOST [--listen-only] [--remote-binary PATH] [--label NAME] [--device NAME]\n"
+            log("Senders and bridge/client accept --log PATH (local append-only JSONL).\n"
+                + "       XTouchRemoteMIDI fader-move --fader 1-9 --value 0-127 --channel 1-16 [--observe 0-10]\n"
+                + "usage: XTouchRemoteMIDI client --ssh HOST [--listen-only] [--remote-binary PATH] [--label NAME] [--device NAME]\n"
                 + "       XTouchRemoteMIDI bridge [--listen-only] [--device NAME] [--status PATH]\n"
                 + "       XTouchRemoteMIDI devices\n"
                 + "       XTouchRemoteMIDI listen [--device NAME]\n"
