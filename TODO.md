@@ -6,7 +6,7 @@
 
 - 共享插件接入与 P1/P2/P3 整改完成；唯一 registry、静默记账、1024 事件容量、运动最多4Hz、2秒大间隔保护及统一实例 ID 已实现。
 - 新 surface 工具已有写权限、60次/秒预算、独立模拟管理权限，realtime 拒绝远程 advance；旧三工具沿原策略。
-- 历史产品基线 `19bc0c4`：实体读数与目标分离，历史缓存标记为旧值；灯环局部采样校准已入面板。提交记录报告175 Swift、25工作流及原生启动通过；本轮文档整理未重跑产品测试。
+- 历史产品基线 `19bc0c4`：实体读数与目标分离，历史缓存标记为旧值；灯环局部采样校准已入面板。提交记录报告175 Swift、25工作流及原生启动通过；当时文档整理未重跑产品测试；本轮重新验证结果见 U7。
 - 上游 `4d91cec` 已增加踏板输入、参数数值持久化和独立 Agent 电机授权，均保留；启动不回放电机，硬件踏板行为仍待实测。
 - 现场已有观察页、输入、灯环、切层和电机记录；HW-6 已按记录范围签收（2026-11-13）。不等于 HW-1…HW-5/HW-7 全量、N5 或完整读回通过。
 - CI 当前配置为 `core-linux` 与 macOS 26/Xcode 26.6 的 `app-macos`；历史绿色运行不等于当前 HEAD 已验收。
@@ -20,7 +20,7 @@
 ### 现在可做
 
 - [ ] N5 七项鼠标验收：触摸暂缓/松手、层不一致与重新对齐、预置确认、OSC停机/拒绝通知、MCP开关与令牌复制，以及新增的Agent电机授权和数值持久化。逐项记录实际结果，见 [验收步骤](docs/NATIVE_ACCEPTANCE.md)。观察页已验收不替代这七项。
-- [ ] 核对当前 HEAD 的两条 CI 及产物来源；无新需求不改 CI 拓扑。
+- [x] 核对本轮代码 HEAD `2d3defc` 的两条 CI 及产物来源（2026-11-13，见 U7）；最终签收记录提交的状态见 [草稿 PR #1](https://github.com/NorthBoundWisdom/XTouchCompactDev/pull/1)。CI 拓扑未改。
 
 ### 实机记录与修正
 
@@ -63,7 +63,8 @@
 - [x] U4（软件完成，未在实机复核）录制文件的电机安全审计：给录制审查加三项检查——同一推子“按下到松开”之间是否有电机输出、层不一致期间是否有电机输出、每次松手后的电机输出条数。提供命令行入口；用 `captures/private/XTouchCompact-capture-1794500725.jsonl` 和 `…1794501019.jsonl` 只读跑一遍，结果写进提交说明，录制文件本身不入库。入口与证据限制见 [离线安全审计](docs/CAPTURE_MOTOR_AUDIT.md)。
 - [x] U5（软件完成，未在实机复核）`XTouchRemoteMIDI` 记录能力：发送类命令加 `--log PATH` 追加写入（本轮最后两次是手工追加的）；`listen` 每条事件带墙上时间；`fader-move` 输出里汇总发送后观察窗口内的触摸与位置消息条数。只做解析和格式的测试，不实机运行。
 - [x] U6（文档完成，未在实机复核）文档按实测更正（C5/F7 的文档部分）：`README.md`、`docs/SOFTWARE_WORKFLOWS.md`、`docs/NATIVE_ACCEPTANCE.md`、`docs/HARDWARE_BRINGUP.md` 中凡写“切层/重连/对齐不动推子”或“电机行为未验证”的地方，改成实测结论；未测项保留未知。
-- [ ] U7 核对推送后 HEAD 的两条 CI；失败则修到绿，不改 CI 拓扑。
+- [x] U7（CI 完成，未在实机复核）代码提交 `2d3defc` 的 `core-linux` / `app-macos` 均通过：[运行 43278244712](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43278244712)。实际检出 `ae9504d`，文件树与代码 HEAD 一致；依赖固定为 `c6b3083`。macOS 26 / Xcode 26.6 原生构建、隔离启动（`hardwareAccessed:false`）、ad-hoc ZIP/DMG 打包均通过。该 CI 未上传可下载产物，不作公证分发声明。首次旧作业取消后已重试通过；被新 main 合并取代的旧运行已取消。最终签收记录提交的检查见 [PR #1](https://github.com/NorthBoundWisdom/XTouchCompactDev/pull/1)，CI 拓扑未改。
+  本地新依赖下五项检查全过（142 核心、105 App Swift Testing + 14 XCTest、4 本地化、14 远程 MIDI；75 工作流）。模拟器集成首轮 38 项中 2 项因历史 SDK ZIP 缺失而跳过；从原固定提交恢复并匹配冻结 SHA-256 后，这 2 项定向补测通过。H 组、N5 与整理目视验收仍未通过。
 
 ### 无人值守复查发现（继续推进）
 
