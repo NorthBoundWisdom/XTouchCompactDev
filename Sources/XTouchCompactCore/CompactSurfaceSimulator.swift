@@ -1,7 +1,7 @@
 import Foundation
+import RemoteToolContracts
 import SurfaceControlContracts
 import SurfacePluginContracts
-import RemoteToolContracts
 
 /// Isolated software surface. This composition has no MIDI transport, user store,
 /// system clock or business workflow. The existing session and device model own all
@@ -18,23 +18,24 @@ public struct CompactSurfaceSimulator: Sendable {
         let roles = ["arm", "start", "pause", "cancel"]
         var parameters = roles.map { ParameterDefinition(id: "simulation.\($0)", name: $0) }
         parameters += [ParameterDefinition(id: "simulation.state", name: "State", isSwitch: true),
-            ParameterDefinition(id: "simulation.progress", name: "Progress"),
-            ParameterDefinition(id: "simulation.link", name: "Link", isSwitch: true)]
+                       ParameterDefinition(id: "simulation.progress", name: "Progress"),
+                       ParameterDefinition(id: "simulation.link", name: "Link", isSwitch: true)]
         var assignments = roles.enumerated().map { ControlAssignment(control: .encoder($0.offset + 1), layer: .a, action: .parameter("simulation.\($0.element)")) }
         assignments += [.init(control: .button(1), layer: .a, action: .parameter("simulation.state")),
-            .init(control: .encoder(5), layer: .a, action: .parameter("simulation.progress")),
-            .init(control: .button(2), layer: .a, action: .parameter("simulation.link"))]
+                        .init(control: .encoder(5), layer: .a, action: .parameter("simulation.progress")),
+                        .init(control: .button(2), layer: .a, action: .parameter("simulation.link"))]
         return SurfaceConfiguration(parameters: parameters, assignments: assignments)
     }
+
     public init(instanceID: String, epoch: String, mappingRevision: String = "1", configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024) throws {
         self.configuration = configuration
         let map = try FactoryStandardMap()
         session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:])
         mock = MockXTouchCompact(map: map, lightProtocol: .manual)
         _ = try session.loadConfiguration(configuration, resetValues: true)
-        mock.receive(try session.connect())
+        try mock.receive(session.connect())
         controls = try SurfaceControlSession(instanceID: instanceID, epoch: epoch, mappingRevision: mappingRevision,
-            profile: Self.profile(configuration: configuration), eventCapacity: eventCapacity)
+                                             profile: Self.profile(configuration: configuration), eventCapacity: eventCapacity)
         try controls.seedInputs(mockInputs(), at: 0)
     }
 
@@ -50,14 +51,14 @@ public struct CompactSurfaceSimulator: Sendable {
                         mapping = ControlMapping(kind: .parameter, id: id)
                     }
                     descriptors.append(.init(id: "\(layer.rawValue).\(kind).\(index)", inputKind: absolute ? .absolute : .button,
-                        encoding: absolute ? .scalar : .boolean,
-                        range: absolute ? .init(minimum: 0, maximum: 127, step: 1) : nil,
-                        feedbackKinds: absolute ? [.value] : (kind == "button" ? [.indicator] : []), mapping: mapping))
+                                             encoding: absolute ? .scalar : .boolean,
+                                             range: absolute ? .init(minimum: 0, maximum: 127, step: 1) : nil,
+                                             feedbackKinds: absolute ? [.value] : (kind == "button" ? [.indicator] : []), mapping: mapping))
                 }
             }
         }
         return .init(id: profileID, version: profileVersion, controls: descriptors,
-            capabilities: ["simulation", "display_feedback", "absolute_input", "button_input", "layered_controls", "touch_protection"])
+                     capabilities: ["simulation", "display_feedback", "absolute_input", "button_input", "layered_controls", "touch_protection"])
     }
 
     @discardableResult public mutating func input(_ input: ControlInput, at time: Double) throws -> ControlEvent {
@@ -67,10 +68,12 @@ public struct CompactSurfaceSimulator: Sendable {
         var disposition: ControlDisposition = .accepted
         var reason: String?
         var mapped: JSONValue?
-        if layer == session.state.layer { try validateExternalWrite(kind: kind, index: index, layer: layer) }
+        if layer == session.state.layer {
+            try validateExternalWrite(kind: kind, index: index, layer: layer)
+        }
         if layer != session.state.layer {
             disposition = .ignored; reason = "inactive_layer"
-        } else if (try controls.snapshot(at: time)).inputs[input.control_id] == input.value {
+        } else if try (controls.snapshot(at: time)).inputs[input.control_id] == input.value {
             disposition = .ignored; reason = "no_change"
         } else {
             let messages: [MIDIMessage]
@@ -87,13 +90,16 @@ public struct CompactSurfaceSimulator: Sendable {
             // New action bindings require an explicit host composition, not a bypass.
             guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
             next.mock.receive(update.feedback)
-            for (id, channels) in (try next.controls.snapshot(at: time)).feedback {
+            for (id, channels) in try (next.controls.snapshot(at: time)).feedback {
                 for (channel, value) in channels {
                     try next.applyDisplay(.init(expected: next.controls.expected, expectedSequence: next.controls.discovery().latest_sequence, controlID: id, kind: channel, value: value))
                 }
             }
             if case let .parameter(id) = next.session.parameters.assignment(Self.compactControl(kind: kind, index: index)!, layer: layer),
-               let value = next.session.parameters.values[id] { mapped = .double(value) }
+               let value = next.session.parameters.values[id]
+            {
+                mapped = .double(value)
+            }
         }
         let event = try next.controls.recordInput(input, disposition: disposition, mappedValue: mapped, reason: reason, origin: .remote, at: time)
         self = next
@@ -117,9 +123,11 @@ public struct CompactSurfaceSimulator: Sendable {
         var next = self
         let (layer, _, _) = try Self.address(feedback.control_id)
         let active = layer == next.session.state.layer
-        if active { try next.applyDisplay(feedback) }
+        if active {
+            try next.applyDisplay(feedback)
+        }
         let event = try next.controls.recordFeedback(feedback, disposition: active ? .accepted : .ignored,
-            reason: active ? nil : "inactive_layer", origin: .remote, at: time)
+                                                     reason: active ? nil : "inactive_layer", origin: .remote, at: time)
         self = next
         return event
     }
@@ -145,21 +153,23 @@ public struct CompactSurfaceSimulator: Sendable {
         var nextControls = controls
         try nextControls.reset(expected: expected, expectedSequence: expectedSequence, epoch: epoch, mappingRevision: expected.mapping_revision, at: time)
         var next = try Self(instanceID: expected.instance_id, epoch: epoch, mappingRevision: expected.mapping_revision,
-            configuration: configuration, eventCapacity: controls.eventCapacity)
+                            configuration: configuration, eventCapacity: controls.eventCapacity)
         try nextControls.seedInputs(next.mockInputs(), at: time)
         next.controls = nextControls
         self = next
     }
+
     public mutating func reset(epoch: String, at time: Double) throws {
         try reset(expected: controls.expected, expectedSequence: controls.discovery().latest_sequence, epoch: epoch, at: time)
     }
+
     public mutating func selectLayer(_ layer: CompactLayer, epoch: String, at time: Double) throws {
         guard epoch != controls.expected.epoch else { throw ControlContractError("invalid_argument") }
         var next = self
-        next.mock.receive(try next.session.selectLayer(layer))
+        try next.mock.receive(next.session.selectLayer(layer))
         let expected = controls.discovery().expected
         try next.controls.reset(expected: expected, expectedSequence: controls.discovery().latest_sequence,
-            epoch: epoch, mappingRevision: expected.mapping_revision, at: time)
+                                epoch: epoch, mappingRevision: expected.mapping_revision, at: time)
         try next.controls.seedInputs(next.mockInputs(), at: time)
         self = next
     }
@@ -175,7 +185,9 @@ public struct CompactSurfaceSimulator: Sendable {
                 values["\(layer.rawValue).encoder.\(index)"] = .number(Int(mock.encoders[index - 1]))
                 values["\(layer.rawValue).push.\(index)"] = .bool(mock.pushedEncoders.contains(index))
             }
-            for index in 1 ... 39 { values["\(layer.rawValue).button.\(index)"] = .bool(mock.pressedButtons.contains(index)) }
+            for index in 1 ... 39 {
+                values["\(layer.rawValue).button.\(index)"] = .bool(mock.pressedButtons.contains(index))
+            }
         }
         return values
     }
@@ -183,6 +195,7 @@ public struct CompactSurfaceSimulator: Sendable {
     private static func compactControl(kind: String, index: Int) -> CompactControl? {
         switch kind { case "fader": .fader(index); case "touch": .faderTouch(index); case "encoder": .encoder(index); case "push": .encoderPush(index); case "button": .button(index); default: nil }
     }
+
     private static func address(_ id: String) throws -> (CompactLayer, String, Int) {
         let parts = id.split(separator: ".")
         guard parts.count == 3, let layer = CompactLayer(rawValue: String(parts[0])), let index = Int(parts[2]), compactControl(kind: String(parts[1]), index: index) != nil else { throw ControlContractError("unsupported_control") }

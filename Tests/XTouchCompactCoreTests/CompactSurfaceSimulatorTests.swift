@@ -1,12 +1,13 @@
 import Foundation
-import Testing
 import SurfaceControlContracts
 import SurfacePluginContracts
+import Testing
 @testable import XTouchCompactCore
 
 private func input(_ simulator: CompactSurfaceSimulator, _ id: String = "a.encoder.1", _ value: JSONValue = .number(127), encoding: String = "scalar") -> ControlInput {
     .init(expected: simulator.controls.expected, expectedSequence: simulator.controls.discovery().latest_sequence, controlID: id, encoding: encoding, value: value)
 }
+
 private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ value: JSONValue, kind: String = "value") -> ControlFeedback {
     .init(expected: simulator.controls.expected, expectedSequence: simulator.controls.discovery().latest_sequence, controlID: id, kind: kind, value: value)
 }
@@ -34,13 +35,13 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     #expect(simulator.mock.rings[0] == .position(13))
     let duplicate = try simulator.input(input(simulator), at: 2)
     #expect(duplicate.disposition == .ignored && duplicate.reason == "no_change")
-    #expect((try simulator.controls.snapshot(at: 100)).latest_sequence == "2")
+    #expect(try (simulator.controls.snapshot(at: 100)).latest_sequence == "2")
 }
 
 @Test func invalidPublicInputCannotPartiallyMoveMockOrEngine() throws {
     var simulator = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "test-epoch")
     _ = try simulator.input(input(simulator, "a.encoder.1", .number(5)), at: 2)
-    let snapshot = (try simulator.controls.snapshot(at: 100))
+    let snapshot = try (simulator.controls.snapshot(at: 100))
     let samples: [(ControlInput, Double)] = [
         (input(simulator, "a.encoder.1", .number(4), encoding: "signedDelta"), 3),
         (input(simulator, "a.encoder.1", .double(1.5)), 3),
@@ -50,7 +51,7 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     ]
     for (request, time) in samples {
         #expect(throws: ControlContractError.self) { try simulator.input(request, at: time) }
-        #expect((try simulator.controls.snapshot(at: 100)) == snapshot)
+        #expect(try (simulator.controls.snapshot(at: 100)) == snapshot)
         #expect(simulator.session.parameters.values["simulation.arm"] == 5)
         #expect(simulator.mock.encoders[0] == 5)
     }
@@ -58,14 +59,15 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
 
 @Test func protectedMappingIsNeverBypassedBySimulationInput() throws {
     for definition in [ParameterDefinition(id: "p", name: "p", agentWritable: false),
-                       ParameterDefinition(id: "p", name: "p", externallyProtected: true)] {
+                       ParameterDefinition(id: "p", name: "p", externallyProtected: true)]
+    {
         let config = SurfaceConfiguration(parameters: [definition], assignments: [.init(control: .encoder(1), layer: .a, action: .parameter("p"))], version: definition.externallyProtected == nil ? 1 : 2)
         var simulator = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "test-epoch", configuration: config)
         #expect(throws: ControlContractError("permission_denied")) { try simulator.input(input(simulator), at: 0) }
         #expect(throws: ControlContractError("permission_denied")) { try simulator.input(input(simulator, "a.encoder.1", .number(0)), at: 0) }
         #expect(simulator.session.parameters.values["p"] == 0)
         #expect(simulator.mock.encoders[0] == 0)
-        #expect((try simulator.controls.snapshot(at: 100)).latest_sequence == "0")
+        #expect(try (simulator.controls.snapshot(at: 100)).latest_sequence == "0")
     }
 }
 
@@ -77,7 +79,7 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     _ = try simulator.feedback(feedback(simulator, "a.button.1", .string("blink"), kind: "indicator"), at: 0)
     _ = try simulator.feedback(feedback(simulator, "a.fader.1", .number(100)), at: 0)
     #expect(simulator.session.parameters.values == before)
-    #expect((try simulator.controls.snapshot(at: 100)).inputs == beforeInputs)
+    #expect(try (simulator.controls.snapshot(at: 100)).inputs == beforeInputs)
     #expect(simulator.mock.rings[0] == .position(13))
     #expect(simulator.mock.buttons[0] == .blink)
     #expect(simulator.mock.faders[0] == 100)
@@ -113,20 +115,22 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     #expect(simulator.mock.layer == .b && simulator.session.state.layer == .b)
     #expect(simulator.mock.faders.allSatisfy { $0 == 0 })
     try simulator.reset(epoch: "reset-epoch", at: 1)
-    #expect((try simulator.controls.snapshot(at: 100)).inputs.values.allSatisfy { $0 == .number(0) || $0 == .bool(false) })
-    #expect((try simulator.controls.snapshot(at: 100)).latest_sequence == "0")
+    #expect(try (simulator.controls.snapshot(at: 100)).inputs.values.allSatisfy { $0 == .number(0) || $0 == .bool(false) })
+    #expect(try (simulator.controls.snapshot(at: 100)).latest_sequence == "0")
     #expect(simulator.session.state.layer == .a && simulator.mock.layer == .a)
 }
 
 @Test func simulationInstancesAndBoundedJournalAreIndependent() throws {
     var a = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "epoch-a", eventCapacity: 2)
     let b = try CompactSurfaceSimulator(instanceID: "car.b", epoch: "epoch-b", eventCapacity: 2)
-    for index in 0 ... 3 { _ = try a.input(input(a, "a.encoder.1", .number(index)), at: Double(index)) }
+    for index in 0 ... 3 {
+        _ = try a.input(input(a, "a.encoder.1", .number(index)), at: Double(index))
+    }
     #expect(throws: ControlContractError("event_gap")) { try a.controls.events(instanceID: "car.a", epoch: "epoch-a", afterSequence: "0", at: 100) }
-    #expect((try b.controls.snapshot(at: 100)).latest_sequence == "0")
+    #expect(try (b.controls.snapshot(at: 100)).latest_sequence == "0")
     #expect(b.session.parameters.values["simulation.arm"] == 0)
-    let bSnapshot = (try b.controls.snapshot(at: 100))
+    let bSnapshot = try (b.controls.snapshot(at: 100))
     try a.reset(epoch: "epoch-a-new", at: 4)
     #expect(a.controls.eventCapacity == 2)
-    #expect((try b.controls.snapshot(at: 100)) == bSnapshot)
+    #expect(try (b.controls.snapshot(at: 100)) == bSnapshot)
 }

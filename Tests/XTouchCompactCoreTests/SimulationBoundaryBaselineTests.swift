@@ -7,9 +7,9 @@ import Testing
     let map = try FactoryStandardMap()
     var mock = MockXTouchCompact(map: map, lightProtocol: .manual)
     var session = CompactSession(map: map, lightProtocol: .manual)
-    mock.receive(try session.connect())
-    mock.receive(try session.setEncoder(1, value: 127))
-    mock.receive(try session.setFader(1, value: 91))
+    try mock.receive(session.connect())
+    try mock.receive(session.setEncoder(1, value: 127))
+    try mock.receive(session.setFader(1, value: 91))
     #expect(mock.faders[0] == 91)
     #expect(mock.rings[0] == .position(13))
     // Neither feedback receiver returns MIDI TX; physical observations remain nil.
@@ -42,7 +42,13 @@ import Testing
     #expect(try session.setFader(1, value: 100).isEmpty)
     session.invalidateTransportFeedback()
     let reconnect = try session.connect()
-    #expect(!reconnect.contains { if case .controlChange(_, 1 ... 9, _) = $0 { true } else { false } })
+    #expect(!reconnect.contains {
+        if case .controlChange(_, 1 ... 9, _) = $0 {
+            true
+        } else {
+            false
+        }
+    })
     #expect(mock.faders[0] == 0)
     #expect(session.state.isTouched(1))
 }

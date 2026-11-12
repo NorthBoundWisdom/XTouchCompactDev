@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Build an independent software-only delivery with hashes and exact source pins."""
+
 import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import zipfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,10 +25,25 @@ def package(output, configuration="release"):
         raise RuntimeError("Output already exists; choose a new delivery path")
     subprocess.run(["python3", "configs/surface_plugins_dependency.py", "verify"], cwd=ROOT, check=True)
     scratch = ROOT / "build" / "surface-simulator" / configuration
-    subprocess.run(["swift", "build", "--jobs", "2", "--configuration", configuration,
-                    "--scratch-path", str(scratch), "--product", "XTouchSurfaceSimulator"], cwd=ROOT, check=True)
-    binary_directory = Path(command("swift", "build", "--configuration", configuration,
-                                    "--scratch-path", str(scratch), "--show-bin-path"))
+    subprocess.run(
+        [
+            "swift",
+            "build",
+            "--jobs",
+            "2",
+            "--configuration",
+            configuration,
+            "--scratch-path",
+            str(scratch),
+            "--product",
+            "XTouchSurfaceSimulator",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    binary_directory = Path(
+        command("swift", "build", "--configuration", configuration, "--scratch-path", str(scratch), "--show-bin-path")
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".surface-simulator-", dir=output.parent))
     try:
@@ -46,17 +62,32 @@ def package(output, configuration="release"):
         for name in ("pipe_surface_trial.py", "surface_roundtrip.py"):
             shutil.copy2(ROOT / "Clients/Python/examples" / name, stage / "examples" / name)
         shutil.copy2(ROOT / "Clients/Python/SOURCE.json", stage / "surface-control-sdk-source.json")
-        (stage / "control-contract.json").write_text(subprocess.check_output(
-            [str(stage / "XTouchSurfaceSimulator"), "--describe"], text=True))
-        files = {str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(stage.rglob("*")) if path.is_file()}
-        manifest = {"schema_version": 1, "product": "XTouchSurfaceSimulator", "source": "simulation",
-            "source_commit": command("git", "rev-parse", "HEAD"), "source_dirty": False,
-            "surface_control_contract": "1.0", "surface_control_sdk": "1.0.0",
-            "surface_plugins_revision": json.loads((ROOT / "configs/surface_plugins.lock.json").read_text())["revision"],
-            "platform": os.uname().sysname, "architecture": os.uname().machine,
-            "configuration": configuration, "files_sha256": files,
+        (stage / "control-contract.json").write_text(
+            subprocess.check_output([str(stage / "XTouchSurfaceSimulator"), "--describe"], text=True)
+        )
+        files = {
+            str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(stage.rglob("*"))
+            if path.is_file()
+        }
+        manifest = {
+            "schema_version": 1,
+            "product": "XTouchSurfaceSimulator",
+            "source": "simulation",
+            "source_commit": command("git", "rev-parse", "HEAD"),
+            "source_dirty": False,
+            "surface_control_contract": "1.0",
+            "surface_control_sdk": "1.0.0",
+            "surface_plugins_revision": json.loads((ROOT / "configs/surface_plugins.lock.json").read_text())[
+                "revision"
+            ],
+            "platform": os.uname().sysname,
+            "architecture": os.uname().machine,
+            "configuration": configuration,
+            "files_sha256": files,
             "start_protocol": "token stdin/file, ready JSON stdout/file, POST /mcp on 127.0.0.1",
-            "stop_protocol": "terminate the isolated process; no persistent user state"}
+            "stop_protocol": "terminate the isolated process; no persistent user state",
+        }
         (stage / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         stage.rename(output)
     finally:

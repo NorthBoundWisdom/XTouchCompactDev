@@ -1,8 +1,8 @@
 import Foundation
 #if canImport(Darwin)
-import Darwin
+    import Darwin
 #else
-import Glibc
+    import Glibc
 #endif
 
 public enum SimulatorHTTPError: Error { case socket, bind, listen, read, request }
@@ -17,9 +17,9 @@ public final class LoopbackHTTPServer {
         guard !token.isEmpty, !token.contains("\r"), !token.contains("\n") else { throw SimulatorHTTPError.request }
         self.token = token
         #if canImport(Darwin)
-        let socketFD = socket(AF_INET, SOCK_STREAM, 0)
+            let socketFD = socket(AF_INET, SOCK_STREAM, 0)
         #else
-        let socketFD = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+            let socketFD = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
         #endif
         guard socketFD >= 0 else { throw SimulatorHTTPError.socket }
         var reuse: Int32 = 1
@@ -35,32 +35,45 @@ public final class LoopbackHTTPServer {
         guard listen(socketFD, 16) == 0 else { close(socketFD); throw SimulatorHTTPError.listen }
         var bound = sockaddr_in()
         var size = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let _ = withUnsafeMutablePointer(to: &bound) { pointer in
+        _ = withUnsafeMutablePointer(to: &bound) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(socketFD, $0, &size) }
         }
         descriptor = socketFD
         self.port = UInt16(bigEndian: bound.sin_port)
     }
+
     deinit { close(descriptor) }
 
     public func run(handler: (Data) -> Data) throws -> Never {
         signal(SIGPIPE, SIG_IGN)
         while true {
             let peer = accept(descriptor, nil, nil)
-            if peer < 0 { if errno == EINTR { continue }; throw SimulatorHTTPError.socket }
+            if peer < 0 {
+                if errno == EINTR {
+                    continue
+                }; throw SimulatorHTTPError.socket
+            }
             var timeout = timeval(tv_sec: 3, tv_usec: 0)
             _ = withUnsafePointer(to: &timeout) { setsockopt(peer, SOL_SOCKET, SO_RCVTIMEO, $0, socklen_t(MemoryLayout<timeval>.size)) }
             _ = withUnsafePointer(to: &timeout) { setsockopt(peer, SOL_SOCKET, SO_SNDTIMEO, $0, socklen_t(MemoryLayout<timeval>.size)) }
             let response: (Int, Data)
             do {
                 let request = try readRequest(peer)
-                if request.path != "/mcp" { response = (404, Data()) }
-                else if request.headers["origin"] != nil { response = (403, Data()) }
-                else if request.headers["authorization"] != "Bearer \(token)" { response = (401, Data()) }
-                else if let version = request.headers["mcp-protocol-version"], !["2025-11-25", "2026-07-28"].contains(version) { response = (400, Data()) }
-                else if request.method != "POST" { response = (405, Data()) }
-                else if request.headers["content-type"]?.hasPrefix("application/json") != true { response = (400, Data()) }
-                else { let body = handler(request.body); response = (body.isEmpty ? 202 : 200, body) }
+                if request.path != "/mcp" {
+                    response = (404, Data())
+                } else if request.headers["origin"] != nil {
+                    response = (403, Data())
+                } else if request.headers["authorization"] != "Bearer \(token)" {
+                    response = (401, Data())
+                } else if let version = request.headers["mcp-protocol-version"], !["2025-11-25", "2026-07-28"].contains(version) {
+                    response = (400, Data())
+                } else if request.method != "POST" {
+                    response = (405, Data())
+                } else if request.headers["content-type"]?.hasPrefix("application/json") != true {
+                    response = (400, Data())
+                } else {
+                    let body = handler(request.body); response = (body.isEmpty ? 202 : 200, body)
+                }
             } catch { response = (400, Data()) }
             let head = "HTTP/1.1 \(response.0) Response\r\nContent-Type: application/json\r\nContent-Length: \(response.1.count)\r\nConnection: close\r\n\r\n"
             let bytes = Data(head.utf8) + response.1
@@ -68,7 +81,9 @@ public final class LoopbackHTTPServer {
                 var sent = 0
                 while sent < bytes.count {
                     let count = send(peer, buffer.baseAddress!.advanced(by: sent), bytes.count - sent, 0)
-                    if count <= 0 { break }
+                    if count <= 0 {
+                        break
+                    }
                     sent += count
                 }
             }
@@ -88,11 +103,12 @@ public final class LoopbackHTTPServer {
             guard remaining > 0 else { throw SimulatorHTTPError.read }
             var readiness = pollfd(fd: peer, events: Int16(POLLIN), revents: 0)
             let ready = poll(&readiness, 1, Int32(max(1, (remaining * 1000).rounded(.up))))
-            if ready < 0, errno == EINTR { continue }
+            if ready < 0, errno == EINTR {
+                continue
+            }
             guard ready > 0 else { throw SimulatorHTTPError.read }
             let count = recv(peer, &storage, storage.count, 0)
-            guard ProcessInfo.processInfo.systemUptime <= deadline else { throw SimulatorHTTPError.read }
-            guard count > 0 else { throw SimulatorHTTPError.read }
+            guard ProcessInfo.processInfo.systemUptime <= deadline, count > 0 else { throw SimulatorHTTPError.read }
             bytes.append(contentsOf: storage.prefix(count))
             guard let split = bytes.range(of: Data("\r\n\r\n".utf8)) else {
                 guard bytes.count <= 8192 else { throw SimulatorHTTPError.request }; continue
@@ -111,7 +127,9 @@ public final class LoopbackHTTPServer {
             guard headers["transfer-encoding"] == nil,
                   let length = Int(headers["content-length"] ?? "0"), (0 ... 16384).contains(length) else { throw SimulatorHTTPError.request }
             let body = bytes[split.upperBound...]
-            if body.count < length { continue }
+            if body.count < length {
+                continue
+            }
             guard body.count == length else { throw SimulatorHTTPError.request }
             return Request(method: String(start[0]), path: String(start[1]), headers: headers, body: Data(body))
         }

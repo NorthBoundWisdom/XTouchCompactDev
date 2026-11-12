@@ -1,13 +1,13 @@
-import Foundation
-import XTouchCompactCore
 import CompactSimulatorTransport
+import Foundation
+import RemoteToolContracts
 import SurfaceControlContracts
 import SurfacePluginContracts
-import RemoteToolContracts
+import XTouchCompactCore
 #if canImport(Darwin)
-import Darwin
+    import Darwin
 #else
-import Glibc
+    import Glibc
 #endif
 
 private enum StartupError: Error { case invalidArguments, tokenRequired, readyFileExists }
@@ -17,18 +17,18 @@ private enum StartupError: Error { case invalidArguments, tokenRequired, readyFi
         do {
             if CommandLine.arguments == [CommandLine.arguments[0], "--describe"] {
                 let simulator = try CompactSurfaceSimulator(instanceID: "example.simulation", epoch: "discovery-only")
-                let value: JSONValue = .object(["discovery": try .encoded(simulator.controls.discovery()),
-                    "tools": .array(try SurfaceControlTools.descriptors.map { try .encoded($0) })])
-                FileHandle.standardOutput.write(try JSONEncoder().encode(value) + Data("\n".utf8))
+                let value: JSONValue = try .object(["discovery": .encoded(simulator.controls.discovery()),
+                                                    "tools": .array(SurfaceControlTools.descriptors.map { try .encoded($0) })])
+                try FileHandle.standardOutput.write(JSONEncoder().encode(value) + Data("\n".utf8))
                 return
             }
             try run()
-        }
-        catch {
+        } catch {
             FileHandle.standardError.write(Data("XTouchSurfaceSimulator failed: \(error)\n".utf8))
             exit(1)
         }
     }
+
     private static func run() throws -> Never {
         var arguments = Array(CommandLine.arguments.dropFirst())
         var instance = "xtouch.simulation." + UUID().uuidString
@@ -45,7 +45,7 @@ private enum StartupError: Error { case invalidArguments, tokenRequired, readyFi
             }
             switch option {
             case "--surface-instance-id": instance = try value()
-            case "--port": guard let parsed = UInt16(try value()) else { throw StartupError.invalidArguments }; port = parsed
+            case "--port": guard let parsed = try UInt16(value()) else { throw StartupError.invalidArguments }; port = parsed
             case "--token-file": tokenPath = try value()
             case "--token-stdin": tokenStdin = true
             case "--ready-file": readyPath = try value()
@@ -57,20 +57,28 @@ private enum StartupError: Error { case invalidArguments, tokenRequired, readyFi
         }
         guard tokenPath == nil || !tokenStdin else { throw StartupError.invalidArguments }
         let token: String
-        if let tokenPath { token = try String(contentsOfFile: tokenPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) }
-        else if tokenStdin { token = readLine() ?? "" }
-        else { throw StartupError.tokenRequired }
+        if let tokenPath {
+            token = try String(contentsOfFile: tokenPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if tokenStdin {
+            token = readLine() ?? ""
+        } else {
+            throw StartupError.tokenRequired
+        }
         guard token.utf8.count >= 16, token.utf8.count <= 4096 else { throw StartupError.tokenRequired }
-        if let readyPath, FileManager.default.fileExists(atPath: readyPath) { throw StartupError.readyFileExists }
+        if let readyPath, FileManager.default.fileExists(atPath: readyPath) {
+            throw StartupError.readyFileExists
+        }
         var simulator = try CompactSurfaceSimulator(instanceID: instance, epoch: UUID().uuidString)
         let server = try LoopbackHTTPServer(port: port, token: token)
         let discovery = simulator.controls.discovery()
-        let ready: JSONValue = .object(["expected": try .encoded(discovery.expected), "latest_sequence": .string(discovery.latest_sequence),
-            "source": .string("simulation"), "contract_version": .string(discovery.contract_version)])
+        let ready: JSONValue = try .object(["expected": .encoded(discovery.expected), "latest_sequence": .string(discovery.latest_sequence),
+                                            "source": .string("simulation"), "contract_version": .string(discovery.contract_version)])
         let metadata: JSONValue = .object(["status": .string("ready"), "pid": .number(Int(ProcessInfo.processInfo.processIdentifier)),
-            "port": .number(Int(server.port)), "url": .string("http://127.0.0.1:\(server.port)/mcp"), "source": .string("simulation"), "surface_control": ready])
+                                           "port": .number(Int(server.port)), "url": .string("http://127.0.0.1:\(server.port)/mcp"), "source": .string("simulation"), "surface_control": ready])
         let readyBytes = try JSONEncoder().encode(metadata)
-        if let readyPath { try readyBytes.write(to: URL(fileURLWithPath: readyPath), options: .withoutOverwriting) }
+        if let readyPath {
+            try readyBytes.write(to: URL(fileURLWithPath: readyPath), options: .withoutOverwriting)
+        }
         FileHandle.standardOutput.write(readyBytes + Data("\n".utf8))
         var budget = SurfaceWriteBudget()
         return try server.run { body in
@@ -92,7 +100,7 @@ private enum StartupError: Error { case invalidArguments, tokenRequired, readyFi
                 case "tools/list":
                     result = .object(["tools": .array(SurfaceControlTools.descriptors.map { tool in
                         .object(["name": .string(tool.name), "description": .string("Explicit software simulation control contract"), "inputSchema": tool.inputSchema,
-                            "outputSchema": tool.outputSchema, "annotations": .object(["readOnlyHint": .bool(!tool.isMutation)])])
+                                 "outputSchema": tool.outputSchema, "annotations": .object(["readOnlyHint": .bool(!tool.isMutation)])])
                     })])
                 case "tools/call":
                     guard let params = object["params"]?.objectValue, let name = params["name"]?.stringValue else { throw ControlContractError("invalid_argument") }
@@ -124,17 +132,18 @@ private enum StartupError: Error { case invalidArguments, tokenRequired, readyFi
                         result = try content(value, isError: false)
                     } catch {
                         let failure = (error as? ControlContractError).map { RemoteFailure(code: $0.code) } ?? RemoteFailure.from(error)
-                        result = try content(try .encoded(failure), isError: true)
+                        result = try content(.encoded(failure), isError: true)
                     }
                 default: throw ControlContractError("unsupported_method")
                 }
                 return try JSONEncoder().encode(JSONValue.object(["jsonrpc": .string("2.0"), "id": id, "result": result]))
             } catch {
-                return (try? JSONEncoder().encode(JSONValue.object(["jsonrpc": .string("2.0"), "id": id, "error": .object(["code": .number(-32600), "message": .string("Invalid request")])])) ) ?? Data()
+                return (try? JSONEncoder().encode(JSONValue.object(["jsonrpc": .string("2.0"), "id": id, "error": .object(["code": .number(-32600), "message": .string("Invalid request")])]))) ?? Data()
             }
         }
     }
+
     private static func content(_ value: JSONValue, isError: Bool) throws -> JSONValue {
-        .object(["content": .array([.object(["type": .string("text"), "text": .string(try value.jsonText)])]), "structuredContent": value, "isError": .bool(isError)])
+        try .object(["content": .array([.object(["type": .string("text"), "text": .string(value.jsonText)])]), "structuredContent": value, "isError": .bool(isError)])
     }
 }
