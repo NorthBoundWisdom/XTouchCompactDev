@@ -188,3 +188,12 @@ endorsed by Behringer.
 ## License
 
 [MIT](LICENSE)
+
+
+### Independent software Surface delivery
+
+The hardware-free `XTouchSurfaceSimulator` exposes the optional shared control
+profile/input/feedback contract over authenticated loopback HTTP, with fresh
+instance/epoch pins and isolated state. See [software simulator delivery](docs/SURFACE_SIMULATOR.md)
+for build, packaging, public schema, Python SDK/example, and lifecycle instructions.
+It does not initialize MIDI or qualify physical hardware.

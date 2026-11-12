@@ -299,6 +299,20 @@ public struct CompactSession: Sendable {
         state.invalidateNonMotorFeedback()
     }
 
+    /// Independent display intent for public simulation feedback. These primitives
+    /// never edit parameter values, manufacture input, or acknowledge an observation.
+    public mutating func setDisplayFader(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
+        try state.setFader(index, value: value)
+    }
+
+    public mutating func setDisplayRing(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
+        try state.setRing(index, display: .position(Self.ringSegment(for: value)))
+    }
+
+    public mutating func setDisplayButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
+        try state.setButton(index, light: light)
+    }
+
     private mutating func syncVisibleNonMotorFeedback() throws -> [MIDIMessage] {
         let values = bank(state.layer)
         var result: [MIDIMessage] = []
