@@ -143,6 +143,11 @@
             model.captureScene(name: "Chorus")
             content = AnyView(OrganizeWorkspace(snapshot: model.panelSnapshot, intents: model.panelIntents).padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(Theme.background))
+        case "connection-page":
+            // The Connection page alone, in the mock, with the applied profile shown.
+            width = 620; height = 640
+            content = AnyView(ConnectionSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents).padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(Theme.background))
         case "organization-values":
             // The Values tab with the same synthetic organization data.
             width = 1600; height = 1400

@@ -235,7 +235,7 @@
 
     // MARK: - Connection
 
-    private struct ConnectionSettingsView: View {
+    struct ConnectionSettingsView: View {
         @EnvironmentObject private var language: LanguageSettings
         private var l: Localizer {
             language.localizer
@@ -249,64 +249,164 @@
         @State private var rx = 1
         @State private var observed = false
 
+        private var portsChanged: Bool {
+            input != snapshot.inputChoice || output != snapshot.outputChoice
+        }
+
+        private var profileChanged: Bool {
+            tx != snapshot.transmitChannel || rx != snapshot.feedbackChannel || observed != snapshot.observedLEDVariant
+        }
+
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
-                Text(l.text("仅支持出厂 Standard MIDI 模式。应用不会改写设备预设，也不会自动切换 MC 模式。"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Toggle(l.text("Listen only — send no MIDI"), isOn: Binding(
-                    get: { snapshot.listenOnly }, set: { intents.setListenOnly?($0) }
-                ))
-                Text(l.text("Hardware starts passively. Turning listening off sends nothing; realign explicitly before output tests."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Button(l.text("Realign current layer"), action: { intents.realignLayer?() })
-                    .disabled(!snapshot.isMock && snapshot.listenOnly)
-                    .help(l.text("Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset."))
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(l.text("端口")).font(.subheadline.bold())
-                    Picker(l.text("输入"), selection: $input) {
-                        Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
-                        ForEach(snapshot.connection.inputs) { Text(portLabel($0)).tag($0.id) }
+                statusCard
+                card(l.text("端口"), icon: "cable.connector.horizontal") {
+                    row(l.text("输入")) {
+                        Picker(l.text("输入"), selection: $input) {
+                            Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
+                            ForEach(snapshot.connection.inputs) { Text(portLabel($0)).tag($0.id) }
+                        }
+                        .labelsHidden()
                     }
-                    Picker(l.text("输出"), selection: $output) {
-                        Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
-                        ForEach(snapshot.connection.outputs) { Text(portLabel($0)).tag($0.id) }
+                    row(l.text("输出")) {
+                        Picker(l.text("输出"), selection: $output) {
+                            Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
+                            ForEach(snapshot.connection.outputs) { Text(portLabel($0)).tag($0.id) }
+                        }
+                        .labelsHidden()
                     }
-                    HStack {
-                        Button(l.text("连接所选端口")) { intents.selectPorts?(input, output) }
-                            .help(l.text("按上面的选择重新连接 MIDI 输入与输出"))
-                        Text(connectionSummary).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
-                    }
+                    applyRow(l.text("连接所选端口"), changed: portsChanged,
+                             help: l.text("按上面的选择重新连接 MIDI 输入与输出")) { intents.selectPorts?(input, output) }
                     if let host = snapshot.connection.remoteBridgeHost {
                         Label(l.text("Remote hardware via %@ (development). Evidence from this route is not a USB sign-off.", host),
                               systemImage: "network")
                             .font(.caption).foregroundStyle(.orange)
                     }
                 }
-                .padding(10)
-                .background(Color.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 9))
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(l.text("设备配置")).font(.subheadline.bold())
-                    Stepper(l.text("发送通道（设备 → 软件）：%@", String(tx)), value: $tx, in: 1 ... 16)
-                    Stepper(l.text("Global 接收通道（软件 → 设备）：%@", String(rx)), value: $rx,
-                            in: 1 ... 16)
-                    Toggle(l.text("按键 LED 使用固件 1.14 实测值（0 / 2 / 3）"), isOn: $observed)
-                        .help(l.text("关闭时按官方手册发送 0 / 1 / 2"))
+                card(l.text("设备配置"), icon: "slider.horizontal.below.rectangle") {
+                    Text(l.text("These must match the controller. The app never reads or rewrites the device's own settings."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    row(l.text("Device sends on")) {
+                        channelPicker($tx)
+                        Text(l.text("device → app")).font(.caption).foregroundStyle(.secondary)
+                    }
+                    row(l.text("Device receives on")) {
+                        channelPicker($rx)
+                        Text(l.text("app → device (Global RX); may differ from the send channel")).font(.caption).foregroundStyle(.secondary)
+                    }
+                    row(l.text("Button LEDs")) {
+                        Picker(l.text("Button LEDs"), selection: $observed) {
+                            Text(l.text("Manual: 0 off · 1 on · 2 blink")).tag(false)
+                            Text(l.text("Firmware 1.14: 0 off · 2 on · 3 blink")).tag(true)
+                        }
+                        .labelsHidden().fixedSize()
+                    }
+                    applyRow(l.text("应用配置"), changed: profileChanged,
+                             help: l.text("Profile applied; parameter values preserved")) { intents.configureDevice?(tx, rx, observed) }
+                }
+                card(l.text("Output"), icon: "arrow.up.right.circle") {
+                    Toggle(l.text("Listen only — send no MIDI"), isOn: Binding(
+                        get: { snapshot.listenOnly }, set: { intents.setListenOnly?($0) }
+                    ))
+                    Text(l.text("Hardware starts passively. Turning listening off sends nothing; realign explicitly before output tests."))
+                        .font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        Button(l.text("应用配置")) { intents.configureDevice?(tx, rx, observed) }
-                            .help(l.text("Profile applied; parameter values preserved"))
-                        Text(l.text("Profile applied; parameter values preserved"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Button(l.text("Realign current layer"), action: { intents.realignLayer?() })
+                            .disabled(!snapshot.isMock && snapshot.listenOnly)
+                            .help(l.text("Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset."))
+                        Text(l.text("Sends the layer selection and LED/ring feedback; never moves a fader."))
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .padding(10)
-                .background(Color.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 9))
+                Text(l.text("仅支持出厂 Standard MIDI 模式。应用不会改写设备预设，也不会自动切换 MC 模式。"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .onAppear {
-                input = snapshot.inputChoice; output = snapshot.outputChoice
-                tx = snapshot.transmitChannel; rx = snapshot.feedbackChannel; observed = snapshot.observedLEDVariant
+            .onAppear(perform: loadApplied)
+            // An applied change (also from another window) refreshes the form.
+            .onChange(of: snapshot.transmitChannel) { _, _ in loadApplied() }
+            .onChange(of: snapshot.feedbackChannel) { _, _ in loadApplied() }
+            .onChange(of: snapshot.observedLEDVariant) { _, _ in loadApplied() }
+        }
+
+        private func loadApplied() {
+            input = snapshot.inputChoice; output = snapshot.outputChoice
+            tx = snapshot.transmitChannel; rx = snapshot.feedbackChannel; observed = snapshot.observedLEDVariant
+        }
+
+        // MARK: Status
+
+        private var statusCard: some View {
+            let connected = snapshot.connection.isConnected
+            let color: Color = snapshot.isMock ? Theme.value : connected ? .green : .orange
+            let title = snapshot.isMock ? l.text("Mock 设备") : connected ? l.text("Connected") : l.text("Not connected")
+            return VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Circle().fill(color).frame(width: 9, height: 9)
+                    Text(title).font(.headline)
+                    if !snapshot.isMock, connected {
+                        Text(l.text(snapshot.listenOnly ? "Listen only" : "Sending enabled"))
+                            .font(.caption.bold())
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .foregroundStyle(snapshot.listenOnly ? Theme.touch : Color.green)
+                            .background((snapshot.listenOnly ? Theme.touch : Color.green).opacity(0.15), in: Capsule())
+                    }
+                    Spacer()
+                }
+                Text(connectionSummary).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+                // What is in force right now, independent of unapplied edits below.
+                Text(l.text("Applied: sends ch %@ · receives ch %@ · LEDs %@", String(snapshot.transmitChannel),
+                            String(snapshot.feedbackChannel), snapshot.observedLEDVariant ? "0 / 2 / 3" : "0 / 1 / 2"))
+                    .font(.caption.monospaced()).foregroundStyle(.secondary)
+                if let error = snapshot.connection.error {
+                    Text(l.text(error)).font(.caption).foregroundStyle(.orange)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
+            .overlay { RoundedRectangle(cornerRadius: 9).stroke(color.opacity(0.35)) }
+        }
+
+        // MARK: Pieces
+
+        private func card(_ title: String, icon: String, @ViewBuilder content: () -> some View) -> some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(title, systemImage: icon).font(.subheadline.bold())
+                content()
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 9))
+        }
+
+        private func row(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+            HStack(spacing: 8) {
+                Text(title).frame(width: 130, alignment: .leading)
+                content()
+                Spacer(minLength: 0)
+            }
+        }
+
+        private func channelPicker(_ value: Binding<Int>) -> some View {
+            Picker("", selection: value) {
+                ForEach(1 ... 16, id: \.self) { Text(String($0)).tag($0) }
+            }
+            .labelsHidden().frame(width: 64)
+        }
+
+        /// The apply button is prominent only while the form differs from what is in force.
+        private func applyRow(_ title: String, changed: Bool, help: String, action: @escaping () -> Void) -> some View {
+            HStack(spacing: 8) {
+                if changed {
+                    Button(title, action: action).buttonStyle(.borderedProminent).help(help)
+                    Label(l.text("Unapplied changes"), systemImage: "exclamationmark.circle.fill")
+                        .font(.caption).foregroundStyle(Theme.touch)
+                } else {
+                    Button(title, action: action).disabled(true).help(help)
+                    Label(l.text("Applied"), systemImage: "checkmark.circle")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
 
