@@ -491,3 +491,5 @@
 "脚踏开关" = "腳踏開關";
 "Allow Agent motor moves" = "允許 Agent 驅動推桿馬達";
 "Off by default and never restored on launch. Without it, Agent writes update values, rings and LEDs but leave faders in place." = "預設關閉，啟動時不恢復。關閉時 Agent 寫入只更新數值、燈環和 LED，推桿保持不動。";
+"Remote hardware via %@ (development). Evidence from this route is not a USB sign-off." = "經 %@ 遠端連接硬體（開發用）。這條路徑產生的證據不能作為 USB 直連的驗收結論。";
+"Remote" = "遠端";

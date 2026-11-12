@@ -153,6 +153,7 @@ The step-by-step checklist is in [Hardware bring-up](docs/HARDWARE_BRINGUP.md).
 
 | Document | Contents |
 | --- | --- |
+| [Remote hardware](docs/REMOTE_HARDWARE.md) | Develop against a controller plugged into another Mac over SSH (development only) |
 | [Software workflows](docs/SOFTWARE_WORKFLOWS.md) | Parameters, persistence, agents, MCP, OSC, capture and safety policies |
 | [MIDI protocol](docs/MIDI_PROTOCOL.md) | Factory Standard MIDI map, manufacturer documentation versus observed behavior |
 | [Hardware bring-up](docs/HARDWARE_BRINGUP.md) | Checklist for testing on a physical controller |

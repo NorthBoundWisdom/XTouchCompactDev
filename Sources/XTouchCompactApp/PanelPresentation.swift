@@ -1,4 +1,5 @@
 #if os(macOS)
+    import CompactRemoteMIDI
     import Foundation
     import XTouchCompactCore
     import XTouchCompactLocalization
@@ -14,6 +15,12 @@
     struct CompactMIDIEndpoint: Equatable, Sendable, Identifiable {
         var id: Int32
         var name: String
+
+        /// Bridge host when this is a development remote-hardware endpoint
+        /// (`XTouchRemoteMIDI client`), nil for a locally attached port.
+        var remoteBridgeHost: String? {
+            RemoteMIDIDefaults.bridgeHost(fromEndpointName: name)
+        }
     }
 
     struct CompactMIDIConnection: Equatable, Sendable {
@@ -26,6 +33,11 @@
 
         var isConnected: Bool {
             connectedInput != nil && connectedOutput != nil
+        }
+
+        /// Bridge host if either connected endpoint is remote. Remote evidence is not USB sign-off.
+        var remoteBridgeHost: String? {
+            connectedInput?.remoteBridgeHost ?? connectedOutput?.remoteBridgeHost
         }
     }
 

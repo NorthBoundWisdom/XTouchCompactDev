@@ -34,7 +34,22 @@
                 "ledProtocol": ledProtocol as Any? ?? NSNull(),
                 "hardwareMode": hardwareMode as Any? ?? NSNull(), "listenOnly": listenOnly as Any? ?? NSNull(),
                 "connectionGeneration": connectionGeneration as Any? ?? NSNull(),
+                // Development remote hardware (XTouchRemoteMIDI) is recorded explicitly.
+                "route": route as Any? ?? NSNull(),
+                "remoteBridgeHost": remoteBridgeHost as Any? ?? NSNull(),
             ]
+        }
+
+        /// "remote" for development remote hardware, "local" otherwise, nil while disconnected.
+        var route: String? {
+            if remoteBridgeHost != nil {
+                return "remote"
+            }
+            return connectedInput == nil && connectedOutput == nil ? nil : "local"
+        }
+
+        var remoteBridgeHost: String? {
+            connectedInput?.remoteBridgeHost ?? connectedOutput?.remoteBridgeHost
         }
 
         static func endpointJSON(_ value: CompactMIDIEndpoint?) -> Any {

@@ -243,16 +243,21 @@
                     Text(l.text("端口")).font(.subheadline.bold())
                     Picker(l.text("输入"), selection: $input) {
                         Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
-                        ForEach(snapshot.connection.inputs) { Text($0.name).tag($0.id) }
+                        ForEach(snapshot.connection.inputs) { Text(portLabel($0)).tag($0.id) }
                     }
                     Picker(l.text("输出"), selection: $output) {
                         Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
-                        ForEach(snapshot.connection.outputs) { Text($0.name).tag($0.id) }
+                        ForEach(snapshot.connection.outputs) { Text(portLabel($0)).tag($0.id) }
                     }
                     HStack {
                         Button(l.text("连接所选端口")) { intents.selectPorts?(input, output) }
                             .help(l.text("按上面的选择重新连接 MIDI 输入与输出"))
                         Text(connectionSummary).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    if let host = snapshot.connection.remoteBridgeHost {
+                        Label(l.text("Remote hardware via %@ (development). Evidence from this route is not a USB sign-off.", host),
+                              systemImage: "network")
+                            .font(.caption).foregroundStyle(.orange)
                     }
                 }
                 .padding(10)
@@ -280,6 +285,10 @@
                 input = snapshot.inputChoice; output = snapshot.outputChoice
                 tx = snapshot.transmitChannel; rx = snapshot.feedbackChannel; observed = snapshot.observedLEDVariant
             }
+        }
+
+        private func portLabel(_ endpoint: CompactMIDIEndpoint) -> String {
+            endpoint.remoteBridgeHost == nil ? endpoint.name : endpoint.name + " · " + l.text("Remote")
         }
 
         private var connectionSummary: String {

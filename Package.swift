@@ -29,17 +29,22 @@ let package = Package(
     products: [
         .library(name: "XTouchCompactCore", targets: ["XTouchCompactCore"]),
         .executable(name: "XTouchCompactApp", targets: ["XTouchCompactApp"]),
-        .executable(name: "XTouchSurfaceSimulator", targets: ["XTouchSurfaceSimulator"])
+        .executable(name: "XTouchSurfaceSimulator", targets: ["XTouchSurfaceSimulator"]),
+        .executable(name: "XTouchRemoteMIDI", targets: ["XTouchRemoteMIDI"])
     ],
     dependencies: [surfacePlugins],
     targets: [
         .target(name: "XTouchCompactCore", dependencies: [.product(name: "SurfaceControlContracts", package: "SurfacePlugins"), .product(name: "SurfacePluginContracts", package: "SurfacePlugins"), .product(name: "AgentPlugin", package: "SurfacePlugins"), .product(name: "RemoteToolContracts", package: "SurfacePlugins"), .product(name: "AgentRemoteBinding", package: "SurfacePlugins"), .product(name: "RobotPlugin", package: "SurfacePlugins"), .product(name: "RobotRemoteBinding", package: "SurfacePlugins"), .product(name: "ChassisPlugin", package: "SurfacePlugins"), .product(name: "ChassisRemoteBinding", package: "SurfacePlugins"), .product(name: "ParameterOutputPlugin", package: "SurfacePlugins"), .product(name: "OutputRemoteBinding", package: "SurfacePlugins"), .product(name: "ExampleParameterSets", package: "SurfacePlugins")]),
         .target(name: "CompactSimulatorTransport"),
+        .target(name: "CompactRemoteMIDI"),
+        .executableTarget(name: "XTouchRemoteMIDI", dependencies: ["CompactRemoteMIDI"],
+                          linkerSettings: [.linkedFramework("CoreMIDI", .when(platforms: [.macOS]))]),
         .executableTarget(name: "XTouchSurfaceSimulator", dependencies: ["XTouchCompactCore", "CompactSimulatorTransport"]),
         .target(name: "XTouchCompactLocalization", resources: [.process("Resources")]),
-        .executableTarget(name: "XTouchCompactApp", dependencies: ["XTouchCompactCore", "XTouchCompactLocalization"],
+        .executableTarget(name: "XTouchCompactApp", dependencies: ["XTouchCompactCore", "XTouchCompactLocalization", "CompactRemoteMIDI"],
                           linkerSettings: [.linkedFramework("CoreMIDI", .when(platforms: [.macOS]))]),
         .testTarget(name: "XTouchCompactCoreTests", dependencies: ["XTouchCompactCore"]),
+        .testTarget(name: "CompactRemoteMIDITests", dependencies: ["CompactRemoteMIDI"]),
         .testTarget(name: "XTouchCompactLocalizationTests", dependencies: ["XTouchCompactLocalization"]),
         .testTarget(name: "XTouchCompactAppTests", dependencies: ["XTouchCompactApp", "XTouchCompactLocalization"])
     ],

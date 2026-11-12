@@ -491,3 +491,5 @@
 "脚踏开关" = "Footswitch";
 "Allow Agent motor moves" = "Allow Agent motor moves";
 "Off by default and never restored on launch. Without it, Agent writes update values, rings and LEDs but leave faders in place." = "Off by default and never restored on launch. Without it, Agent writes update values, rings and LEDs but leave faders in place.";
+"Remote hardware via %@ (development). Evidence from this route is not a USB sign-off." = "Remote hardware via %@ (development). Evidence from this route is not a USB sign-off.";
+"Remote" = "Remote";

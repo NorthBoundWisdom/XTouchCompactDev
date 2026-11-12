@@ -120,3 +120,20 @@
         #expect(session["firmwareVersion"] is NSNull)
     }
 #endif
+#if os(macOS)
+    @Test func captureMetadataRecordsRemoteHardwareRouteSeparatelyFromUSB() {
+        let remote = CompactMIDIEndpoint(id: 7, name: "X-TOUCH COMPACT (via henrys-mac-mini)")
+        let local = CompactMIDIEndpoint(id: 8, name: "X-TOUCH COMPACT")
+        var metadata = CaptureSessionMetadata(connectedInput: remote, connectedOutput: remote)
+        #expect(metadata.json["route"] as? String == "remote")
+        #expect(metadata.json["remoteBridgeHost"] as? String == "henrys-mac-mini")
+        metadata.connectedInput = local; metadata.connectedOutput = local
+        #expect(metadata.json["route"] as? String == "local")
+        #expect(metadata.json["remoteBridgeHost"] is NSNull)
+        metadata.connectedInput = nil; metadata.connectedOutput = nil
+        #expect(metadata.json["route"] is NSNull)
+        let connection = CompactMIDIConnection(connectedInput: local, connectedOutput: remote)
+        #expect(connection.remoteBridgeHost == "henrys-mac-mini")
+        #expect(local.remoteBridgeHost == nil)
+    }
+#endif
