@@ -84,6 +84,14 @@ configuration; it still says nothing about request-triggered readback.
 A remote capture adds network delay to `t` ordering only on the SSH stream, not to the
 timestamps, which are taken on the Mac with the controller.
 
+### Results so far
+
+| Date | Case | Route | Result |
+| --- | --- | --- | --- |
+| 2026-11-12 | C client attach | remote, `henrys-mac-mini` | `source-connected` at 0.585 s, then no message for 12 s. Fader positions were not noted and control case D was not run, so this shows only that this attach produced no unsolicited report; it does not yet prove the route delivers input. |
+
+Cases A, B and D need someone at the unit.
+
 ## Current fallback and safety policy
 
 The app currently implements timestamped last-input history, displayed as stale

@@ -44,6 +44,11 @@ python3 tools/remote_hardware.py connect --ssh henrys-mac-mini   # keep running;
 python3 tools/remote_hardware.py status  --ssh henrys-mac-mini   # read-only check, any time
 ```
 
+`connect --listen-only` publishes the same ports but drops everything the local app sends,
+in the client and again in the bridge. Use it while the app's own listen-only state is
+uncertain: for example an app started with `--hardware-control` selects the remote port
+automatically and immediately sends its layer assertion and LED sync.
+
 `listen` (with or without `--ssh`) is a passive raw capture to stdout as JSON lines; it
 cannot send MIDI. See [the startup readback procedure](STARTUP_READBACK_INVESTIGATION.md).
 
@@ -70,6 +75,22 @@ Motor tests over this route can race a hand already on a fader, so run them with
 touching the unit.
 
 ## Verified so far
+
+On 2026-11-12 a physical X-TOUCH COMPACT was attached to the Mac mini (USB VID/PID
+`0x1397 / 0x00B2`, `bcdDevice 0x0200`, the same identity as the 2026-11-11 session; the
+descriptor's serial string reads `1.0.1` and is **not** a verified firmware version).
+
+- `status` and `devices` over SSH see the controller's source and destination, so a bridge
+  started from SSH can reach the real USB device.
+- A 12 s passive `listen` capture that attached to the already-powered, connected, idle
+  controller received no message (`captures/private/readback-attach-2026-11-12.jsonl`,
+  not committed). This is case C of the startup-readback procedure only, without the control
+  case D, so it does not yet show that the route delivers input.
+- A 12 s `connect --listen-only` link came online with the real controller. A locally
+  running app in hardware-control mode attached to the port at once and its first
+  packet was suppressed: nothing was written to the device.
+- **Not yet verified on the physical unit:** input arriving through the link (nobody
+  operated a control during these checks), and any host-to-device output.
 
 On 2026-11-12, with no controller plugged into the Mac mini, a temporary virtual
 "X-TOUCH COMPACT" device stood in for it. The client published both ports locally, fader

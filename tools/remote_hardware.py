@@ -3,7 +3,7 @@
 
     python3 tools/remote_hardware.py deploy  --ssh henrys-mac-mini
     python3 tools/remote_hardware.py devices --ssh henrys-mac-mini
-    python3 tools/remote_hardware.py connect --ssh henrys-mac-mini
+    python3 tools/remote_hardware.py connect --ssh henrys-mac-mini [--listen-only]
     python3 tools/remote_hardware.py status  --ssh henrys-mac-mini
     python3 tools/remote_hardware.py listen [--ssh henrys-mac-mini] > capture.jsonl
 
@@ -138,8 +138,10 @@ def listen(host: str | None) -> None:
         pass
 
 
-def connect(host: str, label: str | None) -> None:
+def connect(host: str, label: str | None, listen_only: bool = False) -> None:
     arguments = [str(build()), "client", "--ssh", host]
+    if listen_only:
+        arguments.append("--listen-only")
     if label:
         arguments += ["--label", label]
     try:
@@ -155,6 +157,9 @@ def main() -> None:
         "--ssh", type=validated_host, help="SSH host alias of the Mac with the controller (optional for listen)"
     )
     parser.add_argument("--label", type=validated_host, help="Name shown in the port name; defaults to the host")
+    parser.add_argument(
+        "--listen-only", action="store_true", help="connect: drop everything the local app sends to the controller"
+    )
     args = parser.parse_args()
     if args.action == "listen":
         listen(args.ssh)
@@ -168,7 +173,7 @@ def main() -> None:
     elif args.action == "status":
         sys.exit(status(args.ssh))
     else:
-        connect(args.ssh, args.label)
+        connect(args.ssh, args.label, args.listen_only)
 
 
 if __name__ == "__main__":

@@ -103,9 +103,11 @@ private struct ArgumentReader {
 public struct RemoteBridgeOptions: Equatable, Sendable {
     public var deviceName = RemoteMIDIDefaults.deviceName
     public var statusPath: String?
+    /// Never write to the controller: host-to-device frames are counted and dropped.
+    public var listenOnly = false
 
-    public init(deviceName: String = RemoteMIDIDefaults.deviceName, statusPath: String? = nil) {
-        self.deviceName = deviceName; self.statusPath = statusPath
+    public init(deviceName: String = RemoteMIDIDefaults.deviceName, statusPath: String? = nil, listenOnly: Bool = false) {
+        self.deviceName = deviceName; self.statusPath = statusPath; self.listenOnly = listenOnly
     }
 
     public static func parse(_ arguments: [String]) throws -> Self {
@@ -115,6 +117,7 @@ public struct RemoteBridgeOptions: Equatable, Sendable {
             switch argument {
             case "--device": options.deviceName = try validatedDeviceName(reader.value(for: argument), flag: argument)
             case "--status": options.statusPath = try reader.value(for: argument)
+            case "--listen-only": options.listenOnly = true
             default: throw RemoteMIDIError.unknownArgument(argument)
             }
         }
@@ -134,6 +137,8 @@ public struct RemoteClientOptions: Equatable, Sendable {
     public var remoteBinary = RemoteMIDIDefaults.remoteBinary
     public var label: String
     public var deviceName = RemoteMIDIDefaults.deviceName
+    /// Drop everything the local app sends, on both ends of the link.
+    public var listenOnly = false
 
     public var endpointName: String {
         RemoteMIDIDefaults.endpointName(device: deviceName, host: label)
@@ -144,7 +149,7 @@ public struct RemoteClientOptions: Equatable, Sendable {
     public var sshArguments: [String] {
         ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=5",
          "-o", "ServerAliveCountMax=2", "-T", "--", sshHost,
-         remoteBinary, "bridge", "--device", "'\(deviceName)'"]
+         remoteBinary, "bridge", "--device", "'\(deviceName)'"] + (listenOnly ? ["--listen-only"] : [])
     }
 
     public static func parse(_ arguments: [String]) throws -> Self {
@@ -153,8 +158,10 @@ public struct RemoteClientOptions: Equatable, Sendable {
         var binary = RemoteMIDIDefaults.remoteBinary
         var label: String?
         var device = RemoteMIDIDefaults.deviceName
+        var listenOnly = false
         while let argument = reader.next() {
             switch argument {
+            case "--listen-only": listenOnly = true
             case "--ssh": host = try validatedRemoteHost(reader.value(for: argument))
             case "--remote-binary": binary = try validatedRemotePath(reader.value(for: argument))
             case "--label": label = try validatedRemoteHost(reader.value(for: argument))
@@ -165,7 +172,7 @@ public struct RemoteClientOptions: Equatable, Sendable {
         }
         guard let host else { throw RemoteMIDIError.missingArgument("--ssh") }
         let bareHost = host.split(separator: "@").last.map(String.init) ?? host
-        return Self(sshHost: host, remoteBinary: binary, label: label ?? bareHost, deviceName: device)
+        return Self(sshHost: host, remoteBinary: binary, label: label ?? bareHost, deviceName: device, listenOnly: listenOnly)
     }
 }
 

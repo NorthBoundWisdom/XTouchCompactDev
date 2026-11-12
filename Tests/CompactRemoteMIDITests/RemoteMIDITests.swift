@@ -97,3 +97,14 @@ import Testing
     #expect(String(decoding: data, as: UTF8.self).contains("\"updatedAt\" : \"2027-01-15T08:00:00Z\""))
     #expect(try RemoteBridgeStatus.decoder.decode(RemoteBridgeStatus.self, from: data) == status)
 }
+
+@Test func listenOnlyIsPassedToTheBridgeAndOffByDefault() throws {
+    let normal = try RemoteClientOptions.parse(["--ssh", "mini"])
+    #expect(!normal.listenOnly && !normal.sshArguments.contains("--listen-only"))
+    let passive = try RemoteClientOptions.parse(["--listen-only", "--ssh", "mini"])
+    #expect(passive.listenOnly)
+    #expect(passive.sshArguments.last == "--listen-only")
+    #expect(passive.endpointName == normal.endpointName) // Same port identity; only the direction changes.
+    #expect(try RemoteBridgeOptions.parse(["--listen-only"]).listenOnly)
+    #expect(try !RemoteBridgeOptions.parse([]).listenOnly)
+}

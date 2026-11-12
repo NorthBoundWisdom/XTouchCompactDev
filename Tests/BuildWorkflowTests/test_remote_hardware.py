@@ -54,6 +54,15 @@ class RemoteHardwareTests(unittest.TestCase):
             self.assertIn("BatchMode=yes", command)
             self.assertEqual(command[command.index("--") + 1 :], ["mini", ".xtouch-remote/XTouchRemoteMIDI", "listen"])
 
+    def test_connect_passes_listen_only_through(self):
+        with patch.object(remote_hardware, "build", return_value="/bin/X"), patch("subprocess.run") as run:
+            remote_hardware.connect("mini", None)
+            self.assertEqual(run.call_args.args[0], ["/bin/X", "client", "--ssh", "mini"])
+            remote_hardware.connect("mini", "lab", listen_only=True)
+            self.assertEqual(
+                run.call_args.args[0], ["/bin/X", "client", "--ssh", "mini", "--listen-only", "--label", "lab"]
+            )
+
     def test_only_listen_may_omit_the_host(self):
         with patch("sys.argv", ["remote_hardware.py", "status"]), self.assertRaises(SystemExit):
             remote_hardware.main()

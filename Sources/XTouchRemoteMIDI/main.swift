@@ -204,7 +204,8 @@ import Foundation
             case let .midi(words):
                 guard ready else { finish("MIDI before hello") }
                 lock.lock(); let target = destination; let port = outputPort; lock.unlock()
-                let sent = target != 0 && withEventList(words) { MIDISendEventList(port, target, $0) }
+                // Listen-only: the controller is never written, whatever the client sends.
+                let sent = !options.listenOnly && target != 0 && withEventList(words) { MIDISendEventList(port, target, $0) }
                 lock.lock()
                 if sent {
                     toDevice &+= 1
@@ -296,6 +297,7 @@ import Foundation
         private var helloReceived = false
         private var lastHeard = Date()
         private var online = false
+        private var suppressed: UInt64 = 0
 
         init(options: RemoteClientOptions) {
             self.options = options
@@ -347,6 +349,13 @@ import Foundation
         }
 
         private func toBridge(_ list: UnsafePointer<MIDIEventList>) {
+            if options.listenOnly {
+                lock.lock(); suppressed &+= UInt64(packets(list).count); let total = suppressed; lock.unlock()
+                if total == 1 || total % 100 == 0 {
+                    log("listen-only: suppressed \(total) packet(s) from the local app")
+                }
+                return
+            }
             lock.lock(); let current = writer; let ready = helloReceived; lock.unlock()
             guard let current, ready else { return } // Offline: nothing reaches the device.
             for words in packets(list) {
@@ -362,7 +371,7 @@ import Foundation
                     log("bridge protocol version \(version) unsupported; redeploy the bridge"); process.terminate(); return
                 }
                 lock.lock(); helloReceived = true; lock.unlock()
-                log("connected to bridge on \(options.sshHost)")
+                log("connected to bridge on \(options.sshHost)" + (options.listenOnly ? " (listen-only: nothing is sent to the controller)" : ""))
             case let .device(present, output):
                 guard ready else { process.terminate(); return }
                 setOnline(present && output)
@@ -566,8 +575,8 @@ import Foundation
         case "listen":
             try Listener(options: RemoteBridgeOptions.parse(Array(arguments.dropFirst()))).run()
         default:
-            log("usage: XTouchRemoteMIDI client --ssh HOST [--remote-binary PATH] [--label NAME] [--device NAME]\n"
-                + "       XTouchRemoteMIDI bridge [--device NAME] [--status PATH]\n"
+            log("usage: XTouchRemoteMIDI client --ssh HOST [--listen-only] [--remote-binary PATH] [--label NAME] [--device NAME]\n"
+                + "       XTouchRemoteMIDI bridge [--listen-only] [--device NAME] [--status PATH]\n"
                 + "       XTouchRemoteMIDI devices\n"
                 + "       XTouchRemoteMIDI listen [--device NAME]")
             exit(64)
