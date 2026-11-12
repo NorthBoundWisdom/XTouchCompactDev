@@ -48,6 +48,32 @@
         }
     }
 
+    @Test @MainActor func motorBatchRechecksTouchesAndLayerEvidenceBetweenTransportCalls() {
+        for touched in [true, false] {
+            let midi = FakeMIDIService()
+            let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+            model.faderChanged(1, value: 30); model.faderChanged(2, value: 60)
+            midi.connect(); model.setConsoleMode(.hardwareSend)
+            midi.afterPinnedSend = { [weak midi] in
+                guard let midi, midi.sent.count == 1 else { return }
+                midi.onMessages?([.controlChange(channel: 0, number: touched ? 102 : 37, value: 127)])
+            }
+            model.recallMotors()
+            #expect(!midi.sent.contains(.controlChange(channel: 0, number: 2, value: 60)))
+            #expect(model.events.contains { $0.delivery == .suppressed && $0.control == .fader(2) })
+            midi.afterPinnedSend = nil
+            if touched {
+                #expect(model.session.state.isMotorPending(2))
+                midi.onMessages?([.controlChange(channel: 0, number: 102, value: 0)])
+                #expect(midi.sent.filter { $0 == .controlChange(channel: 0, number: 2, value: 60) }.count == 1)
+            } else {
+                #expect(midi.sent == [.controlChange(channel: 0, number: 1, value: 30)])
+                #expect(!model.session.state.isMotorPending(2))
+                #expect(model.session.state.layerMismatch)
+            }
+        }
+    }
+
     @Test @MainActor func ordinaryOutputPinsBothEndpointsAndGenerationBeforeTheConnectionCallback() {
         for changed in 0 ... 2 {
             let midi = FakeMIDIService()

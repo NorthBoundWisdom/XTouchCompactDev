@@ -546,3 +546,9 @@ just like diagnostic output (U10; 未在实机复核). A changed route detected 
 UI callback refuses the send; a missing input or output cannot authorize a write.
 A failure stops the batch, discards deferred motor targets and leaves sync pending.
 This is a software transport check, not touch/readback evidence from the device.
+
+Generated motor feedback is rechecked after the entire input batch and immediately
+before each transport call (U12; 未在实机复核). A later touch defers the still-current
+target until release; a known mismatch withholds it without queueing. A later
+physical report or motor-less write revokes older command authority entirely. A
+batch created before those events cannot resurrect that older target.

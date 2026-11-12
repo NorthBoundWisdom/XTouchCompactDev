@@ -207,3 +207,51 @@ private func linked(_ members: [String] = ["a.Fader.2", "a.Fader.3"]) -> Surface
     #expect(session.parameters.values["a.Encoder.1"] == 0)
     #expect(!session.canUndo)
 }
+
+@Test func linkedInputBatchCannotEmitMotorsAfterLaterTouchOrLayerMismatch() throws {
+    for finalInput in [MIDIMessage.controlChange(channel: 0, number: 102, value: 127),
+                       .controlChange(channel: 0, number: 37, value: 42)]
+    {
+        var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+        _ = try session.loadConfiguration(linked(["a.Fader.2"]))
+        _ = try session.connect()
+        let update = try session.receive([.controlChange(channel: 0, number: 101, value: 127),
+                                          .controlChange(channel: 0, number: 1, value: 60), finalInput])
+        #expect(motors(update.feedback).isEmpty)
+        if session.state.isTouched(2) {
+            #expect(session.state.isMotorPending(2))
+            let release = try session.receive([.controlChange(channel: 0, number: 102, value: 0)])
+            #expect(motors(release.feedback) == [.controlChange(channel: 0, number: 2, value: 60)])
+        } else {
+            #expect(session.state.layerMismatch)
+            #expect(!session.state.isMotorPending(2))
+        }
+    }
+}
+
+@Test func laterPhysicalFollowerInputRevokesEarlierGeneratedMotorAuthority() throws {
+    for held in [false, true] {
+        var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+        _ = try session.loadConfiguration(linked(["a.Fader.2"]))
+        _ = try session.connect()
+        var messages: [MIDIMessage] = [.controlChange(channel: 0, number: 101, value: 127),
+                                       .controlChange(channel: 0, number: 1, value: 60)]
+        if held {
+            messages.append(.controlChange(channel: 0, number: 102, value: 127))
+        }
+        messages.append(.controlChange(channel: 0, number: 2, value: 90))
+        let update = try session.receive(messages)
+        #expect(motors(update.feedback).isEmpty)
+        #expect(!session.state.isMotorPending(2))
+        #expect(session.bank(.a).faders[1] == 90)
+        #expect(try motors(session.receive([.controlChange(channel: 0, number: 102, value: 0)]).feedback).isEmpty)
+    }
+}
+
+@Test func motorlessWriteRevokesAnAlreadyGeneratedFeedbackBatch() throws {
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    let old = try session.setFader(1, value: 40)
+    _ = try session.setParameter("a.Fader.1", value: 90, drivesMotors: false)
+    #expect(session.filterFeedbackForDelivery(old).isEmpty)
+    #expect(!session.state.isMotorPending(1))
+}

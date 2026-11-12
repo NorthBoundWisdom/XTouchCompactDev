@@ -195,6 +195,32 @@ public struct CompactState: Sendable {
         return try [map.motorPosition(fader: index, value: value)]
     }
 
+    /// Recheck generated feedback against the latest state before delivery. Later inputs
+    /// in a batch can revoke an earlier motor command or replace its authority entirely.
+    public mutating func filterFeedbackForDelivery(_ messages: [MIDIMessage]) -> [MIDIMessage] {
+        var permitted: [MIDIMessage] = []
+        for message in messages {
+            if case let .controlChange(_, number, value) = message, (1 ... 9).contains(number) {
+                let index = Int(number)
+                // A newer physical report or motor-less write may have discarded this intent.
+                guard desiredFader[index] == value else { continue }
+                if layerMismatch || isTouched(index) {
+                    if lastMotorCommands[index] == value {
+                        lastMotorCommands.removeValue(forKey: index)
+                    }
+                    if layerMismatch {
+                        pendingMotor.remove(index)
+                    } else {
+                        pendingMotor.insert(index)
+                    }
+                    continue
+                }
+            }
+            permitted.append(message)
+        }
+        return permitted
+    }
+
     /// Safety ownership is independent of the currently selected transport (e.g. hardware while mocking).
     public mutating func setSafetyTouch(_ index: Int, touched: Bool) {
         guard (1 ... 9).contains(index) else { return }

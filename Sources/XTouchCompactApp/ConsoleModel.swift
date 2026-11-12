@@ -848,7 +848,13 @@
             // Reject the whole batch; no queued layer operation survives this refusal.
             do { try validateHardwareLayerAssertion(messages) }
             catch { self.error = error; return .suppressed }
+            var withheldMotor = false
             for message in messages {
+                guard !session.filterFeedbackForDelivery([message]).isEmpty else {
+                    withheldMotor = true
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed)
+                    continue
+                }
                 guard hardwareMode else {
                     mock.receive(message)
                     mockMIDIInAt = now()
@@ -892,7 +898,7 @@
                     error = nil
                 }
             }
-            return .sent
+            return withheldMotor ? .suppressed : .sent
         }
 
         func applyAgentParameter(_ id: String, value: Double) throws {

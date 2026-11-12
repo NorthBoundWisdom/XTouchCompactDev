@@ -433,7 +433,12 @@ public struct CompactSession: Sendable {
                 result.feedback += try synchronizeParameters(ids: Set(parameters.values.keys.filter { previous[$0] != parameters.values[$0] }))
             }
         }
+        result.feedback = state.filterFeedbackForDelivery(result.feedback)
         return result
+    }
+
+    public mutating func filterFeedbackForDelivery(_ messages: [MIDIMessage]) -> [MIDIMessage] {
+        state.filterFeedbackForDelivery(messages)
     }
 
     /// On any transport send failure, forget last-sent UI and motor command history. The
