@@ -17,7 +17,7 @@ public struct CompactSurfaceSimulator: Sendable {
     private var releasedMotorOverlays: Set<String> = []
 
     public static let profileID = "xtouch.compact.standard.simulation"
-    public static let profileVersion = "1.1"
+    public static let profileVersion = "1.2"
     /// Physical A/B layer keys. They are layer-independent public buttons.
     public static let layerKeyIDs: [CompactLayer: String] = [.a: "global.layer.a", .b: "global.layer.b"]
     static let layeredKinds: [(kind: String, count: Int)] = [("fader", 9), ("touch", 9), ("encoder", 16), ("push", 16), ("button", 39),
@@ -27,9 +27,9 @@ public struct CompactSurfaceSimulator: Sendable {
     /// lease that returns to released. Buttons bound to parameters toggle on press, so a lease
     /// on them would not restore anything and is deliberately not declared.
     public static let touchHold = ControlHold(restValue: .bool(false), maxHoldSeconds: 10)
-    /// Contract 1.1 registered capabilities plus the XTouch-private touch protection rule.
+    /// Contract 1.2 registered capabilities plus the XTouch-private touch protection rule.
     public static let capabilities = ["simulation", "controls.stable_ids", "controls.layered", "input.absolute", "input.button",
-                                      "input.hold", "feedback.value", "feedback.indicator", "x.xtouch.touch_protection"]
+                                      "input.hold", "feedback.value", "feedback.indicator", "feedback.unsequenced", "controls.input_declared", "x.xtouch.touch_protection"]
     public static var demonstrationConfiguration: SurfaceConfiguration {
         let roles = ["arm", "start", "pause", "cancel"]
         var parameters = roles.map { ParameterDefinition(id: "simulation.\($0)", name: $0) }
@@ -63,8 +63,9 @@ public struct CompactSurfaceSimulator: Sendable {
                 for index in 1 ... count {
                     let control = compactControl(kind: kind, index: index)!
                     let absolute = kind == "fader" || kind == "encoder" || kind == "expression"
+                    let assignment = configuration.assignments.first(where: { $0.layer == layer && $0.control == control })?.action
                     var mapping: ControlMapping?
-                    if case let .parameter(id) = configuration.assignments.first(where: { $0.layer == layer && $0.control == control })?.action {
+                    if case let .parameter(id) = assignment {
                         mapping = ControlMapping(kind: .parameter, id: id)
                     }
                     // Pedals have no RX feedback address: input only.
@@ -72,15 +73,25 @@ public struct CompactSurfaceSimulator: Sendable {
                     descriptors.append(.init(id: "\(layer.rawValue).\(kind).\(index)", inputKind: absolute ? .absolute : .button,
                                              encoding: absolute ? .scalar : .boolean,
                                              range: absolute ? .init(minimum: 0, maximum: 127, step: 1) : nil,
-                                             feedbackKinds: feedback, mapping: mapping, hold: kind == "touch" ? touchHold : nil))
+                                             feedbackKinds: feedback, mapping: mapping, hold: kind == "touch" ? touchHold : nil,
+                                             acceptsInput: acceptsInput(assignment, configuration: configuration)))
                 }
             }
         }
         for layer in CompactLayer.allCases {
-            descriptors.append(.init(id: layerKeyIDs[layer]!, inputKind: .button, encoding: .boolean))
+            descriptors.append(.init(id: layerKeyIDs[layer]!, inputKind: .button, encoding: .boolean, acceptsInput: true))
         }
         return .init(id: profileID, version: profileVersion, controls: descriptors,
                      capabilities: capabilities)
+    }
+
+    /// Input eligibility is static mapping content. The shared session rejects `false` before
+    /// this host considers the active layer; eligible inactive controls are still ignored.
+    private static func acceptsInput(_ assignment: ParameterAction?, configuration: SurfaceConfiguration) -> Bool {
+        guard let assignment else { return true }
+        guard case let .parameter(id) = assignment,
+              let definition = configuration.parameters.first(where: { $0.id == id }) else { return false }
+        return definition.agentWritable && definition.externallyProtected != true
     }
 
     @discardableResult public mutating func input(_ input: ControlInput, at time: Double) throws -> ControlEvent {

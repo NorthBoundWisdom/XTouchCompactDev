@@ -51,7 +51,8 @@ def main():
     discovery = call(url, token, "surface_control_discover", {})
     assert discovery["source"] == "simulation"
     assert (discovery["profile"]["id"], discovery["profile"]["version"]) in {
-        ("xtouch.compact.standard.simulation", "1.1"), ("bcr2000.mock", "1.0")}
+        ("xtouch.compact.standard.simulation", "1.1"), ("xtouch.compact.standard.simulation", "1.2"),
+        ("bcr2000.mock", "1.0")}
 
     assert discovery["expected"] == ready["surface_control"]["expected"]
     snapshot = call(url, token, "surface_control_snapshot", {"instance_id": discovery["expected"]["instance_id"]})

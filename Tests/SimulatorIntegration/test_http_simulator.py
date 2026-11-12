@@ -110,7 +110,7 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(discovery["expected"], self.a.ready["surface_control"]["expected"])
         self.assertEqual(discovery["source"], "simulation")
         self.assertEqual(len(discovery["profile"]["controls"]), 184)
-        self.assertEqual(discovery["profile"]["version"], "1.1")
+        self.assertEqual(discovery["profile"]["version"], "1.2")
         request = self.a.input()
         accepted = self.a.request("surface_control_input", request)
         self.assertFalse(accepted["isError"])
@@ -205,10 +205,10 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
                 cursor.poll()
             self.assertTrue(cursor.invalidated)
 
-    def test_shared_sdk_pins_contract_1_1_and_the_derived_mapping_revision(self):
+    def test_shared_sdk_pins_contract_1_2_and_the_derived_mapping_revision(self):
         client = Client(self.a.ready["url"], TOKEN, "car.a")
-        discovery = client.discover(profiles=("xtouch.compact.standard.simulation",), profile_versions=("1.1",))
-        self.assertEqual(discovery["contract_version"], "1.1")
+        discovery = client.discover(profiles=("xtouch.compact.standard.simulation",), profile_versions=("1.2",))
+        self.assertEqual(discovery["contract_version"], "1.2")
         self.assertEqual(discovery["expected"]["mapping_revision"], mapping_revision(discovery["profile"]))
         self.assertIn("input.hold", discovery["profile"]["capabilities"])
         self.assertIn("x.xtouch.touch_protection", discovery["profile"]["capabilities"])
@@ -218,6 +218,95 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         client.reset()
         self.assertEqual(client.expected["mapping_revision"], discovery["expected"]["mapping_revision"])
         self.assertNotEqual(client.expected["epoch"], discovery["expected"]["epoch"])
+
+    def test_concurrent_input_and_unsequenced_feedback_refresh_after_stale_sequence(self):
+        operator = Client(self.a.ready["url"], TOKEN, "car.a")
+        discovery = operator.discover()
+        expected = discovery["expected"]
+        self.assertIn("feedback.unsequenced", discovery["profile"]["capabilities"])
+        self.assertIn("controls.input_declared", discovery["profile"]["capabilities"])
+        self.assertTrue(all(row["accepts_input"] is True for row in discovery["profile"]["controls"]))
+        failures, feedback_events, input_events = [], [], []
+
+        def display(value):
+            # The real HTTP request deliberately omits expected_sequence.
+            result = self.a.request("surface_control_feedback", {"expected": expected,
+                "control_id": "a.encoder.10", "kind": "value", "value": value})
+            self.assertFalse(result["isError"], result)
+            feedback_events.append(result["structuredContent"])
+
+        # Force one collision: feedback occupies the operator's old sequence, input is not run.
+        display(0)
+        with self.assertRaises(SurfaceError) as conflict:
+            operator.input("a.encoder.9", "scalar", 1)
+        self.assertEqual(conflict.exception.code, "stale_sequence")
+        self.assertEqual(self.a.snapshot()["inputs"]["a.encoder.9"], 0)
+        operator.refresh_sequence()
+        input_events.append(operator.input("a.encoder.9", "scalar", 1))
+        barrier = threading.Barrier(2)
+        stale = [1]
+
+        def write_inputs():
+            try:
+                barrier.wait(timeout=5)
+                for value in range(2, 14):
+                    for attempt in range(30):
+                        try:
+                            input_events.append(operator.input("a.encoder.9", "scalar", value))
+                            break
+                        except SurfaceError as error:
+                            if error.code != "stale_sequence":
+                                raise
+                            stale[0] += 1
+                            operator.refresh_sequence()
+                    else:
+                        self.fail("input did not converge after explicit sequence refresh")
+            except BaseException as error:
+                failures.append(error)
+
+        def write_feedback():
+            try:
+                barrier.wait(timeout=5)
+                for value in range(1, 13):
+                    display(value)
+            except BaseException as error:
+                failures.append(error)
+
+        workers = [threading.Thread(target=write_inputs), threading.Thread(target=write_feedback)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=15)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual(failures, [])
+        self.assertGreaterEqual(stale[0], 1)
+        self.assertEqual(len(feedback_events), 13)
+        self.assertTrue(all(event["disposition"] == "accepted" for event in feedback_events))
+        self.assertEqual(len(input_events), 13)
+        self.assertTrue(all(event["disposition"] == "accepted" for event in input_events))
+        snapshot = self.a.snapshot()
+        self.assertEqual(snapshot["latest_sequence"], "26")
+        self.assertEqual(snapshot["inputs"]["a.encoder.9"], 13)
+        self.assertEqual(snapshot["feedback"]["a.encoder.10"]["value"], 12)
+        page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": expected["epoch"],
+            "after_sequence": "0", "limit": 100})["structuredContent"]
+        self.assertEqual(len(page["events"]), 26)
+
+    def test_event_pages_report_current_holds_after_acquire_renew_and_expiry(self):
+        client = Client(self.a.ready["url"], TOKEN, "car.a")
+        discovery = client.discover()
+        def events():
+            return self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"],
+                "after_sequence": "0", "limit": 100})["structuredContent"]
+        self.assertNotIn("holds", events())
+        held = client.input("a.touch.1", "boolean", True, hold_s=0.3)
+        self.assertEqual(events()["holds"], {"a.touch.1": held["hold_deadline"]})
+        renewed = client.renew("a.touch.1", 0.3)
+        self.assertEqual(events()["holds"], {"a.touch.1": renewed["hold_deadline"]})
+        time.sleep(0.4)
+        page = events()
+        self.assertNotIn("holds", page)
+        self.assertEqual(page["events"][-1]["reason"], "hold_expired")
 
     def test_describe_matches_live_discovery_and_the_sdk_mapping_revision(self):
         # The delivery manifest takes profile identity and mapping_revision from --describe.

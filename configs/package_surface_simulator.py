@@ -25,8 +25,8 @@ def default_output(root=ROOT):
 
 
 SHARED = ROOT / "build/dependencies/SurfacePlugins"
-SDK_VERSION = "1.1.0"
-CONTRACT_VERSION = "1.1"
+SDK_VERSION = "1.2.0"
+CONTRACT_VERSION = "1.2"
 SDK_ZIP = "surface-control-sdk-" + SDK_VERSION + ".zip"
 # Published shared files, copied byte for byte from the managed dependency (single source, D19-6).
 # integrations/ and clients/python/tests are deliberately not part of a generic delivery.
@@ -35,6 +35,7 @@ SHARED_FILES = {
     "surface-control-scenario.schema.json": "docs/surface-control-scenario.schema.json",
     "surface-control-software-v1.json": "fixtures/surface-control-software-v1.json",
     "surface-control-software-v1.1.json": "fixtures/surface-control-software-v1.1.json",
+    "surface-control-software-v1.2.json": "fixtures/surface-control-software-v1.2.json",
     "surface-control.md": "docs/surface-control.md",
     "surface-control-scenarios.md": "docs/surface-control-scenarios.md",
     "surface-control-delivery.md": "docs/surface-control-delivery.md",

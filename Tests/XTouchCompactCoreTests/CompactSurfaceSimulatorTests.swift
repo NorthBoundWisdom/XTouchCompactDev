@@ -19,17 +19,17 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     #expect(discovery.source == .simulation)
     // 2 layers x (89 controls + expression + footswitch) + the two physical layer keys.
     #expect(discovery.profile.controls.count == 184)
-    #expect(discovery.profile.version == "1.1" && discovery.expected.profile_version == "1.1")
+    #expect(discovery.profile.version == "1.2" && discovery.expected.profile_version == "1.2")
     #expect(!discovery.profile.controls.contains { $0.input_kind == .relative })
     #expect(discovery.profile.controls.first { $0.id == "a.encoder.1" }?.mapping?.id == "simulation.arm")
     #expect(discovery.profile.controls.first { $0.id == "a.encoder.5" }?.mapping?.id == "simulation.progress")
     #expect(discovery.profile.controls.first { $0.id == "b.touch.9" }?.feedback_kinds.isEmpty == true)
     #expect(simulator.session.parameters.values.values.allSatisfy { $0 == 0 })
     #expect(simulator.mock.faders.allSatisfy { $0 == 0 })
-    // Contract 1.1: registered vocabulary plus one XTouch-private rule; mapping revision derived.
+    // Contract 1.2: registered vocabulary plus one XTouch-private rule; mapping revision derived.
     #expect(discovery.profile.capabilities == ["simulation", "controls.stable_ids", "controls.layered", "input.absolute", "input.button",
-                                               "input.hold", "feedback.value", "feedback.indicator", "x.xtouch.touch_protection"])
-    #expect(discovery.contract_version == "1.1")
+                                               "input.hold", "feedback.value", "feedback.indicator", "feedback.unsequenced", "controls.input_declared", "x.xtouch.touch_protection"])
+    #expect(discovery.contract_version == "1.2")
     #expect(discovery.expected.mapping_revision == discovery.profile.mappingRevision)
     #expect(discovery.expected.mapping_revision.count == 16 && discovery.expected.mapping_revision != "1")
     let held = discovery.profile.controls.filter { $0.hold != nil }.map(\.id)
@@ -326,12 +326,12 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     }
 }
 
-@Test func pedalActionBindingsFollowTheUnsupportedMappingRule() throws {
+@Test func pedalActionBindingsDeclareInputDenied() throws {
     var configuration = SurfaceConfiguration.neutral
     configuration.assignments.append(.init(control: .footswitch, layer: .a, action: .set("a.Encoder.4", 100)))
     var simulator = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "test-epoch", configuration: configuration)
     #expect(simulator.controls.profile.controls.first { $0.id == "a.footswitch.1" }?.mapping == nil)
-    #expect(throws: ControlContractError("unsupported_mapping")) {
+    #expect(throws: ControlContractError("permission_denied")) {
         try simulator.input(input(simulator, "a.footswitch.1", .bool(true), encoding: "boolean"), at: 0)
     }
     #expect(simulator.session.parameters.values["a.Encoder.4"] == 0)
@@ -388,4 +388,48 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     _ = try simulator.feedback(feedback(simulator, "a.encoder.9", .number(0)), at: 5)
     #expect(simulator.mock.buttons[6] == .on && simulator.mock.rings[8] == .position(1))
     #expect(simulator.session.parameters.values == parameters)
+}
+
+/// Every declaration is checked against a fresh real Mock/session, with that layer active.
+@Test func everyControlDeclaresItsInputEligibilityTruthfully() throws {
+    var configuration = CompactSurfaceSimulator.demonstrationConfiguration
+    configuration.version = 2
+    configuration.parameters += [ParameterDefinition(id: "readonly", name: "Read only", agentWritable: false),
+                                 ParameterDefinition(id: "protected", name: "Protected", externallyProtected: true)]
+    for layer in CompactLayer.allCases {
+        configuration.assignments += [.init(control: .encoder(6), layer: layer, action: .parameter("readonly")),
+                                      .init(control: .encoder(7), layer: layer, action: .parameter("protected")),
+                                      .init(control: .button(39), layer: layer, action: .set("simulation.arm", 100))]
+    }
+    let profile = CompactSurfaceSimulator.profile(configuration: configuration)
+    for descriptor in profile.controls {
+        var simulator = try CompactSurfaceSimulator(instanceID: "eligibility", epoch: "initial", configuration: configuration)
+        if descriptor.id.hasPrefix("b.") {
+            _ = try simulator.input(input(simulator, "global.layer.b", .bool(true), encoding: "boolean"), at: 0)
+        }
+        let blocked = descriptor.id.hasSuffix("encoder.6") || descriptor.id.hasSuffix("encoder.7") || descriptor.id.hasSuffix("button.39")
+        #expect(descriptor.accepts_input == !blocked)
+        let value: JSONValue = descriptor.encoding == .boolean ? .bool(true) : .number(127)
+        let before = try simulator.controls.snapshot(at: 1)
+        let request = input(simulator, descriptor.id, value, encoding: descriptor.encoding.rawValue)
+        if blocked {
+            #expect(throws: ControlContractError("permission_denied")) { try simulator.input(request, at: 1) }
+            #expect(try simulator.controls.snapshot(at: 1) == before)
+        } else {
+            #expect(try simulator.input(request, at: 1).disposition == .accepted)
+        }
+    }
+    // `false` is rejected even on an inactive layer, before inactive_layer handling.
+    var simulator = try CompactSurfaceSimulator(instanceID: "inactive", epoch: "initial", configuration: configuration)
+    for id in ["b.encoder.6", "b.encoder.7", "b.button.39"] {
+        let descriptor = try #require(profile.controls.first { $0.id == id })
+        let value: JSONValue = descriptor.encoding == .boolean ? .bool(true) : .number(127)
+        #expect(throws: ControlContractError("permission_denied")) {
+            try simulator.input(input(simulator, id, value, encoding: descriptor.encoding.rawValue), at: 1)
+        }
+    }
+    #expect(try simulator.controls.snapshot(at: 1).latest_sequence == "0")
+    #expect(try simulator.input(input(simulator, "b.encoder.9", .number(127)), at: 1).reason == "inactive_layer")
+    let defaultProfile = CompactSurfaceSimulator.profile(configuration: CompactSurfaceSimulator.demonstrationConfiguration)
+    #expect(defaultProfile.controls.allSatisfy { $0.accepts_input == true })
 }

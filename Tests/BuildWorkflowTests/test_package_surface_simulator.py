@@ -58,8 +58,8 @@ class DeliveryContentTests(unittest.TestCase):
         package_surface_simulator.stage_shared_files(self.stage)
         # Stand-in for the binary's `--describe` output, which packaging stages before the manifest.
         described = {
-            "contract_version": "1.1",
-            "profile": {"id": "xtouch.compact.standard.simulation", "version": "1.1"},
+            "contract_version": "1.2",
+            "profile": {"id": "xtouch.compact.standard.simulation", "version": "1.2"},
             "expected": {"mapping_revision": "0123456789abcdef"},
         }
         (self.stage / "control-contract.json").write_text(json.dumps({"discovery": described, "tools": []}))
@@ -72,11 +72,11 @@ class DeliveryContentTests(unittest.TestCase):
         shared = package_surface_simulator.SHARED
         for name, source in package_surface_simulator.SHARED_FILES.items():
             self.assertEqual((self.stage / name).read_bytes(), (shared / source).read_bytes(), name)
-        with zipfile.ZipFile(self.stage / "surface-control-sdk-1.1.0.zip") as sdk:
+        with zipfile.ZipFile(self.stage / "surface-control-sdk-1.2.0.zip") as sdk:
             self.assertEqual(sdk.namelist(), ["surface_control/__init__.py"])
             body = sdk.read("surface_control/__init__.py")
         self.assertEqual(body, (shared / package_surface_simulator.SDK_SOURCE).read_bytes())
-        self.assertIn(b'__version__ = "1.1.0"', body)
+        self.assertIn(b'__version__ = "1.2.0"', body)
 
     def test_generic_delivery_excludes_integrations_tests_and_host_sdk_copies(self):
         names = {str(path.relative_to(self.stage)) for path in self.stage.rglob("*") if path.is_file()}
@@ -90,7 +90,7 @@ class DeliveryContentTests(unittest.TestCase):
     def test_manifest_records_contract_sdk_revision_and_every_hash(self):
         manifest = self.manifest
         lock = json.loads((package_surface_simulator.ROOT / "configs/surface_plugins.lock.json").read_text())
-        self.assertEqual((manifest["surface_control_contract"], manifest["surface_control_sdk"]), ("1.1", "1.1.0"))
+        self.assertEqual((manifest["surface_control_contract"], manifest["surface_control_sdk"]), ("1.2", "1.2.0"))
         self.assertEqual(manifest["surface_plugins_revision"], lock["revision"])
         # Common fields shared by both hosts (SurfacePlugins docs/surface-control-delivery.md).
         for field in (
@@ -113,10 +113,10 @@ class DeliveryContentTests(unittest.TestCase):
         self.assertEqual((manifest["source"], manifest["source_dirty"]), ("simulation", False))
         self.assertEqual(
             (manifest["profile_id"], manifest["profile_version"], manifest["mapping_revision"]),
-            ("xtouch.compact.standard.simulation", "1.1", "0123456789abcdef"),
+            ("xtouch.compact.standard.simulation", "1.2", "0123456789abcdef"),
         )
         self.assertIn("control-contract.json", manifest["files_sha256"])
-        self.assertIn("surface-control-sdk-1.1.0.zip", manifest["files_sha256"])
+        self.assertIn("surface-control-sdk-1.2.0.zip", manifest["files_sha256"])
         staged = {str(path.relative_to(self.stage)) for path in self.stage.rglob("*") if path.is_file()} - {
             "manifest.json"
         }
@@ -156,7 +156,7 @@ class DeliveryContentTests(unittest.TestCase):
         self.assertEqual(set(manifest["surface_plugins_files_sha256"]), copied)
         for name, source in package_surface_simulator.SHARED_FILES.items():
             self.assertEqual(files[name], manifest["surface_plugins_files_sha256"][source])
-        with zipfile.ZipFile(self.stage / "surface-control-sdk-1.1.0.zip") as sdk:
+        with zipfile.ZipFile(self.stage / "surface-control-sdk-1.2.0.zip") as sdk:
             member = hashlib.sha256(sdk.read("surface_control/__init__.py")).hexdigest()
         self.assertEqual(member, manifest["surface_plugins_files_sha256"][package_surface_simulator.SDK_SOURCE])
 
@@ -172,8 +172,8 @@ class DeliveryContentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as other:
             package_surface_simulator.stage_shared_files(Path(other))
             self.assertEqual(
-                (Path(other) / "surface-control-sdk-1.1.0.zip").read_bytes(),
-                (self.stage / "surface-control-sdk-1.1.0.zip").read_bytes(),
+                (Path(other) / "surface-control-sdk-1.2.0.zip").read_bytes(),
+                (self.stage / "surface-control-sdk-1.2.0.zip").read_bytes(),
             )
 
 

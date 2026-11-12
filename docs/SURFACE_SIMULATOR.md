@@ -36,17 +36,17 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 
 | Delivery file | Shared source |
 | --- | --- |
-| `surface-control-sdk-1.1.0.zip` (`surface_control/__init__.py`) | `clients/python/surface_control/__init__.py` |
+| `surface-control-sdk-1.2.0.zip` (`surface_control/__init__.py`) | `clients/python/surface_control/__init__.py` |
 | `control-tools.json` | `docs/surface-control-tools.json` |
 | `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
-| `surface-control-software-v1.json`, `surface-control-software-v1.1.json` | `fixtures/` |
+| `surface-control-software-v1.json`, `surface-control-software-v1.1.json`, `surface-control-software-v1.2.json` | `fixtures/` |
 | `surface-control.md`, `surface-control-scenarios.md`, `surface-control-delivery.md` | `docs/` |
 
 The shared SDK tests and the Pipe integration example (`integrations/pipe/`) are not part
 of this generic delivery. The manifest's common fields have the same names and meanings as
 the other host's (shared `docs/surface-control-delivery.md`): `schema_version`, `artifact`
-(`surface-control-simulator`), `surface_control_contract` (`"1.1"`), `surface_control_sdk`
-(`"1.1.0"`), `source`, `source_commit`, `source_dirty`, `profile_id`, `profile_version`,
+(`surface-control-simulator`), `surface_control_contract` (`"1.2"`), `surface_control_sdk`
+(`"1.2.0"`), `source`, `source_commit`, `source_dirty`, `profile_id`, `profile_version`,
 `mapping_revision`, `surface_plugins_revision`, `files_sha256` (every delivered file), and
 `surface_plugins_files_sha256` (each shared source file). Profile identity and
 `mapping_revision` are taken from the delivered binary's own `--describe` output, so they
@@ -100,11 +100,11 @@ Add `--exercise` to send one explicit ordinary input and a separate link display
 update. The example discovers mapping IDs and uses the documented tools; it does
 not import host source. It never retries a mutation after an unknown response.
 
-## Optional control contract 1.1
+## Optional control contract 1.2
 
 `POST /mcp` accepts authenticated stateless JSON-RPC requests using MCP `2025-11-25` or `2026-07-28`. Initialization negotiates these versions; no session ID is required. Set
 `Authorization: Bearer <token>` and `Content-Type: application/json`. Browser
-Origin requests are rejected. Each complete HTTP request has one absolute three-second read budget, including partial headers and bodies. Discovery reports `contract_version: "1.1"`. The new executable exposes only these seven tools,
+Origin requests are rejected. Each complete HTTP request has one absolute three-second read budget, including partial headers and bodies. Discovery reports `contract_version: "1.2"`. The new executable exposes only these seven tools,
 alongside `initialize`, `ping`, and `tools/list`:
 
 | Tool | Operation |
@@ -121,9 +121,14 @@ The GUI's existing three tools and shared business tools retain their own
 interfaces and permissions. This optional contract does not rename or replace
 them. It is separately discoverable and requires explicit adoption by a consumer.
 
-Every mutation supplies all five `expected` identity fields and a canonical
-`expected_sequence` decimal string. Accepted and ignored events advance that
-sequence; a duplicate old request fails `stale_sequence`. Get a fresh snapshot
+Every mutation supplies all five `expected` identity fields. Input and reset require a
+canonical `expected_sequence` decimal string. Feedback may omit `expected_sequence`
+(`feedback.unsequenced`): it validates the identity pin, skips only the sequence comparison,
+and still records a feedback event that occupies a sequence. Supplying a feedback sequence
+keeps the contract 1.1 comparison behavior. Renew remains sequence-free and silent. Accepted and ignored events advance that
+sequence; a duplicate old request fails `stale_sequence`. An input rejected with `stale_sequence` was definitely not executed. The SDK's
+`refresh_sequence()` reads one snapshot to update its local sequence; the caller can then
+explicitly choose a new input. It never resends a write. Get a fresh snapshot
 before choosing a *new* operation. Do not retry an uncertain operation by updating
 its sequence. Failed validation leaves engine, Mock, and journal unchanged.
 Failures use the shared stable code in `structuredContent`, with `isError: true`.
@@ -167,7 +172,8 @@ attaches or replaces the lease; the touch gesture is not repeated. Any other acc
 that control, including `false` or `true` without `hold_s`, clears the lease. `surface_control_renew({expected, control_id, hold_s})`
 moves the deadline to `now + hold_s` for a held, unexpired lease and returns
 `{control_id, hold_deadline, server_time}`; otherwise it returns `hold_expired`. Renewal never
-consumes a sequence or writes an event. Snapshots list active leases in `holds`.
+consumes a sequence or writes an event. Snapshots and event pages list current active leases in `holds`, omitting it when empty.
+An event page reports current deadlines, including silent renewals, independently of its event cursor.
 
 Expiry runs on the process's monotonic clock. Every wait of the single serving thread
 (for a connection, for more request bytes, and for a slow reader of a response) ends at the
@@ -196,14 +202,15 @@ during it. Expiry is still always processed before any later read or write, so
 through unchanged if it ever occurs. Mutations stay strictly serial: lease processing and
 request handling run on the same thread and never interleave within an operation.
 
-Capabilities use the shared 1.1 vocabulary: `simulation`, `controls.stable_ids`,
+Capabilities use the shared 1.2 vocabulary: `simulation`, `controls.stable_ids`,
 `controls.layered`, `input.absolute`, `input.button`, `input.hold`, `feedback.value`,
-`feedback.indicator`, plus the XTouch-private `x.xtouch.touch_protection` (motor commands
+`feedback.indicator`, `feedback.unsequenced`, `controls.input_declared`, plus the XTouch-private `x.xtouch.touch_protection` (motor commands
 are withheld while a fader is touched).
 
 ## XTouch profile and semantics
 
-`xtouch.compact.standard.simulation` version `1.1` declares 184 controls. Each layer
+`xtouch.compact.standard.simulation` version `1.2` declares 184 controls. Version 1.2 adds
+`accepts_input` to every descriptor, which changes the derived mapping revision. Each layer
 A/B has `a.fader.1` … `a.fader.9`, `a.touch.1` … `a.touch.9`,
 `a.encoder.1` … `a.encoder.16`, `a.push.1` … `a.push.16`,
 `a.button.1` … `a.button.39`, the optional pedals `a.expression.1` and
@@ -217,8 +224,18 @@ An endless knob is not advertised as a relative MIDI encoder. Touch, push,
 footswitch, button, and layer-key gestures accept booleans. Unsupported IDs, profiles,
 relative encodings, fractional scalar values, and out-of-range values fail visibly.
 
-The headless demonstration starts in layer A. Inactive-layer input/feedback is
-`ignored` with `inactive_layer`. Pressing a layer key (`true`) is an ordinary accepted
+The headless demonstration starts in layer A. Each descriptor's `accepts_input` describes
+whether that control accepts input **when its own layer is active**, rather than the current
+layer selection. Unassigned controls, global layer keys, and controls bound to writable,
+unprotected parameters declare `true`; action bindings and non-writable or protected parameter
+bindings declare `false`. The default demonstration declares `true` on all 184 controls.
+
+Input permission is checked before layer state: `accepts_input: false` always fails
+`permission_denied`, including on an inactive layer. This intentionally changes action-bound
+input from the previous `unsupported_mapping` error, and inactive action/protected inputs from
+`ignored/inactive_layer` to refusal. Eligible inactive-layer input, and all inactive-layer
+feedback, remains `ignored` with `inactive_layer`. Switching layers changes this runtime
+state, not the declarations, profile, mapping revision, or epoch. Pressing a layer key (`true`) is an ordinary accepted
 input event (`mapped_value` is `"a"` or `"b"`) that selects that layer in the Mock and
 the session together, exactly like the physical key. It does **not** change the epoch,
 instance, or mapping revision: control IDs and their meaning are unchanged, and only
@@ -235,7 +252,7 @@ Pedals use the Mock's expression and footswitch gestures and the session's exist
 pedal decoding. They have no feedback address, so they declare no feedback kinds. A
 pedal mapping is advertised only for a parameter assignment. Any other assignment
 (for example a footswitch `set` action) is not advertised, and input on that pedal fails
-`unsupported_mapping` without changing the Mock, engine, or journal, the same as other
+`permission_denied` without changing the Mock, engine, or journal, the same as other
 action bindings. An expression pedal has no initial reading, so it is omitted from the
 seeded snapshot inputs until its first accepted input; the footswitch starts `false`.
 Identical raw input is `ignored` with `no_change`, preventing repeated button-down from toggling twice.
@@ -252,8 +269,8 @@ event has no `mapped_value`. Identical raw input is `ignored/no_change` and inac
 input is `ignored/inactive_layer`, as for mapped controls. Feedback on such a control is the
 same display intent as on a mapped one. A consumer may therefore own the meaning of unmapped
 controls entirely on its side; `mapping` only tells it which host parameter, if any, also
-follows. The one exception is a control bound to an action rather than a parameter, which fails
-`unsupported_mapping`; the demonstration configuration has none.
+follows. The one exception is a control bound to an action rather than a parameter, which declares `accepts_input: false` and fails
+`permission_denied`; the demonstration configuration has none.
 
 Simulated gestures are ordinary input through `CompactSession.receive`, like a local
 hand movement. The App's Agent motor permission (`setParameter(drivesMotors:)`) applies
@@ -287,11 +304,12 @@ production operator bridges that require hardware input remain ineligible.
 
 ## Verification
 
-`swift test --jobs 2` includes a runner for both pinned shared versioned fixtures,
+`swift test --jobs 2` includes a runner for all three pinned shared versioned fixtures,
 using real Mock/session values and an injected clock. It emits
-`build/surface-scenario-report.json` (v1, 40 steps) and
-`build/surface-scenario-report-v1.1.json` (v1.1, 65 steps, including the lease
-scenarios) with exact source/fixture hashes, mapping revision, role mapping
+`build/surface-scenario-report.json` (v1, 40 steps),
+`build/surface-scenario-report-v1.1.json` (v1.1, 65 steps, including lease scenarios), and
+`build/surface-scenario-report-v1.2.json` (v1.2, 83 steps, including unsequenced feedback,
+explicit input sequence refresh, current event-page holds, and declared input refusal) with exact source/fixture hashes, mapping revision, role mapping
 (`hold_input` is `a.touch.1`), and per-step results. The `advance` operation calls
 the same `processHoldExpiries` the executable's scheduler uses. These deterministic
 reports are separate from real HTTP/process evidence.
@@ -302,9 +320,11 @@ both public MCP versions, discard a write response, reject stale CAS, restart a
 default instance at the same port, and isolate A/B processes. They also cover layer
 keys and pedals, JSON-RPC error codes, write-budget ordering, instance-ID and token
 rules, private token files, ready-file ownership and cleanup on SIGTERM/SIGINT,
-`minimal_consumer.py --exercise`, the stdin-pipe requirement, the shared SDK 1.1 round trip
+`minimal_consumer.py --exercise`, the stdin-pipe requirement, the shared SDK 1.2 round trip
 over both MCP versions, mapping-revision pinning, `surface_control_renew` (silent,
 permissioned, budgeted), real-clock lease expiry with no request in flight, and the
-100 ms expiry bound while a slow drip holds the reader for its whole read budget. They import
-the SDK from `build/dependencies/SurfacePlugins/clients/python`.
+500 ms expiry bound while a slow drip holds the reader for its whole read budget. They import
+the SDK from `build/dependencies/SurfacePlugins/clients/python` without writing bytecode.
+The 1.2 tests also run two real HTTP writers concurrently: all unsequenced feedback is
+accepted, and a stale input is proven unexecuted before an explicit SDK refresh and new input.
 No test here starts a production Pipe service or connects physical hardware.

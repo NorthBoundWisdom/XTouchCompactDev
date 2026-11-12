@@ -29,7 +29,13 @@ private func holdControl(_ simulator: CompactSurfaceSimulator) -> ControlDescrip
 }
 
 private func roleControl(_ simulator: CompactSurfaceSimulator, _ role: String) -> ControlDescriptor? {
-    role == "hold_input" ? holdControl(simulator) : simulator.controls.profile.controls.first { $0.mapping?.id == scenarioRoles[role] }
+    if role == "hold_input" {
+        return holdControl(simulator)
+    }
+    if role == "blocked_input" {
+        return simulator.controls.profile.controls.first { $0.accepts_input == false }
+    }
+    return simulator.controls.profile.controls.first { $0.mapping?.id == scenarioRoles[role] }
 }
 
 /// Control IDs for a fixture list of role names; unknown roles fail the step.
@@ -72,6 +78,10 @@ private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at reques
     try runSharedFixture("surface-control-software-v1.1.json", report: "surface-scenario-report-v1.1.json", steps: 65)
 }
 
+@Test func sharedContract12FixtureDrivesUnsequencedFeedbackHoldsAndDeclaredInput() throws {
+    try runSharedFixture("surface-control-software-v1.2.json", report: "surface-scenario-report-v1.2.json", steps: 83)
+}
+
 private func runSharedFixture(_ fixtureName: String, report reportName: String, steps expectedSteps: Int) throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let fixture = root.appendingPathComponent("build/dependencies/SurfacePlugins/fixtures/\(fixtureName)")
@@ -79,11 +89,21 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
     let scenarios = try #require(document.value(for: "scenarios")?.arrayValue)
     var results: [JSONValue] = []
     var roles: [String: String] = [:]
+    var scenarioMappings: [String: JSONValue] = [:]
     for scenario in scenarios {
         let name = try #require(scenario.value(for: "id")?.stringValue)
         let capacity = try #require(scenario.value(for: "event_capacity")?.exactIntValue)
         let names = scenario.value(for: "instances")?.arrayValue?.compactMap(\.stringValue) ?? ["a"]
-        var hosts = try Dictionary(uniqueKeysWithValues: names.map { try ($0, CompactSurfaceSimulator(instanceID: "fixture.\($0)", epoch: "\(name).\($0).initial", eventCapacity: capacity)) })
+        // Only the v1.2 blocked-control scenario has a test-only action binding.
+        // The default demonstration profile and the old fixtures remain unchanged.
+        var configuration = CompactSurfaceSimulator.demonstrationConfiguration
+        if fixtureName == "surface-control-software-v1.2.json", name == "declared_read_only_control" {
+            configuration.assignments.append(.init(control: .button(39), layer: .a, action: .set("simulation.arm", 100)))
+        }
+        scenarioMappings[name] = .object(["mapping_revision": .string(CompactSurfaceSimulator.profile(configuration: configuration).mappingRevision),
+                                          "test_only_blocked_binding": .bool(name == "declared_read_only_control")])
+        var sequences = Dictionary(uniqueKeysWithValues: names.map { ($0, "0") })
+        var hosts = try Dictionary(uniqueKeysWithValues: names.map { try ($0, CompactSurfaceSimulator(instanceID: "fixture.\($0)", epoch: "\(name).\($0).initial", configuration: configuration, eventCapacity: capacity)) })
         var initial = hosts.mapValues { $0.controls.expected }
         var lastInput: [String: ControlInput] = [:]
         var accepted = Dictionary(uniqueKeysWithValues: names.map { ($0, 0) })
@@ -107,9 +127,9 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
             var expired: [ControlEvent] = []
             do {
                 switch operation {
-                case "snapshot":
+                case "snapshot", "refresh_sequence":
                     // The real read at the step time: fails closed while a lease is due.
-                    _ = try host.controls.snapshot(at: time)
+                    sequences[selected] = try host.controls.snapshot(at: time).latest_sequence
                 case "input", "feedback":
                     let role = try #require(step.value(for: "role")?.stringValue)
                     let control = try #require(roleControl(host, role))
@@ -121,7 +141,7 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
                     } else if step.value(for: "value") == .string("maximum") {
                         try .number(Int(#require(range?.maximum)))
                     } else if step.value(for: "value") == .string("minimum") {
-                        try .number(Int(#require(range?.minimum)))
+                        range.map { .number(Int($0.minimum)) } ?? .bool(false)
                     } else if step.value(for: "value") == .string("rest") {
                         try #require(control.hold?.rest_value)
                     } else if step.value(for: "value") == .string("active") {
@@ -131,14 +151,14 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
                         try #require(step.value(for: "value"))
                     }
                     if operation == "input" {
-                        let request = ControlInput(expected: suppliedExpected, expectedSequence: host.controls.discovery().latest_sequence,
+                        let request = ControlInput(expected: suppliedExpected, expectedSequence: step.value(for: "expected_sequence")?.stringValue ?? sequences[selected]!,
                                                    controlID: control.id, encoding: step.value(for: "encoding")?.stringValue ?? control.encoding.rawValue, value: value,
                                                    holdSeconds: step.value(for: "hold_s")?.finiteNumber)
                         lastInput[selected] = request
                         event = try host.input(request, at: time)
                     } else {
                         let kind = try #require(document.value(for: "roles")?.value(for: role)?.value(for: "feedback_kind")?.stringValue)
-                        event = try host.feedback(.init(expected: suppliedExpected, expectedSequence: host.controls.discovery().latest_sequence,
+                        event = try host.feedback(.init(expected: suppliedExpected, expectedSequence: step.value(for: "omit_sequence") == .bool(true) ? nil : (step.value(for: "expected_sequence")?.stringValue ?? sequences[selected]!),
                                                         controlID: control.id, kind: kind, value: value), at: time)
                     }
                 case "replay_last_write": event = try host.input(#require(lastInput[selected]), at: time)
@@ -151,18 +171,24 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
                 case "advance":
                     // Exactly what the executable's scheduler does on its own clock.
                     expired = try host.processHoldExpiries(at: time)
+                    sequences[selected] = host.controls.discovery().latest_sequence
                 case "reset":
                     try host.reset(epoch: "\(name).\(selected).reset.\(index)", at: time)
                     accepted[selected] = 0
+                    sequences[selected] = "0"
                 case "restart":
-                    host = try CompactSurfaceSimulator(instanceID: "fixture.\(selected).replacement", epoch: "\(name).\(selected).restart.\(index)", eventCapacity: capacity)
+                    host = try CompactSurfaceSimulator(instanceID: "fixture.\(selected).replacement", epoch: "\(name).\(selected).restart.\(index)", configuration: configuration, eventCapacity: capacity)
                     accepted[selected] = 0
+                    sequences[selected] = "0"
                 case "events":
                     page = try host.controls.events(instanceID: host.controls.expected.instance_id, epoch: host.controls.expected.epoch,
                                                     afterSequence: #require(step.value(for: "after_sequence")?.stringValue), limit: 1024, at: time)
                 default: throw ScenarioFailure.assertion("unsupported operation")
                 }
             } catch let error as ControlContractError { actualError = error.code }
+            if let event, step.value(for: "omit_sequence") != .bool(true) {
+                sequences[selected] = event.sequence
+            }
             if event?.kind == .input, event?.disposition == .accepted {
                 accepted[selected, default: 0] += 1
             }
@@ -219,7 +245,18 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
             }
             if let held = expected["holds"]?.arrayValue {
                 let wanted = try Set(roleIDs(host, held))
-                checks.append(Set((snapshot.holds ?? [:]).keys) == wanted)
+                let actualHolds = operation == "events" ? (page?.holds ?? [:]) : (snapshot.holds ?? [:])
+                checks.append(Set(actualHolds.keys) == wanted)
+            }
+            if let deadlines = expected["hold_deadlines_at_s"]?.objectValue {
+                let actualHolds = operation == "events" ? (page?.holds ?? [:]) : (snapshot.holds ?? [:])
+                var wanted: [String: Double] = [:]
+                for (role, deadline) in deadlines {
+                    let control = try #require(roleControl(host, role))
+                    guard let time = deadline.finiteNumber else { throw ScenarioFailure.assertion("invalid hold deadline") }
+                    wanted[control.id] = time
+                }
+                checks.append(actualHolds == wanted)
             }
             if let roleNames = expected["expired"]?.arrayValue {
                 let wanted = try roleIDs(host, roleNames)
@@ -248,7 +285,7 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
                                          "host_dirty": .bool(!commandOutput(["git", "status", "--porcelain"], root: root).isEmpty),
                                          "shared_revision": #require(sharedLock.value(for: "revision")), "profile_id": .string(CompactSurfaceSimulator.profileID),
                                          "profile_version": .string(CompactSurfaceSimulator.profileVersion), "contract_version": .string(ControlDiscovery.contractVersion),
-                                         "mapping_revision": .string(CompactSurfaceSimulator.profile(configuration: CompactSurfaceSimulator.demonstrationConfiguration).mappingRevision), "roles": .encoded(roles), "scope": .string("inprocess_real_mock_session"),
+                                         "mapping_revision": .string(CompactSurfaceSimulator.profile(configuration: CompactSurfaceSimulator.demonstrationConfiguration).mappingRevision), "scenario_mappings": .object(scenarioMappings), "roles": .encoded(roles), "scope": .string("inprocess_real_mock_session"),
                                          "steps": .array(results), "pass": .bool(results.allSatisfy { $0.value(for: "status") == .string("pass") })])
     try JSONEncoder().encode(report).write(to: root.appendingPathComponent("build/\(reportName)"))
     #expect(results.count == expectedSteps)
