@@ -17,7 +17,8 @@ from the hardware, from the on-screen panel, or from a local AI agent over MCP.
 - **Parameters** with names, groups, units, ranges and steps. Assign them to faders and encoders, and
   assign toggle, step, set, cycle and group-reset actions to buttons. Each layer has its own assignments.
 - **Organization.** Rename faders and encoders in place, color-tag and group them, link faders
-  (VCA style), save and recall named scenes, and undo value changes. None of these moves a motor by itself.
+  (VCA style), save and recall named scenes, and undo value changes. Metadata edits and scene recall
+  send no motor CC; value changes, linked movement and undo use the motor safety gates.
 - **Touch-aware motor policy.** Reported touch ownership blocks motor commands to that fader.
   No bank-target motor recall happens on connection or layer selection. On the measured unit,
   physical layer keys and host Program Change nevertheless cycle all nine motors to the bottom
@@ -188,8 +189,9 @@ swift test --jobs 2
 swift build
 ```
 
-The package has three parts: `XTouchCompactCore` (protocol, session, parameters and mock device, with no
-CoreMIDI or SwiftUI dependency), `XTouchCompactLocalization`, and `XTouchCompactApp` (SwiftUI and CoreMIDI).
+The package includes `XTouchCompactCore` (protocol, session, parameters and mock device, without
+CoreMIDI or SwiftUI), localization, the native macOS app, the remote MIDI tool and the
+hardware-free software simulator. The hosts consume the same pinned SurfacePlugins contracts.
 Tests do not need a controller. Contribution rules and hardware safety constraints are in
 [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 

@@ -34,7 +34,8 @@ public struct NonMotorTransportContext: Equatable, Sendable {
 }
 
 /// Factory RX feedback only. In particular CC 28 is a ring address, even though
-/// Layer B transmits F1 position on CC 28. No mode or motor command is expressible.
+/// Layer B transmits F1 position on CC 28. No mode switch or motor CC is expressible;
+/// the layer assertion can still cycle all nine firmware motors.
 public enum NonMotorTestCommand: Equatable, Sendable {
     case button(Int, ButtonLight, ButtonLightProtocol)
     case ring(Int, RingDisplay)

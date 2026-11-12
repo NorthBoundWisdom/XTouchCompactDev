@@ -43,7 +43,9 @@ configurations are rejected before changing session state. Import/export is expl
 
 ## Naming, groups, links, scenes and undo
 
-These are configuration and host-intent features. None sends a motor command on its own.
+Metadata edits, highlighting, link definitions and scene recall send no motor CC.
+Moving a linked leader and undoing/redoing value changes can command motors through
+the normal touch, layer and Agent-permission gates.
 
 - **Name, color, group.** Select a fader or encoder. The inspector's *Name and organize*
   card renames the bound parameter, sets one of eight color tags, and sets or picks a group.
