@@ -11,7 +11,13 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+try:
+    from .delivery_index import publish
+except ImportError:  # Direct CLI execution has configs/ on sys.path.
+    from delivery_index import publish
+
 ROOT = Path(__file__).resolve().parents[1]
+HOST = "xtouch"
 
 
 def command(*args):
@@ -110,11 +116,16 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED
     return manifest
 
 
-def package(output, configuration="release"):
+def package(output=None, configuration="release", output_root=None):
     if command("git", "status", "--porcelain"):
         raise RuntimeError("Commit the reviewed source before packaging")
-    if output.exists():
-        raise RuntimeError("Output already exists; choose a new delivery path")
+    if output_root is not None and output is not None:
+        raise RuntimeError("Choose either a delivery root or an explicit output")
+    if output_root is None:
+        output = Path(output) if output is not None else default_output()
+        if output.exists():
+            raise RuntimeError("Output already exists; choose a new delivery path")
+    parent = Path(output_root) if output_root is not None else output.parent
     subprocess.run(["python3", "configs/surface_plugins_dependency.py", "verify"], cwd=ROOT, check=True)
     scratch = ROOT / "build" / "surface-simulator" / configuration
     subprocess.run(
@@ -136,8 +147,8 @@ def package(output, configuration="release"):
     binary_directory = Path(
         command("swift", "build", "--configuration", configuration, "--scratch-path", str(scratch), "--show-bin-path")
     )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix=".surface-simulator-", dir=output.parent))
+    parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".surface-simulator-", dir=parent))
     try:
         shutil.copy2(binary_directory / "XTouchSurfaceSimulator", stage)
         stage_shared_files(stage)
@@ -145,7 +156,10 @@ def package(output, configuration="release"):
             subprocess.check_output([str(stage / "XTouchSurfaceSimulator"), "--describe"], text=True)
         )
         write_manifest(stage, command("git", "rev-parse", "HEAD"), configuration)
-        stage.rename(output)
+        if output_root is None:
+            stage.rename(output)
+        else:
+            output = publish(stage, parent, HOST)
     finally:
         if stage.exists():
             shutil.rmtree(stage)
@@ -154,14 +168,22 @@ def package(output, configuration="release"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    destination = parser.add_mutually_exclusive_group()
+    destination.add_argument(
         "--output",
         type=Path,
         help="new delivery directory (default: build/deliveries/xtouch-surface-simulator-<HEAD short SHA>)",
     )
+    destination.add_argument(
+        "--output-root",
+        type=Path,
+        help="unified root: <host>-surface-<contract>-<SHA7> and atomic INDEX.json (e.g. ../deliveries)",
+    )
     parser.add_argument("--configuration", choices=("debug", "release"), default="release")
     args = parser.parse_args()
-    print(package((args.output or default_output()).resolve(), args.configuration))
+    output = args.output.resolve() if args.output else None
+    output_root = args.output_root.resolve() if args.output_root else None
+    print(package(output, args.configuration, output_root))
 
 
 if __name__ == "__main__":

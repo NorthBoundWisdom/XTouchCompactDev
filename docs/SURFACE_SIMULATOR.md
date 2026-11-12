@@ -28,6 +28,15 @@ The default output is `build/deliveries/xtouch-surface-simulator-<short SHA>`, n
 after this repository's HEAD only (no other host's commit appears in the name). Pass
 `--output` to choose another new directory; an existing directory is never reused.
 
+Use `--output-root ../deliveries` for the shared workspace outlet. It creates
+`xtouch-surface-1.3-<HEAD SHA7>` and updates that root's `INDEX.json` under the common
+`.index.lock` directory lock. Rebuilding the same full commit replaces its index
+entry and complete delivery directory; a different full commit with a colliding
+short name is refused. The lock is bounded and never removed based on age. Index
+errors are visible, and an index write failure restores the preceding directory.
+This mode preserves other hosts' entries and leaves all old `build/deliveries/`
+directories in place. The two output options are mutually exclusive.
+
 The output contains the binary, `manifest.json`, dependency lock, `LICENSE`,
 `control-contract.json` (`--describe`: actual discovery plus the seven tool schemas),
 this guide as `README.md`, `minimal_consumer.py`, and `examples/surface_roundtrip.py`.
