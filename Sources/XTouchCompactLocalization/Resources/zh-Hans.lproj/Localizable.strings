@@ -74,7 +74,7 @@
 "全闪" = "全闪";
 "关" = "关";
 "关闭时按官方手册发送 0 / 1 / 2" = "关闭时按官方手册发送 0 / 1 / 2";
-"切换到 Layer %@；不会自动移动电动推子" = "切换到 Layer %@；不会自动移动电动推子";
+"切换到 Layer %@；软件不发电机指令，但设备切层时会自行把推子走一遍" = "切换到 Layer %@；软件不发电机指令，但设备切层时会自行把推子走一遍";
 "单点" = "单点";
 "反馈 (RX)" = "反馈 (RX)";
 "发送通道（设备 → 软件）：%@" = "发送通道（设备 → 软件）：%@";
@@ -235,7 +235,7 @@
 "OSC output stopped: scheduler heartbeat expired or safety gate tripped." = "OSC 输出已停止：排程心跳超时或安全门已跳闸。";
 "OSC keeps stationary values active. A scheduler pause over 1 s stops output." = "OSC 可持续输出静止值；排程停顿超过 1 秒才停止输出。";
 "Realign current layer" = "重新对齐当前层";
-"Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset." = "重发当前层并清除旧的层不一致记录；不召回电机，也不清除触摸状态。";
+"Reassert the selected layer and clear mismatch evidence. No motor command is sent, but the device cycles its faders on a layer change. Touch state is kept." = "重发当前层并清除旧的层不一致记录。软件不发电机指令，但设备切层时会自行把推子走一遍；触摸状态保留。";
 
 "Listen only — send no MIDI" = "只听不发 MIDI";
 
@@ -541,7 +541,7 @@
 "Button LEDs" = "按键灯编码";
 "Manual: 0 off · 1 on · 2 blink" = "手册：0 灭 · 1 亮 · 2 闪";
 "Firmware 1.14: 0 off · 2 on · 3 blink" = "固件 1.14 实测：0 灭 · 2 亮 · 3 闪";
-"Sends the layer selection and LED/ring feedback; never moves a fader." = "会发送层选择和按键灯、灯环反馈；不会移动推子。";
+"Sends the layer selection and LED/ring feedback, no motor command. The device may cycle its faders when the layer changes." = "会发送层选择和按键灯、灯环反馈，不发电机指令。设备切层时可能自行把推子走一遍。";
 "Connected" = "已连接";
 "Not connected" = "未连接";
 "Listen only" = "只听不发";

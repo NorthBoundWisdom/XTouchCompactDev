@@ -51,7 +51,7 @@
                         Label(l.text("Sync lights to device"), systemImage: "lightbulb.max")
                     }
                     .disabled(!connected)
-                    .help(l.text("Sends the layer selection and LED/ring feedback; never moves a fader."))
+                    .help(l.text("Sends the layer selection and LED/ring feedback, no motor command. The device may cycle its faders when the layer changes."))
                 }
                 Button {
                     if isChecking {

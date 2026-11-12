@@ -313,8 +313,8 @@
                     HStack {
                         Button(l.text("Realign current layer"), action: { intents.realignLayer?() })
                             .disabled(!snapshot.isMock && snapshot.listenOnly)
-                            .help(l.text("Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset."))
-                        Text(l.text("Sends the layer selection and LED/ring feedback; never moves a fader."))
+                            .help(l.text("Reassert the selected layer and clear mismatch evidence. No motor command is sent, but the device cycles its faders on a layer change. Touch state is kept."))
+                        Text(l.text("Sends the layer selection and LED/ring feedback, no motor command. The device may cycle its faders when the layer changes."))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

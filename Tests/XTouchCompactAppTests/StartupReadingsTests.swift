@@ -56,6 +56,16 @@
         #expect(model.session.state.layerMismatch)
         model.enableHardwareWriteback(); model.faderChanged(2, value: 80)
         #expect(midi.sent.isEmpty) // Displaying B does not authorize motors while host is A.
+        // Layer buttons show the host selection, not the last input layer (hardware 2026-11-13:
+        // after clicking A the unit lit A while the panel still highlighted B).
+        #expect(model.panelSnapshot.isLayerHighlighted(.a) && !model.panelSnapshot.isLayerHighlighted(.b))
+        model.setLayer(.b)
+        #expect(model.panelSnapshot.isLayerHighlighted(.b) && !model.panelSnapshot.isLayerHighlighted(.a))
+        model.setLayer(.a)
+        #expect(model.panelSnapshot.hardwareDisplayLayer == .b) // Still the last input, shown as text only.
+        #expect(model.panelSnapshot.isLayerHighlighted(.a) && !model.panelSnapshot.isLayerHighlighted(.b))
+        model.beginHardwareObservation()
+        #expect(!model.panelSnapshot.isLayerHighlighted(.a)) // Input check: follows inputs, none yet in this scope.
     }
 
     @Test @MainActor func readingFreshnessResetsOnReconnectAndDoesNotCrossInputOrTXChannel() {

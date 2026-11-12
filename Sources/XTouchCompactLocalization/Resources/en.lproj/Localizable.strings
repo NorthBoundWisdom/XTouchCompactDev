@@ -74,7 +74,7 @@
 "全闪" = "All blinking";
 "关" = "Off";
 "关闭时按官方手册发送 0 / 1 / 2" = "When disabled, send 0 / 1 / 2 per the official manual";
-"切换到 Layer %@；不会自动移动电动推子" = "Switch to Layer %@ without automatically moving motor faders";
+"切换到 Layer %@；软件不发电机指令，但设备切层时会自行把推子走一遍" = "Switch to Layer %@. The app sends no motor command, but the device cycles its faders on a layer change";
 "单点" = "Single";
 "反馈 (RX)" = "Feedback (RX)";
 "发送通道（设备 → 软件）：%@" = "TX channel (device → app): %@";
@@ -235,7 +235,7 @@
 "OSC output stopped: scheduler heartbeat expired or safety gate tripped." = "OSC output stopped: scheduler heartbeat expired or safety gate tripped.";
 "OSC keeps stationary values active. A scheduler pause over 1 s stops output." = "OSC keeps stationary values active. A scheduler pause over 1 s stops output.";
 "Realign current layer" = "Realign current layer";
-"Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset." = "Reassert the selected layer and clear mismatch evidence; no motor recall or touch reset.";
+"Reassert the selected layer and clear mismatch evidence. No motor command is sent, but the device cycles its faders on a layer change. Touch state is kept." = "Reassert the selected layer and clear mismatch evidence. No motor command is sent, but the device cycles its faders on a layer change. Touch state is kept.";
 
 "Listen only — send no MIDI" = "Listen only — send no MIDI";
 
@@ -541,7 +541,7 @@
 "Button LEDs" = "Button LEDs";
 "Manual: 0 off · 1 on · 2 blink" = "Manual: 0 off · 1 on · 2 blink";
 "Firmware 1.14: 0 off · 2 on · 3 blink" = "Firmware 1.14: 0 off · 2 on · 3 blink";
-"Sends the layer selection and LED/ring feedback; never moves a fader." = "Sends the layer selection and LED/ring feedback; never moves a fader.";
+"Sends the layer selection and LED/ring feedback, no motor command. The device may cycle its faders when the layer changes." = "Sends the layer selection and LED/ring feedback, no motor command. The device may cycle its faders when the layer changes.";
 "Connected" = "Connected";
 "Not connected" = "Not connected";
 "Listen only" = "Listen only";

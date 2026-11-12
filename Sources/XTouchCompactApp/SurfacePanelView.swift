@@ -169,8 +169,7 @@
                 Text(l.text("Layer")).font(.system(size: m(8), weight: .bold)).foregroundStyle(.secondary).tracking(1)
                 HStack(spacing: m(6)) {
                     ForEach(CompactLayer.allCases, id: \.self) { layer in
-                        let isActive = snapshot.hardwareObservation.map { $0.inputLayer == layer }
-                            ?? (snapshot.isMock ? snapshot.layer == layer : snapshot.hardwareDisplayLayer == layer)
+                        let isActive = snapshot.isLayerHighlighted(layer)
                         Button { onSelectLayer(layer) } label: {
                             Text(layer.rawValue.uppercased())
                                 .font(.system(size: m(13), weight: .heavy, design: .rounded))
@@ -183,7 +182,7 @@
                         .buttonStyle(.plain)
                         .accessibilityLabel(l.text("层 %@", String(layer.rawValue.uppercased())))
                         .accessibilityAddTraits(isActive ? .isSelected : [])
-                        .help(l.text("切换到 Layer %@；不会自动移动电动推子", String(layer.rawValue.uppercased())))
+                        .help(l.text("切换到 Layer %@；软件不发电机指令，但设备切层时会自行把推子走一遍", String(layer.rawValue.uppercased())))
                     }
                 }
             }

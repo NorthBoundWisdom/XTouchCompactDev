@@ -372,6 +372,14 @@
         var mockPedals: MockPedalPresentation?
         /// Last input layer (possibly cached); never changes the software bank or motor gate.
         var hardwareDisplayLayer: CompactLayer?
+
+        /// Which layer button is lit. The input-check tool sends nothing, so it follows the
+        /// layer its inputs arrive on; everywhere else the button shows the host selection,
+        /// which is what a click changes. The last input layer stays a separate text field:
+        /// it can be minutes old and says nothing about a later Program Change.
+        func isLayerHighlighted(_ candidate: CompactLayer) -> Bool {
+            hardwareObservation.map { $0.inputLayer == candidate } ?? (layer == candidate)
+        }
         var hardwareLayerIsCurrent = false
         var nonMotorTests = NonMotorTestPresentation()
         var hardwareObservation: HardwareObservationPresentation?
