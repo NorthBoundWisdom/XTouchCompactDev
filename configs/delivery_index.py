@@ -35,11 +35,17 @@ def unique_object(pairs):
     return result
 
 
+def reject_constant(value):
+    raise ValueError("Non-JSON numeric constant: " + value)
+
+
 def read_json(path):
     if path.is_symlink() or not path.is_file():
         raise RuntimeError("Expected a regular JSON file: " + str(path))
     try:
-        return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+        return json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=unique_object, parse_constant=reject_constant
+        )
     except (ValueError, UnicodeError) as error:
         raise RuntimeError("Malformed JSON: " + str(path)) from error
 
@@ -187,7 +193,7 @@ def publish(stage, root, host, timeout=10):
                         [old for old in index["deliveries"] if entry_key(old) != entry_key(entry)] + [entry],
                         key=entry_key,
                     )
-                    json.dump(index, stream, indent=2, sort_keys=True)
+                    json.dump(index, stream, indent=2, sort_keys=True, allow_nan=False)
                     stream.write("\n")
                     stream.flush()
                     os.fsync(stream.fileno())

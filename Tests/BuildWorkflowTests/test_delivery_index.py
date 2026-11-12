@@ -135,6 +135,7 @@ class DeliveryIndexTests(unittest.TestCase):
         original = json.loads((self.root / "INDEX.json").read_text())
         documents = [
             "not json",
+            '{"schema_version":1,"deliveries":[],"extra":NaN}',
             '{"schema_version":1,"schema_version":1,"deliveries":[]}',
             json.dumps({"schema_version": True, "deliveries": []}),
             json.dumps({"schema_version": 1, "deliveries": original["deliveries"] * 2}),
