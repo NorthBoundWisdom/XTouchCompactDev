@@ -104,6 +104,7 @@ private func removeOwnedReadyFile() {
         var readyPath: String?
         var configurationPath: String?
         var describe = false
+        var writeLimit = SurfaceWriteBudget.writesPerSecond
         var allowInput = false, allowFeedback = false, allowReset = false
         while !arguments.isEmpty {
             let option = arguments.removeFirst()
@@ -112,6 +113,9 @@ private func removeOwnedReadyFile() {
                 return arguments.removeFirst()
             }
             switch option {
+            case "--write-limit":
+                guard let limit = try Int(value()), (1 ... 10000).contains(limit) else { throw StartupError.invalidArguments }
+                writeLimit = limit
             case "--describe": describe = true
             case "--simulation-configuration": configurationPath = try value()
             case "--surface-instance-id":
@@ -165,7 +169,7 @@ private func removeOwnedReadyFile() {
             try writeReadyFile(readyPath, readyBytes)
         }
         FileHandle.standardOutput.write(readyBytes + Data("\n".utf8))
-        var budget = SurfaceWriteBudget()
+        var budget = SurfaceWriteBudget(limit: writeLimit)
         // Leases expire on this process's monotonic clock even without requests. Every request
         // processes due expiries at its own time first, so no read or write observes a pending one.
         func advanceHolds(to time: Double) {

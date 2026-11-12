@@ -734,6 +734,41 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
             finally:
                 simulator.close()
 
+    def test_custom_write_limit_is_shared_atomic_and_recovers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            simulator = RunningSimulator(directory, "budget", extra=("--write-limit", "2"))
+            try:
+                request = simulator.input(True, "a.touch.1", "boolean")
+                request["hold_s"] = 5
+                acquired = simulator.request("surface_control_input", request)["structuredContent"]
+                expected = simulator.discover()["expected"]
+                shown = simulator.request("surface_control_feedback", {"expected": expected,
+                    "control_id": "a.encoder.10", "kind": "value", "value": 10})["structuredContent"]
+                self.assertEqual(shown["sequence"], "2")
+                before = simulator.snapshot()
+                operations = [("surface_control_input", simulator.input(127)),
+                    ("surface_control_feedback", {"expected": expected, "control_id": "a.encoder.10", "kind": "value", "value": 99}),
+                    ("surface_control_renew", {"expected": expected, "control_id": "a.touch.1", "hold_s": 5}),
+                    ("surface_control_reset", {"expected": expected, "expected_sequence": "2"})]
+                for name, arguments in operations:
+                    self.assertEqual(simulator.request(name, arguments)["structuredContent"]["code"], "rate_limited")
+                    snapshot = simulator.snapshot()
+                    for key in ("expected", "latest_sequence", "inputs", "feedback", "holds"):
+                        self.assertEqual(snapshot.get(key), before.get(key), key)
+                time.sleep(1.05)
+                renewed = simulator.request("surface_control_renew", {"expected": expected,
+                    "control_id": "a.touch.1", "hold_s": 5})
+                self.assertFalse(renewed["isError"], renewed)
+                self.assertGreater(renewed["structuredContent"]["hold_deadline"], acquired["hold_deadline"])
+                self.assertFalse(simulator.request("surface_control_input", simulator.input(127))["isError"])
+            finally:
+                simulator.close()
+            for value in ("0", "-1", "10001", "2.5", "bad"):
+                code, stdout, stderr = start_failure(directory, ["--write-limit", value, "--describe"])
+                self.assertNotEqual(code, 0)
+                self.assertEqual(stdout, "")
+                self.assertIn("invalidArguments", stderr)
+
     def test_strict_configuration_rejects_invalid_fields_bindings_and_permissions(self):
         original = json.loads((ROOT / "examples/surface_simulator/chassis.json").read_text())
         variants = []

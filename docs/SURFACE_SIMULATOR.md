@@ -166,8 +166,10 @@ from the new Mock, without generating input events. Snapshot input values contai
 react only to subsequent `accepted` input events. Remapping, restart, and the in-process
 `selectLayer(_:epoch:)` invalidate old pins (layer keys do not); event gaps require snapshot/re-arm rather
 than event replay. The journal retains at most 1024 events; queries report
-`event_gap` for lost or future cursors. Successful mutations share a 60-per-second
-budget. A mutation is charged only after it has been fully validated and processed on a
+`event_gap` for lost or future cursors. Successful mutations across all clients and input, feedback, renew and reset share one
+per-process budget. `--write-limit N` selects 1..10000 writes per second; the default
+remains 60. Reads do not consume it. The window lasts one second from its first committed
+write, then resets on the next write. A mutation is charged only after it has been fully validated and processed on a
 copy of the simulator, immediately before commit; permission, CAS, value, mapping,
 and other failures never consume budget. A `rate_limited` mutation changes nothing.
 `surface_control_renew` needs `--allow-surface-input` and is charged to the same budget.
@@ -398,3 +400,38 @@ by its version allowlist. Pipe needs its contract allowlist, capability vocabula
 example profile version/mapping pin updated before this 1.2 delivery can assemble there. The
 probe reports that refusal separately from the supplier's descriptor checks; it does not patch
 the consumer or claim an accepted 1.2 assembly.
+
+
+## Full-chain simulation startup
+
+Create one isolated directory and private token per process; use the delivered binary,
+`--port 0`, a unique `--surface-instance-id`, and an absent ready-file path. For the neutral
+chassis scenario (paths relative to the delivery):
+
+```sh
+cat /path/to/private/token | ./XTouchSurfaceSimulator --token-stdin \
+  --surface-instance-id chassis.simulation.example --port 0 \
+  --ready-file /path/to/isolated/ready.json \
+  --simulation-configuration examples/chassis.json --write-limit 60 \
+  --allow-surface-input --allow-surface-feedback --allow-surface-reset
+```
+
+Discover and pin the running profile, mapping and epoch before writing. Request an enable
+lease of 1 second and renew every 0.25 seconds while the operator explicitly holds enable.
+Release with `false`; a stopped client loses its lease automatically. Never restore a lease
+after reconnect without a new operator action. Lease expiry restores simulated input only;
+the consumer must enforce device safety and verify actual stopped motion separately.
+
+At the default 60/s shared budget, keep total display feedback at or below 12 writes/s
+(for example three display controls at 4Hz each). Reserve budget for operator inputs,
+4Hz renewal and explicit stop/reset. Multiple clients share the same budget. Each feedback
+still consumes an event sequence; on `stale_sequence`, refresh and explicitly choose a new
+input. Never retry a mutation after an unknown transport outcome.
+
+The platform taskless trial uses the default demonstration parameter set
+`simulation.arm/start/pause/cancel/state/progress/link`; omit `--simulation-configuration`
+for that trial. It is distinct from the neutral chassis configuration above.
+
+Stop with SIGTERM or SIGINT and wait for process exit; the process removes its own ready
+file. Delete only the token and directory created for this run after consumers stop. This
+simulator creates no persistent service, containers, volumes or user profile state.
