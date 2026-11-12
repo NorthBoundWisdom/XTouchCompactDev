@@ -193,10 +193,15 @@ def publish(stage, root, host, timeout=10):
                     os.fsync(stream.fileno())
                     os.replace(temporary, root / "INDEX.json")
                 except BaseException:
-                    if published:
-                        output.rename(stage)
-                    if backup is not None:
-                        backup.rename(output)
+                    try:
+                        if published:
+                            output.rename(stage)
+                        if backup is not None:
+                            backup.rename(output)
+                    except BaseException as recovery_error:
+                        raise RuntimeError(
+                            "Delivery rollback failed; preserve and inspect previous delivery at " + str(backup)
+                        ) from recovery_error
                     raise
         finally:
             Path(temporary).unlink(missing_ok=True)

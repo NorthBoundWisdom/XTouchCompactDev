@@ -86,6 +86,27 @@ class DeliveryIndexTests(unittest.TestCase):
         self.assertEqual((self.root / "INDEX.json").read_bytes(), old_index)
         self.assertFalse((self.root / ".index.lock").exists())
 
+    def test_rollback_io_failure_preserves_old_backup_and_reports_its_path(self):
+        delivery_index.publish(stage_at(self.root, ".old"), self.root, "xtouch")
+        old_index = (self.root / "INDEX.json").read_bytes()
+        replacement = stage_at(self.root, ".new", payload="new")
+        original_rename = Path.rename
+
+        def rename(path, destination):
+            if path.name.startswith(".previous-"):
+                raise OSError("injected recovery failure")
+            return original_rename(path, destination)
+
+        with patch.object(delivery_index.os, "replace", side_effect=OSError("injected index failure")):
+            with patch.object(Path, "rename", rename):
+                with self.assertRaisesRegex(RuntimeError, "rollback failed") as failure:
+                    delivery_index.publish(replacement, self.root, "xtouch")
+        backups = list(self.root.glob(".previous-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertIn(str(backups[0]), str(failure.exception))
+        self.assertEqual((backups[0] / "payload").read_text(), "original")
+        self.assertEqual((self.root / "INDEX.json").read_bytes(), old_index)
+
     def test_first_index_failure_does_not_leave_unindexed_directory(self):
         stage = stage_at(self.root, ".new")
         with patch.object(delivery_index.os, "replace", side_effect=OSError("injected index failure")):
