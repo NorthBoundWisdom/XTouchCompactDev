@@ -14,12 +14,15 @@ evidence without establishing a physical acknowledgement. Disconnects never
 fabricate a release.
 
 Each release window lists same-fader motor outputs until its next touch-down,
-connection change or capture end. Repeated release messages do not create extra
+connection, mode or configured TX change, or capture end. Repeated release messages do not create extra
 windows. These counts include later explicit writes: timestamps and command
 counts cannot establish that a command was caused by release reconciliation.
 Unknown initial touch/layer state, missing delivery facts and incomplete prefixes
-are explicit. An exit code of 0 means no recorded violation; 1 means recorded
-violations; 2 means unreadable or malformed evidence. None is hardware sign-off.
+are explicit. `assessment` is `no-recorded-violations`, `violations`, or
+`inconclusive`; `evidenceSufficient` only concerns the recorded checks. Exit 0
+means no recorded violation with sufficient recorded state; 1 means recorded
+violations; 2 means unreadable/malformed evidence; **3 means incomplete or
+insufficient evidence**. None is hardware sign-off.
 Unreported firmware travel from physical layer keys or Program Change cannot be
 measured by this audit. 未在实机复核。
 
@@ -30,7 +33,9 @@ measured by this audit. 未在实机复核。
 | `1794500725` | 63 | 5 | 0 / 0 | F1 sequence 2 → end: 5 | 1 |
 | `1794501019` | 170 | 0 | 0 / 0 | No release observed | 3 |
 
-Both captures are complete. In the first, motor sequences 59–63 have unknown
+Both captures are complete. With the stricter U11 audit, both return **exit 3 /
+`inconclusive`**, with zero recorded violations. Neither capture has fresh touch
+evidence for all nine faders before its layer assertions. In the first, motor sequences 59–63 have unknown
 layer after a sent assertion; their touch state follows the recorded release.
 The session record attributes these five commands to a subsequent slider drag,
 not to release catch-up. The second contains no input messages, so it cannot
@@ -48,3 +53,12 @@ Layer-switch output batches now record the newly committed software bank for eve
 event (U9; 未在实机复核). Older captures can tag that batch with the previous host
 bank, so review the raw Program Change and session record together; do not rewrite
 private originals or treat that tag as physical layer acknowledgement.
+
+U11 also tracks physical safety touches received while the app uses Mock. A route,
+mode or configured TX change closes release windows and invalidates layer/released
+state; known held latches survive conservatively. Identical known connection
+snapshots do not erase mismatch evidence. Missing or contradictory event metadata
+is rejected instead of silently skipping potential hardware outputs. Null route
+facts remain unknown and are reported for motor/layer outputs. All-nine touch
+coverage is required to assess Program Change under touch; F1 alone is insufficient.
+These stricter offline results remain **未在实机复核**.
