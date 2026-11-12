@@ -48,14 +48,19 @@ class RunningSimulator:
         self.process.stderr.close()
 
     def request(self, name, args=None, token=TOKEN, origin=None):
-        data = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": name, "arguments": args or {}}}).encode()
+        return self.rpc({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": name, "arguments": args or {}}}, token=token, origin=origin)["result"]
+
+    def rpc(self, envelope, token=TOKEN, origin=None, raw=None, protocol=None):
+        data = raw if raw is not None else json.dumps(envelope).encode()
         headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
         if origin:
             headers["Origin"] = origin
+        if protocol:
+            headers["MCP-Protocol-Version"] = protocol
         request = urllib.request.Request(self.ready["url"], data, headers)
         with urllib.request.urlopen(request, timeout=5) as response:
-            return json.load(response)["result"]
+            return json.load(response)
 
     def discover(self):
         return self.request("surface_control_discover")["structuredContent"]
@@ -63,10 +68,10 @@ class RunningSimulator:
     def snapshot(self):
         return self.request("surface_control_snapshot", {"instance_id": self.ready["surface_control"]["expected"]["instance_id"]})["structuredContent"]
 
-    def input(self, value=127):
+    def input(self, value=127, control="a.encoder.1", encoding="scalar"):
         discovery = self.discover()
         return {"expected": discovery["expected"], "expected_sequence": discovery["latest_sequence"],
-            "control_id": "a.encoder.1", "encoding": "scalar", "value": value}
+            "control_id": control, "encoding": encoding, "value": value}
 
 
 class SurfaceSimulatorHTTPTests(unittest.TestCase):
@@ -82,7 +87,8 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         discovery = self.a.discover()
         self.assertEqual(discovery["expected"], self.a.ready["surface_control"]["expected"])
         self.assertEqual(discovery["source"], "simulation")
-        self.assertEqual(len(discovery["profile"]["controls"]), 178)
+        self.assertEqual(len(discovery["profile"]["controls"]), 184)
+        self.assertEqual(discovery["profile"]["version"], "1.1")
         request = self.a.input()
         accepted = self.a.request("surface_control_input", request)
         self.assertFalse(accepted["isError"])
@@ -158,6 +164,9 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(result["structuredContent"]["code"], "stale_sequence")
         self.assertEqual(self.a.snapshot()["latest_sequence"], "1")
 
+    @unittest.skip("P1-C: pinned SDK 1.0.0 copy accepts only profile 1.0 and fails closed on 1.1 "
+                   "(see test_pinned_1_0_sdk_copy_fails_closed_on_profile_1_1). Re-enable unchanged "
+                   "when P2 replaces Clients/Python with the shared SDK 1.1.")
     def test_same_public_sdk_consumes_both_supported_protocols(self):
         for protocol in ("2025-11-25", "2026-07-28"):
             client = Client(self.a.ready["url"], TOKEN, "car.a", protocol=protocol)
@@ -176,6 +185,61 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
             with self.assertRaises(SurfaceError):
                 cursor.poll()
             self.assertTrue(cursor.invalidated)
+
+    def test_pinned_1_0_sdk_copy_fails_closed_on_profile_1_1(self):
+        # Clients/Python is the pinned SDK 1.0.0 copy; it is replaced by the shared 1.1 SDK in P2.
+        # Until then it must refuse the 1.1 profile before any mutation, never guess.
+        for protocol in ("2025-11-25", "2026-07-28"):
+            client = Client(self.a.ready["url"], TOKEN, "car.a", protocol=protocol)
+            cursor = CommandCursor(client, {name: "simulation." + name for name in ("arm", "start", "pause", "cancel")})
+            with self.assertRaises(SurfaceError) as caught:
+                cursor.bootstrap()
+            self.assertEqual(caught.exception.code, "unsupported_profile")
+        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")
+
+    def test_both_protocols_carry_input_feedback_reset_semantics(self):
+        for protocol in ("2025-11-25", "2026-07-28"):
+            initialized = self.a.rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": protocol, "capabilities": {}}}, protocol=protocol)
+            self.assertEqual(initialized["result"]["protocolVersion"], protocol)
+            discovery = self.a.discover()
+            cursor = discovery["latest_sequence"]
+            accepted = self.a.request("surface_control_input", self.a.input(127))["structuredContent"]
+            self.assertEqual((accepted["disposition"], accepted["mapped_value"]), ("accepted", 127))
+            feedback = self.a.request("surface_control_feedback", {"expected": discovery["expected"],
+                "expected_sequence": accepted["sequence"], "control_id": "a.button.1", "kind": "indicator",
+                "value": "on"})["structuredContent"]
+            self.assertEqual(feedback["kind"], "feedback")
+            repeated = self.a.request("surface_control_input", self.a.input(127))["structuredContent"]
+            self.assertEqual((repeated["disposition"], repeated["reason"]), ("ignored", "no_change"))
+            page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"],
+                "after_sequence": cursor, "limit": 100})["structuredContent"]
+            self.assertEqual([(e["kind"], e["disposition"]) for e in page["events"]],
+                [("input", "accepted"), ("feedback", "accepted"), ("input", "ignored")])
+            current = self.a.discover()
+            reset = self.a.request("surface_control_reset", {"expected": current["expected"],
+                "expected_sequence": current["latest_sequence"]})["structuredContent"]
+            self.assertNotEqual(reset["expected"]["epoch"], discovery["expected"]["epoch"])
+            stale = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"],
+                "after_sequence": "0", "limit": 100})["structuredContent"]
+            self.assertEqual(stale["code"], "stale_epoch")
+
+    def test_public_layer_keys_reach_inactive_layer_without_new_epoch(self):
+        before = self.a.discover()
+        ignored = self.a.request("surface_control_input", self.a.input(100, "b.fader.1"))["structuredContent"]
+        self.assertEqual(ignored["reason"], "inactive_layer")
+        press = self.a.request("surface_control_input", self.a.input(True, "global.layer.b", "boolean"))["structuredContent"]
+        self.assertEqual((press["disposition"], press["mapped_value"]), ("accepted", "b"))
+        accepted = self.a.request("surface_control_input", self.a.input(100, "b.fader.1"))["structuredContent"]
+        self.assertEqual(accepted["disposition"], "accepted")
+        after = self.a.discover()
+        self.assertEqual(after["expected"], before["expected"])
+        self.assertEqual(after["latest_sequence"], "3")
+        self.assertEqual(self.a.snapshot()["inputs"]["b.fader.1"], 100)
+        pedal = self.a.request("surface_control_input", self.a.input(64, "b.expression.1"))["structuredContent"]
+        self.assertEqual(pedal["disposition"], "accepted")
+        self.assertEqual(self.a.request("surface_control_input", self.a.input(5, "a.expression.1"))["structuredContent"]["reason"],
+            "inactive_layer")
 
     def test_default_instance_changes_when_same_port_restarts(self):
         self.a.close()

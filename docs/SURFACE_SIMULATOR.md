@@ -23,7 +23,10 @@ python3 configs/package_surface_simulator.py --output build/deliveries/surface-s
 
 The output contains the binary, `manifest.json`, dependency lock,
 `control-contract.json` (shared tool schemas plus the actual profile), this guide,
-`minimal_consumer.py`, and `surface-control-sdk-1.0.0.zip`. The same public Python SDK and `examples/surface_roundtrip.py` can consume both hosts using a pinned manifest; upstream file provenance is in `surface-control-sdk-source.json`. The optional `examples/pipe_surface_trial.py` requires an explicitly isolated Pipe taskless-trial deployment and owned state. The manifest hashes every other file and records exact
+`minimal_consumer.py`, and `surface-control-sdk-1.0.0.zip`. The pinned SDK 1.0.0 copy
+accepts profile version `1.0` only, so it refuses this `1.1` profile with
+`unsupported_profile` before any mutation; `minimal_consumer.py` (raw JSON-RPC) does
+work. The shared SDK 1.1 replaces this copy in the next delivery. The same public Python SDK and `examples/surface_roundtrip.py` can consume both hosts using a pinned manifest; upstream file provenance is in `surface-control-sdk-source.json`. The optional `examples/pipe_surface_trial.py` requires an explicitly isolated Pipe taskless-trial deployment and owned state. The manifest hashes every other file and records exact
 host/shared revisions, platform, architecture, and build configuration. It is a
 local software delivery, without a release tag or notarization claim.
 
@@ -98,29 +101,63 @@ than event replay. The journal retains at most 1024 events; queries report
 
 ## XTouch profile and semantics
 
-`xtouch.compact.standard.simulation` version `1.0` declares 178 controls across
-layers A/B. IDs are `a.fader.1` … `a.fader.9`, `a.touch.1` … `a.touch.9`,
+`xtouch.compact.standard.simulation` version `1.1` declares 184 controls. Each layer
+A/B has `a.fader.1` … `a.fader.9`, `a.touch.1` … `a.touch.9`,
 `a.encoder.1` … `a.encoder.16`, `a.push.1` … `a.push.16`,
-`a.button.1` … `a.button.39`, and corresponding `b.*` IDs.
+`a.button.1` … `a.button.39`, the optional pedals `a.expression.1` and
+`a.footswitch.1`, and corresponding `b.*` IDs. Two layer-independent buttons,
+`global.layer.a` and `global.layer.b`, are the physical A/B layer keys. Version `1.0`
+had only the 178 layered controls; 1.1 is an additive change, with the same IDs and
+semantics for those controls.
 
-Faders and stock encoders accept integer absolute scalar values `0…127`.
-An endless knob is not advertised as a relative MIDI encoder. Touch, push, and
-button gestures accept booleans. Unsupported IDs, profiles, relative encodings,
-fractional scalar values, and out-of-range values fail visibly.
+Faders, stock encoders, and the expression pedal accept integer absolute scalar values `0…127`.
+An endless knob is not advertised as a relative MIDI encoder. Touch, push,
+footswitch, button, and layer-key gestures accept booleans. Unsupported IDs, profiles,
+relative encodings, fractional scalar values, and out-of-range values fail visibly.
 
 The headless demonstration starts in layer A. Inactive-layer input/feedback is
-`ignored` with `inactive_layer`; the Swift host API can explicitly select a layer
-with a fresh epoch. No layer operation recalls motors. Identical raw input is
-`ignored` with `no_change`, preventing repeated button-down from toggling twice.
+`ignored` with `inactive_layer`. Pressing a layer key (`true`) is an ordinary accepted
+input event (`mapped_value` is `"a"` or `"b"`) that selects that layer in the Mock and
+the session together, exactly like the physical key. It does **not** change the epoch,
+instance, or mapping revision: control IDs and their meaning are unchanged, and only
+which layer's inputs are `ignored` changes. Pressing the already active layer's key
+still records an accepted input but changes nothing; releasing a key (`false`) is
+accepted and changes nothing; repeating the same raw key value is `ignored`
+`no_change`, as for every button, so release a key (`false`) before pressing it again. Consumers that must know the active layer track their own accepted
+layer-key events. The in-process Swift `selectLayer(_:epoch:)` remains a host lifecycle
+operation that rotates the epoch. No layer operation recalls motors: on a layer key
+press the session discards pending motor intents, fader display overlays are released
+(below), and ring/indicator display overlays of the now active layer are redrawn.
+
+Pedals use the Mock's expression and footswitch gestures and the session's existing
+pedal decoding. They have no feedback address, so they declare no feedback kinds. A
+pedal mapping is advertised only for a parameter assignment. Any other assignment
+(for example a footswitch `set` action) is not advertised, and input on that pedal fails
+`unsupported_mapping` without changing the Mock, engine, or journal, the same as other
+action bindings. An expression pedal has no initial reading, so it is omitted from the
+seeded snapshot inputs until its first accepted input; the footswitch starts `false`.
+Identical raw input is `ignored` with `no_change`, preventing repeated button-down from toggling twice.
 Simulation writes preserve `agentWritable` and `externallyProtected`; action
 assignments require a separate explicit composition and are not executed here.
+
+Simulated gestures are ordinary input through `CompactSession.receive`, like a local
+hand movement. The App's Agent motor permission (`setParameter(drivesMotors:)`) applies
+only to Agent writes, so it does not affect simulated input: other faders bound to the same
+parameter follow, unless they are touched.
 
 Feedback supports scalar fader/encoder display values and button indicators
 `off`, `on`, `blink`. Encoders render the existing 13-segment ring policy. Fader
 feedback is explicit display intent and still cannot move a touched fader; release
 can reconcile pending desire. Feedback never alters parameters, emits input,
 updates the physical-observation cache, or treats last-sent as actual measurement.
-Business display state is restored after local redraws without emitting events.
+Business display state is restored after local redraws without emitting events. A
+fader display overlay is a one-shot motor intent, not a lock. When an accepted input
+moves that fader, or a layer key is pressed, the overlay no longer drives the motor:
+later redraws never pull a hand-placed fader back to an older display value. A new
+`surface_control_feedback` request for that fader re-arms it. The snapshot keeps
+reporting the last accepted display intent. Ring and indicator overlays, including on
+the control being input, are always reasserted after an accepted input; they never move
+a physical part.
 All events and discovery identify `source: simulation`; remote requests cannot
 choose hardware origin. The contract does not expose a hardware readback API.
 
@@ -139,9 +176,13 @@ production operator bridges that require hardware input remain ineligible.
 using real Mock/session values and an injected clock. It emits
 `build/surface-scenario-report.json` with exact source/fixture hashes and per-step
 results. This deterministic report is separate from real HTTP/process evidence.
+The fixture addresses mapped roles only, so the layer keys and pedals added in 1.1 do
+not change its 40 steps.
 Run the latter with
 `python3 -m unittest discover -s Tests/SimulatorIntegration -v` after building the
 executable. The tests copy the binary to an isolated working directory, exercise
-both public MCP versions with the common SDK, discard a write response, reject
-stale CAS, restart a default instance at the same port, and isolate A/B processes.
+both public MCP versions, discard a write response, reject stale CAS, restart a
+default instance at the same port, and isolate A/B processes. They also cover layer
+keys and pedals, and that the pinned SDK 1.0.0 copy fails closed on profile 1.1. The original SDK round-trip test is kept and skipped until
+the shared SDK 1.1 replaces the copy.
 No test here starts a production Pipe service or connects physical hardware.

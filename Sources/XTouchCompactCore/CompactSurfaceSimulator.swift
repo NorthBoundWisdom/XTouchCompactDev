@@ -11,9 +11,17 @@ public struct CompactSurfaceSimulator: Sendable {
     public private(set) var mock: MockXTouchCompact
     public private(set) var controls: SurfaceControlSession
     private let configuration: SurfaceConfiguration
+    /// Fader display overlays that no longer drive a motor. A fader overlay is a one-shot
+    /// motor intent: an accepted position input on that fader or any layer selection
+    /// supersedes it until a new feedback request for the same control re-arms it.
+    private var releasedMotorOverlays: Set<String> = []
 
     public static let profileID = "xtouch.compact.standard.simulation"
-    public static let profileVersion = "1.0"
+    public static let profileVersion = "1.1"
+    /// Physical A/B layer keys. They are layer-independent public buttons.
+    public static let layerKeyIDs: [CompactLayer: String] = [.a: "global.layer.a", .b: "global.layer.b"]
+    static let layeredKinds: [(kind: String, count: Int)] = [("fader", 9), ("touch", 9), ("encoder", 16), ("push", 16), ("button", 39),
+                                                             ("expression", 1), ("footswitch", 1)]
     public static var demonstrationConfiguration: SurfaceConfiguration {
         let roles = ["arm", "start", "pause", "cancel"]
         var parameters = roles.map { ParameterDefinition(id: "simulation.\($0)", name: $0) }
@@ -42,20 +50,25 @@ public struct CompactSurfaceSimulator: Sendable {
     public static func profile(configuration: SurfaceConfiguration) -> ControlProfile {
         var descriptors: [ControlDescriptor] = []
         for layer in CompactLayer.allCases {
-            for (kind, count) in [("fader", 9), ("touch", 9), ("encoder", 16), ("push", 16), ("button", 39)] {
+            for (kind, count) in layeredKinds {
                 for index in 1 ... count {
                     let control = compactControl(kind: kind, index: index)!
-                    let absolute = kind == "fader" || kind == "encoder"
+                    let absolute = kind == "fader" || kind == "encoder" || kind == "expression"
                     var mapping: ControlMapping?
                     if case let .parameter(id) = configuration.assignments.first(where: { $0.layer == layer && $0.control == control })?.action {
                         mapping = ControlMapping(kind: .parameter, id: id)
                     }
+                    // Pedals have no RX feedback address: input only.
+                    let feedback: [ControlFeedbackKind] = kind == "fader" || kind == "encoder" ? [.value] : (kind == "button" ? [.indicator] : [])
                     descriptors.append(.init(id: "\(layer.rawValue).\(kind).\(index)", inputKind: absolute ? .absolute : .button,
                                              encoding: absolute ? .scalar : .boolean,
                                              range: absolute ? .init(minimum: 0, maximum: 127, step: 1) : nil,
-                                             feedbackKinds: absolute ? [.value] : (kind == "button" ? [.indicator] : []), mapping: mapping))
+                                             feedbackKinds: feedback, mapping: mapping))
                 }
             }
+        }
+        for layer in CompactLayer.allCases {
+            descriptors.append(.init(id: layerKeyIDs[layer]!, inputKind: .button, encoding: .boolean))
         }
         return .init(id: profileID, version: profileVersion, controls: descriptors,
                      capabilities: ["simulation", "display_feedback", "absolute_input", "button_input", "layered_controls", "touch_protection"])
@@ -64,46 +77,81 @@ public struct CompactSurfaceSimulator: Sendable {
     @discardableResult public mutating func input(_ input: ControlInput, at time: Double) throws -> ControlEvent {
         _ = try controls.validateInput(input, at: time)
         var next = self
-        let (layer, kind, index) = try Self.address(input.control_id)
         var disposition: ControlDisposition = .accepted
         var reason: String?
         var mapped: JSONValue?
-        if layer == session.state.layer {
-            try validateExternalWrite(kind: kind, index: index, layer: layer)
-        }
-        if layer != session.state.layer {
-            disposition = .ignored; reason = "inactive_layer"
-        } else if try (controls.snapshot(at: time)).inputs[input.control_id] == input.value {
-            disposition = .ignored; reason = "no_change"
+        let unchanged = try (controls.snapshot(at: time)).inputs[input.control_id] == input.value
+        if let target = Self.layerKey(input.control_id) {
+            // A physical layer key is an ordinary input: identity, epoch and mapping are kept.
+            if unchanged {
+                disposition = .ignored; reason = "no_change"
+            } else if input.value == .bool(true) {
+                try next.switchLayer(target, at: time)
+                mapped = .string(target.rawValue)
+            }
         } else {
-            let messages: [MIDIMessage]
-            switch kind {
-            case "fader": messages = try next.mock.moveFader(index, value: UInt8(input.value.finiteNumber!))
-            case "encoder": messages = try next.mock.turnEncoder(index, value: UInt8(input.value.finiteNumber!))
-            case "touch": messages = try next.mock.touchFader(index, isTouched: input.value == .bool(true))
-            case "push": messages = try next.mock.pushEncoder(index, isDown: input.value == .bool(true))
-            case "button": messages = try next.mock.pressButton(index, isDown: input.value == .bool(true))
-            default: throw ControlContractError("unsupported_control")
+            let (layer, kind, index) = try Self.address(input.control_id)
+            if layer == session.state.layer {
+                try validateExternalWrite(kind: kind, index: index, layer: layer)
             }
-            let update = try next.session.receive(messages)
-            // Only parameter mappings are exposed by this software composition.
-            // New action bindings require an explicit host composition, not a bypass.
-            guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
-            next.mock.receive(update.feedback)
-            for (id, channels) in try (next.controls.snapshot(at: time)).feedback {
-                for (channel, value) in channels {
-                    try next.applyDisplay(.init(expected: next.controls.expected, expectedSequence: next.controls.discovery().latest_sequence, controlID: id, kind: channel, value: value))
+            if layer != session.state.layer {
+                disposition = .ignored; reason = "inactive_layer"
+            } else if unchanged {
+                disposition = .ignored; reason = "no_change"
+            } else {
+                let messages: [MIDIMessage]
+                switch kind {
+                case "fader": messages = try next.mock.moveFader(index, value: UInt8(input.value.finiteNumber!))
+                case "encoder": messages = try next.mock.turnEncoder(index, value: UInt8(input.value.finiteNumber!))
+                case "touch": messages = try next.mock.touchFader(index, isTouched: input.value == .bool(true))
+                case "push": messages = try next.mock.pushEncoder(index, isDown: input.value == .bool(true))
+                case "button": messages = try next.mock.pressButton(index, isDown: input.value == .bool(true))
+                case "expression": messages = try next.mock.moveExpression(UInt8(input.value.finiteNumber!))
+                case "footswitch": messages = next.mock.pressFootswitch(isDown: input.value == .bool(true))
+                default: throw ControlContractError("unsupported_control")
                 }
-            }
-            if case let .parameter(id) = next.session.parameters.assignment(Self.compactControl(kind: kind, index: index)!, layer: layer),
-               let value = next.session.parameters.values[id]
-            {
-                mapped = .double(value)
+                let update = try next.session.receive(messages)
+                // Only parameter mappings are exposed by this software composition.
+                // New action bindings require an explicit host composition, not a bypass.
+                guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
+                next.mock.receive(update.feedback)
+                // The hand-placed fader supersedes its own display overlay; it is never pulled back.
+                if kind == "fader" {
+                    next.releasedMotorOverlays.insert(input.control_id)
+                }
+                try next.reassertDisplay(at: time)
+                if case let .parameter(id) = next.session.parameters.assignment(Self.compactControl(kind: kind, index: index)!, layer: layer),
+                   let value = next.session.parameters.values[id]
+                {
+                    mapped = .double(value)
+                }
             }
         }
         let event = try next.controls.recordInput(input, disposition: disposition, mappedValue: mapped, reason: reason, origin: .remote, at: time)
         self = next
         return event
+    }
+
+    /// Mock and session switch together, as after a physical A/B key press. No motor is
+    /// recalled: the session discards motor intents and fader overlays are superseded.
+    /// Ring and indicator overlays of the newly active layer are redrawn.
+    private mutating func switchLayer(_ layer: CompactLayer, at time: Double) throws {
+        guard layer != session.state.layer else { return }
+        mock.selectPhysicalLayer(layer)
+        try mock.receive(session.selectLayer(layer))
+        for id in try (controls.snapshot(at: time)).feedback.keys where Self.isFader(id) {
+            releasedMotorOverlays.insert(id)
+        }
+        try reassertDisplay(at: time)
+    }
+
+    /// Business display state survives engine redraws without emitting events.
+    private mutating func reassertDisplay(at time: Double) throws {
+        for (id, channels) in try (controls.snapshot(at: time)).feedback where !releasedMotorOverlays.contains(id) {
+            for (channel, value) in channels {
+                try applyDisplay(.init(expected: controls.expected, expectedSequence: controls.discovery().latest_sequence, controlID: id, kind: channel, value: value))
+            }
+        }
     }
 
     private func validateExternalWrite(kind: String, index: Int, layer: CompactLayer) throws {
@@ -124,6 +172,7 @@ public struct CompactSurfaceSimulator: Sendable {
         let (layer, _, _) = try Self.address(feedback.control_id)
         let active = layer == next.session.state.layer
         if active {
+            next.releasedMotorOverlays.remove(feedback.control_id)
             try next.applyDisplay(feedback)
         }
         let event = try next.controls.recordFeedback(feedback, disposition: active ? .accepted : .ignored,
@@ -167,6 +216,7 @@ public struct CompactSurfaceSimulator: Sendable {
         guard epoch != controls.expected.epoch else { throw ControlContractError("invalid_argument") }
         var next = self
         try next.mock.receive(next.session.selectLayer(layer))
+        next.releasedMotorOverlays.removeAll() // The epoch rotation clears all display intent.
         let expected = controls.discovery().expected
         try next.controls.reset(expected: expected, expectedSequence: controls.discovery().latest_sequence,
                                 epoch: epoch, mappingRevision: expected.mapping_revision, at: time)
@@ -188,12 +238,33 @@ public struct CompactSurfaceSimulator: Sendable {
             for index in 1 ... 39 {
                 values["\(layer.rawValue).button.\(index)"] = .bool(mock.pressedButtons.contains(index))
             }
+            // An expression pedal without a reading is unknown, not 0: omit it from the seed.
+            if let expression = mock.expression {
+                values["\(layer.rawValue).expression.1"] = .number(Int(expression))
+            }
+            values["\(layer.rawValue).footswitch.1"] = .bool(mock.footswitchDown)
+        }
+        for id in Self.layerKeyIDs.values {
+            values[id] = .bool(false)
         }
         return values
     }
 
     private static func compactControl(kind: String, index: Int) -> CompactControl? {
-        switch kind { case "fader": .fader(index); case "touch": .faderTouch(index); case "encoder": .encoder(index); case "push": .encoderPush(index); case "button": .button(index); default: nil }
+        switch kind {
+        case "fader": .fader(index); case "touch": .faderTouch(index); case "encoder": .encoder(index); case "push": .encoderPush(index); case "button": .button(index)
+        case "expression" where index == 1: .expression
+        case "footswitch" where index == 1: .footswitch
+        default: nil
+        }
+    }
+
+    private static func layerKey(_ id: String) -> CompactLayer? {
+        layerKeyIDs.first { $0.value == id }?.key
+    }
+
+    private static func isFader(_ id: String) -> Bool {
+        (try? address(id)).map { $0.1 == "fader" } ?? false
     }
 
     private static func address(_ id: String) throws -> (CompactLayer, String, Int) {
