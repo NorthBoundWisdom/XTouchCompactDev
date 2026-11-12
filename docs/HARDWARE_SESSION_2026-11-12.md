@@ -30,11 +30,26 @@ the sequence ran on B first and then on A after the physical layer key.
   layer from the address of the next input.
 - No message outside the factory table appeared.
 
+## Encoder 1 reporting mode (capture `encoder-mode-2026-11-12.jsonl`, 176 messages)
+
+Layer A, CC 10 only. The operator turned slowly, then to both ends, then quickly.
+
+- **Absolute 0–127.** Slow turning sent one message per step with consecutive values
+  (2, 3, 4 … 48). This is not relative 1 / 65 encoding.
+- **Clamped at both ends, and it keeps transmitting.** Turning past the top sent 127
+  again 33 times; past the bottom, 0 again 8 times. The knob is endless but the value is
+  not.
+- **Accelerated.** Fast turning skipped values, with steps of up to 6–7 per message
+  (1 → 80 in 0.14 s over 16 messages).
+
+This matches the model contract's "accelerated absolute" description and the mock. In
+the session, each repeated end-stop message produces one ring reassertion and no extra
+undo step (checked with a throwaway test, 33 repeats → 33 ring messages, 1 undo step).
+Only encoder 1 on layer A was measured.
+
 ## Not established by this session
 
 - Only control 1 of each kind was exercised: this is not HW-2/HW-3 coverage and not C2.
-- Encoder mode: three rotation messages in total (values 1, 2, 1). That is too little to
-  tell absolute from relative reporting, or to see acceleration.
 - Firmware version, Global RX channel, LED encodings, ring styles and all motor behavior
   (HW-1 remainder, HW-4, HW-5, HW-6) are untouched: no output was sent.
 - Pedals were not connected.
