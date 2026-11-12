@@ -38,7 +38,12 @@ python3 configs/setup_local_project.py            # once, as for any build
 python3 tools/remote_hardware.py deploy  --ssh henrys-mac-mini
 python3 tools/remote_hardware.py devices --ssh henrys-mac-mini   # the controller should show [controller]
 python3 tools/remote_hardware.py connect --ssh henrys-mac-mini   # keep running; Ctrl-C to stop
+python3 tools/remote_hardware.py status  --ssh henrys-mac-mini   # read-only check, any time
 ```
+
+`status` starts nothing. It reports whether the deployed bridge matches a local build
+(`current` / `outdated, run deploy` / `not deployed`), which bridges are running on the
+remote Mac, which local clients are running, and whether the controller is visible there.
 
 `deploy` builds a release binary in `build/remote-midi/` and installs it as
 `~/.xtouch-remote/XTouchRemoteMIDI` on the remote Mac. Rerun `deploy` after changing the
