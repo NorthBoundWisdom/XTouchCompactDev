@@ -97,7 +97,6 @@
                         VStack(spacing: 14) {
                             latestInput
                             selectedReadout
-                            recentInputs
                             connectionControls
                         }
                         .frame(width: 300)
@@ -122,6 +121,7 @@
                     .font(.callout.bold()).foregroundStyle(snapshot.nonMotorTests.approval == nil ? Theme.value : Theme.touch)
                     .padding(10).background(Theme.value.opacity(0.1), in: Capsule())
                 Button(l.text("Reset observations")) { intents.resetHardwareObservation?() }
+                Button(l.text("Enable writeback")) { intents.enableHardwareWriteback?() }
                 Button(l.text("Back to console")) { intents.endHardwareObservation?() }
             }
             .padding(.horizontal, 20).padding(.vertical, 16)
@@ -228,25 +228,6 @@
                 .font(.headline).foregroundStyle(state == true ? Theme.touch : Color.secondary)
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .background((state == true ? Theme.touch : Color.secondary).opacity(0.12), in: Capsule())
-        }
-
-        private var recentInputs: some View {
-            VStack(alignment: .leading, spacing: 9) {
-                SectionTitle(l.text("Recent physical inputs"), icon: "clock.arrow.circlepath")
-                if observation.recent.isEmpty {
-                    Text(l.text("No physical state reported yet")).font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(observation.recent.prefix(8)) { input in
-                    HStack {
-                        Text(input.input?.control.shortName ?? "MIDI").font(.caption.monospaced().bold()).frame(width: 42, alignment: .leading)
-                        Text(action(input)).font(.caption).lineLimit(1)
-                        Spacer()
-                        Text(input.timestamp.formatted(date: .omitted, time: .standard))
-                            .font(.caption2.monospaced()).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .panelStyle()
         }
 
         private var coverage: some View {

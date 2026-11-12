@@ -291,7 +291,8 @@ public struct CompactSession: Sendable {
     }
 
     public static func ringSegment(for value: UInt8) -> Int {
-        // The physical ring has 13 steps, not 128. Always show one active LED.
+        // Quantize the protocol's indexed position command to 1...13. Local firmware
+        // rotation patterns (including adjacent pairs) are separate from this RX address.
         1 + (Int(value) * 12 + 63) / 127
     }
 }

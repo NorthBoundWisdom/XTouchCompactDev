@@ -53,6 +53,42 @@
         let width: CGFloat
         let height: CGFloat
         switch scene {
+        case "startup-readings", "startup-readings-live", "startup-readings-empty":
+            width = 1600; height = 1000
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("XTouch-readings-preview-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            var workspace = SavedWorkspace(configuration: .neutral, profile: .init())
+            if scene != "startup-readings-empty" {
+                var values = HardwareValueCache(inputID: 1, transmitChannel: 0)
+                let map = try FactoryStandardMap()
+                for message: MIDIMessage in [.controlChange(channel: 0, number: 28, value: 8),
+                                             .controlChange(channel: 0, number: 37, value: 6),
+                                             .controlChange(channel: 0, number: 38, value: 10),
+                                             .controlChange(channel: 0, number: 45, value: 18),
+                                             .controlChange(channel: 0, number: 46, value: 22)]
+                {
+                    if let input = map.decode(message) {
+                        values.record(input, at: Date(timeIntervalSince1970: 1_794_405_600))
+                    }
+                }
+                workspace.hardwareValues = values
+            }
+            try ProtectedWorkspaceStore(directory: root).save(workspace)
+            let service = ObservationPreviewService()
+            let preview = ConsoleModel(startsMIDI: false, midi: service, storageRoot: root, isolated: true)
+            let endpoint = CompactMIDIEndpoint(id: 1, name: "Isolated preview fixture")
+            service.onConnection?(CompactMIDIConnection(connectedInput: endpoint, connectedOutput: endpoint))
+            preview.useHardware(true)
+            if scene == "startup-readings-live" {
+                service.onMessages?([.controlChange(channel: 0, number: 28, value: 8)])
+            }
+            content = AnyView(ContentView(snapshot: preview.panelSnapshot, intents: preview.panelIntents))
+        case "encoder-rings":
+            width = 1600; height = 1000
+            for (index, value) in [(1, 6), (2, 10), (3, 11), (4, 39), (9, 18), (10, 22), (11, 32), (12, 43), (13, 64), (14, 96), (15, 127), (16, 127)] {
+                model.encoderChanged(index, value: Double(value))
+            }
+            content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents))
         case "nonmotor-tests", "nonmotor-armed", "nonmotor-result":
             width = 1260; height = 1160
             let service = ObservationPreviewService()

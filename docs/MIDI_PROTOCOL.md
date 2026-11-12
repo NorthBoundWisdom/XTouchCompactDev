@@ -35,7 +35,7 @@ Inputs encoded as Note On velocity 127 for press and Note Off velocity 0 for rel
 | Encoder ring mode 1...16 | CC 10...25 | 0 Single, 1 Pan, 2 Fan, 3 Spread, 4 Trim |
 | Encoder ring display 1...16 | CC 26...41 | 0 off; 1...13 one LED; 14...26 blink LED; 27 all on; 28 all blink |
 | Buttons 1...39 LED | Note 0...38 | Addresses differ from TX button notes |
-| Select Layer A/B | Program Change 0 / 1 | Standard mode only; should be asserted on startup |
+| Select Layer A/B | Program Change 0 / 1 | Standard mode only; host command, not physical-layer readback; suppressed while listening |
 | Mode (Standard / MC) | CC 127 = 0 / 1 | Do not send automatically during P0 |
 
 **Important documentation conflict:** Manufacturer RX table specifies button LED OFF/ON/BLINK via Note velocity 0/1/2. JetsonHacks measured actual firmware 1.14 behavior 0/2/3. Both modes are selectable in the Swift core to avoid silently assuming a firmware version.
@@ -48,7 +48,7 @@ Inputs encoded as Note On velocity 127 for press and Note Off velocity 0 for rel
 2. **Motor commands do not reliably echo position** after moving the slider. `commandedPosition` and `observedPosition` are different facts.
 3. **Ring mode changes** and **local knob rotation** may overwrite remote ring illumination. Invalidate last-sent cache and reassert desired ring position.
 4. **Six right-area transport buttons** may redraw the whole LED group locally. Invalidate the group cache after a button press.
-5. **Physical A/B buttons** don't emit explicit layer-changed MIDI, so don't treat cached software layer as immutable. Assert startup layer via Program Change; on real hardware, characterize button transitions and recover if input addresses indicate a different layer.
+5. **Physical A/B buttons** don't emit explicit layer-changed MIDI, so don't treat cached software layer as immutable. Active connections currently assert the software layer via Program Change; suppress this during passive startup-state investigation because it changes the state being measured. Characterize button transitions and retain input-address layer evidence independently of the host bank.
 6. **MC fader resolution:** stock MC mode carries fader positions in Pitch Bend-shaped messages but independent measurements show mostly zero low byte (roughly 7 bits effective). Standard mode already uses CC 0...127. Advanced firmware research exists but should not be a P0 dependency.
 
 ## Example: the common mistake to avoid
@@ -66,6 +66,15 @@ Physical: Fader 1, Layer B
 Using one symmetric `MIDIControlID` for both `IN` and `OUT` would update the wrong button or fail to move the correct motor.
 
 ## Physical evidence and simulation boundaries
+
+### Startup full-state readback — unverified
+
+Whether startup, USB reattachment, client attachment or a documented read-only
+request can return all nine physical fader positions remains open. Missing input
+in the current app, touch-only messages, and absence of a query from the RX table
+do not prove the device lacks this capability. Last-input history is a fallback;
+verified fresh full-state input should take priority. Reading does not authorize
+motor recall. See [the corrected investigation record](STARTUP_READBACK_INVESTIGATION.md).
 
 ### Partial physical evidence — 2026-11-11
 

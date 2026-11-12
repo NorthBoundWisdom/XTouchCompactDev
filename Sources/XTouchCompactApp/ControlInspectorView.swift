@@ -71,9 +71,12 @@
         private func faderState(_ fader: FaderPresentation) -> some View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(l.text("电动推子"), icon: "slider.vertical.3")
+                if fader.mirrorsHardware {
+                    hardwareReading(fader.hardwareReading)
+                }
                 HStack(spacing: 18) {
                     readout(l.text("目标"), "\(fader.target)", Theme.value)
-                    if let observed = fader.observed {
+                    if !fader.mirrorsHardware, let observed = fader.observed {
                         readout(l.text("实测"), "\(observed)", Theme.observed)
                     }
                     if let touched = fader.isTouched {
@@ -96,6 +99,9 @@
         private func encoderState(_ encoder: EncoderPresentation) -> some View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(l.text("编码器"), icon: "dial.medium")
+                if encoder.mirrorsHardware {
+                    hardwareReading(encoder.hardwareReading)
+                }
                 HStack(spacing: 18) {
                     readout(l.text("数值"), "\(encoder.value)", Theme.value)
                     readout(l.text("灯环"), ringName(encoder.ring), Theme.ring)
@@ -125,6 +131,19 @@
                 }
             }
             .panelStyle()
+        }
+
+        private func hardwareReading(_ reading: HardwareValuePresentation?) -> some View {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(reading.map { l.text("Last hardware input: %@", String($0.value)) } ?? l.text("Not reported"))
+                    .font(.callout.monospaced()).foregroundStyle(Theme.observed)
+                Text(l.text(reading?.isCurrent == true ? "Last received input" : "Last input · awaiting confirmation"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if let reading {
+                    Text(reading.timestamp.formatted(date: .abbreviated, time: .standard))
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
         }
 
         private func addresses(_ addressing: ControlAddressing) -> some View {

@@ -358,6 +358,9 @@
 "Desired light" = "测试灯光指令";
 "Off" = "熄灭";
 "On" = "常亮";
+"Simulated device indicators" = "模拟设备指示灯";
+"Enable writeback" = "启用写回";
+"Device indicator state is not reported" = "设备未回报指示灯状态";
 "Blink" = "闪烁";
 "Ring command" = "灯环指令";
 "Segment %@ / 13" = "第 %@ 段／共 13 段";
@@ -478,3 +481,9 @@
 "OSC limits: 0…1, maximum 0.25/s, independent heartbeat 0.3 s. Never restored on launch." = "OSC 限制：0…1，最高 0.25/秒，独立心跳 0.3 秒；启动时不恢复使能。";
 
 "OSC requires trusted destination actual-state feedback and an independent heartbeat. This version has no built-in receiver configuration for that feedback; enabling output alone cannot make it ready." = "OSC 需要可信的目标设备实际状态反馈和独立心跳。本版本没有内建此类可信回传接收器的配置，不能仅点击使能就进入就绪状态。";
+
+"≈ Last input · — Not yet reported" = "≈ 上次输入 · — 尚未回报";
+"Last received input" = "本次连接收到的输入";
+"Last input · awaiting confirmation" = "上次输入，等待设备确认";
+"Last input layer: %@ · awaiting confirmation" = "上次输入层：%@ · 待确认";
+"Last hardware input: %@" = "上次实体输入：%@";

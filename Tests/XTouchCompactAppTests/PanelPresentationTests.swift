@@ -61,6 +61,85 @@
             XCTAssertEqual(FaderTravel.fraction(for: 0), 0)
         }
 
+        func testSideRingMatchesOperatorSamplesAndKeepsCenterLit() {
+            func segments(_ value: UInt8) -> Set<Int> {
+                RingLEDs.lit(.position(1), style: nil, localAppearance: .bipolar(value: value)).segments
+            }
+            XCTAssertEqual(segments(0), Set(1 ... 7)) // Untested lower end: retain the full-left plateau.
+            XCTAssertEqual(segments(18), Set(1 ... 7))
+            XCTAssertEqual(segments(22), Set(2 ... 7))
+            XCTAssertEqual(segments(32), Set(3 ... 7))
+            XCTAssertEqual(segments(43), Set(4 ... 7))
+            XCTAssertEqual(segments(64), [7])
+            XCTAssertEqual(segments(127), Set(7 ... 13))
+            for value in UInt8(0) ... 127 {
+                let lit = segments(value)
+                XCTAssertTrue(lit.contains(7))
+                XCTAssertFalse(lit.contains(where: { $0 < 7 }) && lit.contains(where: { $0 > 7 }))
+                XCTAssertEqual(lit, Set(lit.min()! ... lit.max()!))
+                if value < 127 {
+                    let next = segments(value + 1)
+                    XCTAssertGreaterThanOrEqual(next.min()!, lit.min()!)
+                    XCTAssertGreaterThanOrEqual(next.max()!, lit.max()!)
+                    XCTAssertLessThanOrEqual(lit.symmetricDifference(next).count, 1)
+                }
+            }
+        }
+
+        func testTopRingAlternatesSingleAndAdjacentPairsAcrossTravel() {
+            func segments(_ value: UInt8) -> Set<Int> {
+                RingLEDs.lit(.position(1), style: nil, localAppearance: .interpolated(value: value)).segments
+            }
+            XCTAssertEqual(segments(0), [1])
+            XCTAssertEqual(segments(5), [1])
+            XCTAssertEqual(segments(6), [1, 2])
+            XCTAssertEqual(segments(10), [1, 2])
+            XCTAssertEqual(segments(11), [2])
+            XCTAssertEqual(segments(39), [4, 5])
+            XCTAssertEqual(segments(63), [6, 7])
+            XCTAssertEqual(segments(64), [7])
+            XCTAssertEqual(segments(68), [7])
+            XCTAssertEqual(segments(69), [7, 8])
+            XCTAssertEqual(segments(127), [13])
+            for value in UInt8(0) ... 127 {
+                let lit = segments(value).sorted()
+                XCTAssertTrue((1 ... 2).contains(lit.count))
+                if lit.count == 2 {
+                    XCTAssertEqual(lit[1] - lit[0], 1)
+                }
+                if value < 127 {
+                    let next = segments(value + 1)
+                    XCTAssertGreaterThanOrEqual(next.min()!, lit[0])
+                    XCTAssertLessThanOrEqual(next.min()! - lit[0], 1)
+                }
+            }
+            let fallback = EncoderRingAppearance.interpolated(value: 39)
+            XCTAssertEqual(RingLEDs.lit(.position(9), style: .single, localAppearance: fallback).segments, [9])
+            XCTAssertEqual(RingLEDs.lit(.off, style: nil, localAppearance: fallback).segments, [])
+            XCTAssertEqual(RingLEDs.lit(.allOn, style: nil, localAppearance: fallback).segments, Set(1 ... 13))
+            XCTAssertEqual(RingLEDs.lit(.blinkingPosition(5), style: nil, localAppearance: fallback),
+                           .init(segments: [4, 5], isBlinking: true))
+        }
+
+        @MainActor
+        func testAdapterKeepsLocalAppearanceSeparateFromUnreportedProtocolStyle() {
+            let midi = FakeMIDIService()
+            let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+            model.encoderChanged(1, value: 39)
+            model.encoderChanged(9, value: 64)
+            XCTAssertEqual(model.panelSnapshot.encoder(1)?.localRingAppearance, .interpolated(value: 39))
+            XCTAssertEqual(model.panelSnapshot.encoder(9)?.localRingAppearance, .bipolar(value: 64))
+            for encoder in model.panelSnapshot.encoders {
+                XCTAssertNil(encoder.style)
+            }
+            XCTAssertTrue(midi.sent.isEmpty)
+            midi.connect()
+            model.beginHardwareObservation()
+            for encoder in model.panelSnapshot.encoders {
+                XCTAssertNil(encoder.localRingAppearance) // Input observations never manufacture LED state.
+            }
+        }
+
         func testConsoleLayoutKeepsPanelWithinTheAvailableWidth() {
             let minimum = ConsoleLayout(available: CGSize(width: 900, height: 650))
             XCTAssertFalse(minimum.isSideBySide)
@@ -72,6 +151,48 @@
                 XCTAssertGreaterThanOrEqual(layout.workspaceWidth, ConsoleLayout.minWorkspace)
                 XCTAssertLessThanOrEqual(layout.contentWidth, size.width - ConsoleLayout.padding * 2 + 0.5)
             }
+        }
+
+        @MainActor
+        func testMockStatusIndicatorsUseDeviceDirectionsAndExpireWithoutMonitorHistory() {
+            let clock = TestClock()
+            let model = ConsoleModel(startsMIDI: false, now: { clock.date }, isolated: true)
+            clock.time += 1 // Let startup feedback activity expire.
+            let idle = model.panelSnapshot.surfaceStatus
+            XCTAssertEqual(idle.usb, .on)
+            XCTAssertEqual(idle.footSwitch, .off)
+            XCTAssertEqual(idle.footExpression, .off)
+            XCTAssertEqual(idle.mcMode, .off)
+            XCTAssertFalse(idle.midiIn?.isLit(at: clock.date) ?? false)
+            XCTAssertFalse(idle.midiOut?.isLit(at: clock.date) ?? false)
+
+            model.panelIntents.setFader(1, 51)
+            XCTAssertEqual(model.panelSnapshot.surfaceStatus.midiIn?.isLit(at: clock.date), true)
+            XCTAssertEqual(model.panelSnapshot.surfaceStatus.midiOut?.isLit(at: clock.date), false)
+            model.clearMonitor()
+            XCTAssertEqual(model.panelSnapshot.surfaceStatus.midiIn?.isLit(at: clock.date), true)
+            clock.time += 0.21
+            XCTAssertEqual(model.panelSnapshot.surfaceStatus.midiIn?.isLit(at: clock.date), false)
+
+            model.panelIntents.pushEncoder?(2, true)
+            XCTAssertEqual(model.panelSnapshot.surfaceStatus.midiOut?.isLit(at: clock.date), true)
+            clock.time += 0.21
+            XCTAssertEqual(model.panelSnapshot.surfaceStatus.midiOut?.isLit(at: clock.date), false)
+            XCTAssertEqual(model.panelSnapshot.surfaceStatus.mcMode, .off)
+        }
+
+        @MainActor
+        func testHardwareIndicatorsRemainUnknownDespiteConnectionAndTraffic() {
+            let midi = FakeMIDIService()
+            let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+            midi.connect()
+            model.useHardware(true)
+            midi.onMessages?([.controlChange(channel: 0, number: 1, value: 75)])
+            model.panelIntents.setFader(1, 60) // Suppressed by listen-only; no LED inference.
+            XCTAssertTrue(model.panelSnapshot.connection.isConnected)
+            XCTAssertEqual(model.panelSnapshot.surfaceStatus, SurfaceStatusPresentation())
+            model.beginHardwareObservation()
+            XCTAssertEqual(model.panelSnapshot.surfaceStatus, SurfaceStatusPresentation())
         }
 
         @MainActor

@@ -38,6 +38,39 @@
         #expect(model.panelSnapshot.hardwareObservation?.messageCount == 5)
     }
 
+    @Test @MainActor func explicitWritebackLeavesObservationSilentlyAndPreservesTouchProtection() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect()
+        model.beginHardwareObservation()
+        midi.onMessages?([.controlChange(channel: 0, number: 101, value: 127),
+                          .controlChange(channel: 0, number: 1, value: 20)])
+        model.faderChanged(2, value: 90) // A suppressed old write must never replay.
+        model.panelIntents.enableHardwareWriteback?()
+        #expect(!model.listenOnly)
+        #expect(!model.isObservingHardware)
+        #expect(model.hardwareMode)
+        #expect(model.session.state.isTouched(1))
+        #expect(midi.sent.isEmpty)
+
+        model.faderChanged(1, value: 60)
+        #expect(!midi.sent.contains(.controlChange(channel: 0, number: 1, value: 60)))
+        #expect(model.session.state.isMotorPending(1))
+        model.faderChanged(3, value: 45)
+        #expect(midi.sent.contains(.controlChange(channel: 0, number: 3, value: 45)))
+        midi.onMessages?([.controlChange(channel: 0, number: 101, value: 0)])
+        #expect(midi.sent.contains(.controlChange(channel: 0, number: 1, value: 60)))
+        #expect(!midi.sent.contains(.controlChange(channel: 0, number: 2, value: 90)))
+        #expect(!midi.sent.contains {
+            if case .programChange = $0 {
+                true
+            } else {
+                false
+            }
+        })
+        #expect(model.panelSnapshot.fader(3)?.observed == nil)
+    }
+
     @Test @MainActor func observationCoversEveryControlOnBothLayersWithoutSelectingHostLayer() throws {
         let midi = FakeMIDIService()
         let model = ConsoleModel(startsMIDI: false, midi: midi)

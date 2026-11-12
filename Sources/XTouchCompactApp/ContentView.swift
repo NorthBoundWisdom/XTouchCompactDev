@@ -164,6 +164,12 @@
                     Text("Standard MIDI · Layer \(snapshot.layer.rawValue.uppercased())")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
+                    if !snapshot.isMock {
+                        Text(l.text(snapshot.hardwareLayerIsCurrent ? "Input layer: %@" : "Last input layer: %@ · awaiting confirmation",
+                                    snapshot.hardwareDisplayLayer?.rawValue.uppercased() ?? "—"))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(snapshot.hardwareDisplayLayer != snapshot.layer ? Theme.touch : .secondary)
+                    }
                 }
 
                 Picker(l.text("设备"), selection: Binding(get: { !snapshot.isMock }, set: { intents.useHardware?($0) })) {
@@ -178,6 +184,11 @@
                     Label(l.text("Hardware observation"), systemImage: "hand.point.up.left.fill")
                 }
                 .controlSize(.small)
+
+                if !snapshot.isMock, snapshot.listenOnly {
+                    Button(l.text("Enable writeback")) { intents.enableHardwareWriteback?() }
+                        .controlSize(.small)
+                }
 
                 Spacer()
 

@@ -46,6 +46,10 @@
             model.startRuntime()
             if observing {
                 model.beginHardwareObservation()
+            } else if arguments.contains("--hardware-control"), !isolated {
+                // Explicit launch choice: allow fresh writes without recalling any motors.
+                model.useHardware(true)
+                model.enableHardwareWriteback()
             }
             if observing, !isolated, let index = arguments.firstIndex(of: "--capture-path"), arguments.indices.contains(index + 1) {
                 model.startCapture(URL(fileURLWithPath: arguments[index + 1]))
@@ -63,6 +67,7 @@
                     }
                     .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                         model.stopCapture()
+                        model.flushHardwareValues()
                     }
                     .task {
                         let arguments = ProcessInfo.processInfo.arguments

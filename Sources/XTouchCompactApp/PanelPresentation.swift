@@ -29,6 +29,13 @@
         }
     }
 
+    struct HardwareValuePresentation: Equatable, Sendable {
+        var value: UInt8
+        var timestamp: Date
+        /// False for restored history, reconnects, or a fader commanded since its last input.
+        var isCurrent: Bool
+    }
+
     struct FaderPresentation: Equatable, Identifiable, Sendable {
         let index: Int
         /// Host-desired position (the application parameter), 0...127.
@@ -41,6 +48,12 @@
         var label: String?
         var detail: String?
         var followsObservedPosition = false
+        var mirrorsHardware = false
+        var hardwareReading: HardwareValuePresentation?
+
+        var panelValue: UInt8? {
+            mirrorsHardware ? hardwareReading?.value : followsObservedPosition ? observed : target
+        }
 
         var id: Int {
             index
@@ -52,8 +65,18 @@
 
         /// A host write may change target while a hand still owns the physical cap.
         var capPosition: UInt8 {
-            followsObservedPosition || isTouched == true ? observed ?? target : target
+            if mirrorsHardware {
+                return hardwareReading?.value ?? target
+            }
+            return followsObservedPosition || isTouched == true ? observed ?? target : target
         }
+    }
+
+    /// Panel simulation of operator-reported local rotation behavior, not a MIDI mode ID
+    /// or a physical LED observation. Exact value thresholds remain uncharacterized.
+    enum EncoderRingAppearance: Equatable, Sendable {
+        case interpolated(value: UInt8)
+        case bipolar(value: UInt8)
     }
 
     struct EncoderPresentation: Equatable, Identifiable, Sendable {
@@ -67,6 +90,13 @@
         var detail: String?
         var observedValue: UInt8?
         var observesInput = false
+        var localRingAppearance: EncoderRingAppearance?
+        var mirrorsHardware = false
+        var hardwareReading: HardwareValuePresentation?
+
+        var panelValue: UInt8? {
+            mirrorsHardware ? hardwareReading?.value : observesInput ? observedValue : value
+        }
 
         var id: Int {
             index
@@ -268,7 +298,35 @@
         }
     }
 
+    /// Device-local indicators, separate from assignable buttons and MIDI addresses.
+    /// Nil means unreported, including every indicator on a physical device today.
+    struct SurfaceStatusPresentation: Equatable, Sendable {
+        enum Light: Equatable, Sendable {
+            case off, on
+            case pulse(until: Date)
+
+            func isLit(at date: Date) -> Bool {
+                switch self {
+                case .off: false
+                case .on: true
+                case let .pulse(until): date < until
+                }
+            }
+        }
+
+        var usb: Light?
+        var midiIn: Light?
+        var midiOut: Light?
+        var footSwitch: Light?
+        var footExpression: Light?
+        var mcMode: Light?
+    }
+
     struct PanelSnapshot: Equatable, Sendable {
+        var surfaceStatus = SurfaceStatusPresentation()
+        /// Last input layer (possibly cached); never changes the software bank or motor gate.
+        var hardwareDisplayLayer: CompactLayer?
+        var hardwareLayerIsCurrent = false
         var nonMotorTests = NonMotorTestPresentation()
         var hardwareObservation: HardwareObservationPresentation?
         var listenOnly = true
@@ -331,6 +389,7 @@
         var resetHardwareObservation: (() -> Void)?
         var exportInputReview: (() -> Void)?
         var setListenOnly: ((Bool) -> Void)?
+        var enableHardwareWriteback: (() -> Void)?
         var startCapture: (() -> Void)?
         var stopCapture: (() -> Void)?
         var selectLayer: ((CompactLayer) -> Void)?
@@ -452,8 +511,8 @@
 
     /// Which of the 13 ring LEDs are lit for a host ring command.
     ///
-    /// `single` is exact. The other styles approximate how the device draws a position until they
-    /// are confirmed on hardware (TODO.md, HW-4); a nil style is drawn as `single`.
+    /// Explicit styles describe host intent. Local appearances simulate operator-reported
+    /// top/side encoder behavior when no host style has been selected; they are not LED readback.
     enum RingLEDs {
         static let count = 13
         static let center = 7
@@ -463,13 +522,38 @@
             var isBlinking: Bool
         }
 
-        static func lit(_ display: RingDisplay, style: RingStyle?) -> Lit {
+        static func lit(_ display: RingDisplay, style: RingStyle?, localAppearance: EncoderRingAppearance? = nil) -> Lit {
             switch display {
             case .off: Lit(segments: [], isBlinking: false)
             case .allOn: Lit(segments: Set(1 ... count), isBlinking: false)
             case .allBlinking: Lit(segments: Set(1 ... count), isBlinking: true)
-            case let .position(position): Lit(segments: segments(position, style: style), isBlinking: false)
-            case let .blinkingPosition(position): Lit(segments: segments(position, style: style), isBlinking: true)
+            case let .position(position): Lit(segments: positionSegments(position, style: style, localAppearance: localAppearance), isBlinking: false)
+            case let .blinkingPosition(position): Lit(segments: positionSegments(position, style: style, localAppearance: localAppearance), isBlinking: true)
+            }
+        }
+
+        private static func positionSegments(_ position: Int, style: RingStyle?, localAppearance: EncoderRingAppearance?) -> Set<Int> {
+            guard style == nil, let localAppearance else { return segments(position, style: style) }
+            switch localAppearance {
+            case let .interpolated(value):
+                // 25 display steps alternate a single LED with its two neighboring LEDs.
+                // Operator samples: 6 and 10 show LEDs 1+2; the next step extinguishes LED 1.
+                let step = Int(min(value, 127)) * 24 / 127
+                let left = 1 + step / 2
+                return step.isMultiple(of: 2) ? [left] : [left, left + 1]
+            case let .bipolar(value):
+                // Operator calibration pairs read from the running Layer A panel on 2026-11-12.
+                // These are sampled states, not measured transition boundaries or a MIDI mode ID.
+                // Keep the center LED on: a physically all-off midpoint was explicitly ruled out.
+                let anchors = [(0, 1), (18, 1), (22, 2), (32, 3), (43, 4), (64, 7), (127, 13)]
+                let raw = Int(min(value, 127))
+                for (lower, upper) in zip(anchors, anchors.dropFirst()) where raw <= upper.0 {
+                    let width = upper.0 - lower.0
+                    let offset = (raw - lower.0) * (upper.1 - lower.1)
+                    let position = lower.1 + (offset + width / 2) / width
+                    return Set(min(position, center) ... max(position, center))
+                }
+                return Set(center ... count)
             }
         }
 

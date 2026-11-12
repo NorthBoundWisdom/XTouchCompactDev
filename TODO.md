@@ -43,12 +43,16 @@
 - 共享Agent宿主C0–C2已完成：唯一RemoteRegistry拥有插件值；版本1配置翻译为中性动作/指示灯绑定，
   参数使用共享0锚点/平分取低规则。构建只消费Git锁定SHA的build目录副本，见[共享包说明](docs/SURFACE_PLUGINS.md)。
   没有两个宿主之间的源码依赖；跨宿主一致性与Linux验收由工作区监督汇总。
-- 本轮TODO_REVIEW整改后，macOS Swift 6.4.2上161项Swift（Core81、App Swift Testing68、
+- 共享插件TODO_REVIEW整改阶段，macOS Swift 6.4.2上161项Swift（Core81、App Swift Testing68、
   App XCTest9、本地化3）及25项Python通过；格式、命令和diff校验通过。
   共享事件静默记账/4Hz运动策略、1024容量、2秒gap故障边界已接入；新增surface写预算和默认关闭的模拟管理权限。
   默认instance ID与另一宿主统一，OSC区持续说明可信回传/独立心跳和本版本无内建receiver配置。
   最终产品源与原生Debug/Release/签名/ZIP/DMG/隔离启动证据在工作区reports/C.md按提交记录。
   Linux与实机不由这些检查推定；工作区监督另汇总Linux证据。
+- 面板改动 rebase 到 `origin/main`（`42a843a`）后的本地验证：macOS Swift 6.4.2 上
+  `swift test --build-path build/swiftpm --jobs 2`（83 项 Core + 89 项 App + 3 项本地化，共 175 项）、
+  `swift build`、25 项工作流测试、命令验证与 SwiftFormat/Ruff 检查通过。
+  合并后原生应用构建、ad-hoc 签名验证及隔离启动冒烟通过；设备离线，未执行新的实机读回或电机试验。
   此前原生打包、签名、启动冒烟、13 项工作流测试通过；观察页面三种隔离预览已生成并检查。
   调整前最新的 [远端运行 43053024236](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43053024236)
   已覆盖观察、重构及非电机工具；当时的 Linux、旧 macOS 和 Xcode 26.6 新 macOS 三条作业均通过。
@@ -211,6 +215,24 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 - [x] F5 结构化 MIDI 监视（方向、来源、对应控件、清空）与可关闭通知条（依赖 B4）。
 - [x] F6 无标题栏窗口、应用图标、README 截图与截图脚本（依赖 B10）。
 - [ ] F7 实机核对后的面板修正（依赖 HW-2…HW-5）。
+  - 主推子上方已补 INTERFACE（USB）、MIDI（IN / OUT）、FOOT（SW / EXP）、MODE（MC）四组状态灯。
+    Mock 的 USB 常亮，MIDI 按设备视角收发短亮 200 ms，未模拟踏板操作时 FOOT 熄灭，Standard 模式 MC 熄灭。
+    新增前端契约 `PanelSnapshot.surfaceStatus`；真机六灯均保留 nil（界面标为未知），不从端口、USB MIDI 流量或已发送指令推断物理灯态。
+    MIDI 短亮时长与 FOOT / MIDI 灯颜色为 UI 模拟，尚未实机验证。
+  - 已移除观察面板的“最近的实体操作”卡片；通过“启用写回”显式退出观察并关闭只听模式。
+    启用本身不发送 MIDI，不重放旧目标；触摸与层不一致门禁保留。`--hardware-control` 可显式启动到实体写回控制台。
+  - 根据 2026-11-12 操作员校准，E9–E16 面板模拟左半灯逐颗熄灭、中点保留中心灯、右半灯逐颗亮起；
+    E1–E8 增加单灯 / 相邻双灯过渡。新增 `EncoderPresentation.localRingAppearance`，与 MIDI `style`、物理读数分开。
+    已匹配左侧值 18 / 22 / 32 / 43、中点 64、右端 127，以及顶排双灯值 6 / 10；其余区间插值近似。
+    未确认对应硬件样式编号、完整切换边界或各层一致性，不写设备预设。见 [灯环校准](docs/RING_CALIBRATION_2026-11-12.md)。
+  - 启动镜像新增 `hardwareValues` 实体数值历史（按输入 UID / 已配置 TX 通道隔离，编码器按层保存），
+    缓存以“≈”标记、未知显示“—”；不会把缓存或已发指令当作本次实测，也不恢复触摸或自动回放电机目标。
+    `PanelSnapshot.hardwareDisplayLayer` 与软件层分离，B 层位置可显示而不改 A 层参数或解除层门禁。
+    实机现场观察到仅触摸发送 101…109 / 111…119 的 127 / 0；移动 F1 后收到 Layer B 的 CC28=1…8。
+    这不是全量读回验证；官方表未列出全量位置查询也不证明不支持。缓存是备用方案，未探测或发送未知 SysEx。
+  - [ ] **启动全量真实位置读回仍待验证，不能写成“不支持”**：分别检查设备上电、USB 重连、App 接入时的
+    主动回报及已知只读查询，并排除监听太晚或解析过滤。先前“不可能读取”的判断已撤回；设备离线时仅更新此记录。
+    若验证可读，应优先用真实回报同步面板；读取与电机驱动分开，启动不自动归位。见 [调查记录](docs/STARTUP_READBACK_INVESTIGATION.md)。
 
 ## 验收记录
 

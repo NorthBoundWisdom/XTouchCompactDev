@@ -77,6 +77,25 @@
         #expect(model.events.isEmpty)
     }
 
+    @Test @MainActor func explicitControlBeforeConnectionRecoversWithoutMotorRecall() {
+        let service = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: service, isolated: true)
+        model.useHardware(true)
+        model.enableHardwareWriteback()
+        #expect(model.error != nil)
+        #expect(service.sent.isEmpty)
+        service.connect()
+        #expect(model.error == nil)
+        #expect(!model.listenOnly)
+        #expect(!service.sent.contains {
+            if case let .controlChange(_, number, _) = $0 {
+                (1 ... 9).contains(number)
+            } else {
+                false
+            }
+        })
+    }
+
     @Test @MainActor func profileChangePreservesBanksAndTouchWithoutMotorRecall() {
         let model = ConsoleModel(startsMIDI: false)
         model.faderChanged(1, value: 40)

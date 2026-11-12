@@ -364,6 +364,70 @@ explicitly and never treated as accepted transport writes. Disabling listening s
 nothing and clears withheld motor writes without discarding touch/layer evidence;
 realignment and a new explicit motor write remain separate actions.
 
+The observation page's **Enable writeback** action returns to the console and
+disables listening without sending MIDI or replaying old targets. Touch ownership
+and layer mismatch evidence remain intact. The same action is available in the
+console header while listening. An explicit `--hardware-control` launch selects
+physical hardware with writeback enabled; startup/reconnect still never recalls
+motor positions. `--hardware-observe` takes precedence, and isolated test launches
+ignore `--hardware-control`. The observation panel no longer shows the recent-input
+debug card; raw input capture and touch safety remain available.
+
+Four device status groups above the master fader represent USB, MIDI IN/OUT,
+FOOT SW/EXP and MC MODE. Mock USB is on, pedals and MC are off, and simulated
+device-side MIDI receipt/transmission pulses the matching indicator for 200 ms.
+Pulse timing and pedal/MIDI colors are UI approximations, not hardware measurements.
+Physical status remains unreported (nil, shown as unknown), independently of host
+port connections, USB MIDI activity and sent feedback.
+
+Operator-reported encoder rotation patterns are represented separately as
+`EncoderPresentation.localRingAppearance`: top E1–E8 alternate single/adjacent-pair
+LEDs, while side E9–E16 shrink the left half to the center LED before growing the right half.
+The software matches the operator samples in [the calibration record](RING_CALIBRATION_2026-11-12.md),
+using interpolation between sampled states. Complete transition thresholds,
+MIDI style IDs and behavior across layers have not been measured. This appearance
+is a panel simulation of software values, not LED readback. Explicit host styles
+and off/all/blink commands retain precedence. Input observation views keep rings
+unlit, and MIDI commands, profile data and motor behavior are unchanged.
+
+## Startup hardware readings
+
+The normal physical panel displays actual last-received continuous values separately
+from software targets. A Layer B input can update the physical display while the
+software bank stays A and the layer-mismatch motor gate remains engaged. The header
+identifies both layers; it never treats received input as permission to realign.
+
+`workspace.json` optionally stores `hardwareValues`: the input endpoint UID, applied
+TX channel, timestamped fader readings and per-layer encoder readings. Existing
+version-1 workspaces without this optional field remain valid. Only decoded device
+inputs populate it. Writes are coalesced to once a second and flushed at normal app
+termination; storage protection and visible errors use the existing workspace store.
+Isolated observation launches without a storage root do not save history.
+
+On a matching route/channel, prior readings appear dimmed with `≈` and timestamps
+in the inspector. Never-reported controls show `—`, with no invented fader cap or
+encoder pointer. Reconnect clears live freshness; changing the input endpoint or TX
+channel prevents incompatible history from appearing. Touches and held buttons are
+never restored. Physical observations remain nil after a restart even if display
+history exists. Sending a motor command makes a prior fader input stale; the sent
+target does not enter reading history. Inspector/workspace software targets remain
+explicit independent values.
+
+During the 2026-11-12 session, touch-only inputs used CC101…109 (A) and CC111…119
+(B) with 127/0. A subsequent F1 movement produced CC28 values 1 through 8: actual
+Layer B position input while the software bank was A. The former panel continued
+drawing A's software default after release; the new mirror renders the independent
+physical input. This confirms movement readout for this example, not startup full
+state retrieval. Full startup-state reading is **unverified, not ruled out**;
+absence of a full-position query in the RX table is not proof of lack of support.
+The history described here is a fallback, not a substitute for investigating
+startup/USB/client state bursts or documented read-only requests. See the
+[corrected investigation record](STARTUP_READBACK_INVESTIGATION.md). No undocumented
+SysEx probing, preset change or motor movement is used here.
+Hardware changes while the app is closed cannot be confirmed by cached readings.
+The `startup-readings`, `startup-readings-live` and `startup-readings-empty` preview
+scenes use isolated, labeled endpoints and temporary storage, never physical MIDI.
+
 MIDI monitor's Start capture…/Stop capture stream JSONL v1 to a user-selected file.
 Evidence filenames are exclusively created: existing files and final-component
 symbolic links are refused, including when another process wins creation. The

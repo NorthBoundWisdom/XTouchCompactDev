@@ -57,7 +57,7 @@
                     .padding(.vertical, m(3))
                     .background((snapshot.isMock ? Theme.value : Color.green).opacity(0.14), in: Capsule())
                 Spacer()
-                Text(snapshot.hardwareObservation != nil ? l.text("Highlights show input, not device LEDs") : snapshot.isMock ? l.text("拖动推子 / 旋钮、按下按键 = 模拟实体操作") : l.text("镜像实体设备；操作即软件写入"))
+                Text(snapshot.hardwareObservation != nil ? l.text("Highlights show input, not device LEDs") : snapshot.isMock ? l.text("拖动推子 / 旋钮、按下按键 = 模拟实体操作") : l.text("≈ Last input · — Not yet reported"))
                     .font(.system(size: m(10)))
                     .foregroundStyle(.secondary)
             }
@@ -78,11 +78,72 @@
         private var masterStrip: some View {
             VStack(spacing: m(5)) {
                 // Keeps the master fader level with the channel faders.
-                Color.clear.frame(height: m(EncoderCell.height + 3 * (ButtonCell.height + 5)))
+                statusIndicators.frame(height: m(EncoderCell.height + 3 * (ButtonCell.height + 5)))
                 faderCell(PanelLayout.masterFader).padding(.top, m(3))
                 buttonCell(PanelLayout.masterButton)
             }
             .frame(width: m(62))
+        }
+
+        private var statusIndicators: some View {
+            TimelineView(.periodic(from: .now, by: 0.08)) { context in
+                VStack(spacing: m(13)) {
+                    statusGroup("INTERFACE") {
+                        statusLight("USB", state: snapshot.surfaceStatus.usb, color: .blue, at: context.date)
+                    }
+                    statusGroup("MIDI") {
+                        HStack(spacing: m(7)) {
+                            statusLight("IN", state: snapshot.surfaceStatus.midiIn, color: Theme.ring, at: context.date)
+                            statusLight("OUT", state: snapshot.surfaceStatus.midiOut, color: Theme.ring, at: context.date)
+                        }
+                    }
+                    statusGroup("FOOT") {
+                        HStack(spacing: m(7)) {
+                            statusLight("SW", state: snapshot.surfaceStatus.footSwitch, color: Theme.ring, at: context.date)
+                            statusLight("EXP", state: snapshot.surfaceStatus.footExpression, color: Theme.ring, at: context.date)
+                        }
+                    }
+                    statusGroup("MODE") {
+                        statusLight("MC", state: snapshot.surfaceStatus.mcMode, color: Theme.touch, at: context.date)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .help(l.text(snapshot.isMock ? "Simulated device indicators" : "Device indicator state is not reported"))
+        }
+
+        private func statusGroup(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+            VStack(spacing: m(5)) {
+                Text(title)
+                    .font(.system(size: m(7), weight: .bold))
+                    .tracking(m(0.8))
+                    .foregroundStyle(.secondary)
+                content()
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(title)
+        }
+
+        private func statusLight(_ title: String, state: SurfaceStatusPresentation.Light?, color: Color, at date: Date) -> some View {
+            let lit = state?.isLit(at: date)
+            return VStack(spacing: m(3)) {
+                Circle()
+                    .fill(lit == true ? color : Theme.ledOff)
+                    .overlay {
+                        if lit == nil {
+                            Circle().stroke(Color.secondary.opacity(0.6), lineWidth: m(0.8))
+                            Text("?").font(.system(size: m(6), weight: .bold)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(width: m(7), height: m(7))
+                    .shadow(color: lit == true ? color.opacity(0.65) : .clear, radius: m(3))
+                Text(title)
+                    .font(.system(size: m(6), weight: .semibold))
+                    .foregroundStyle(lit == true ? color : .secondary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+            .accessibilityValue(l.text(lit.map { $0 ? "On" : "Off" } ?? "Not reported"))
         }
 
         private var sideBlock: some View {
@@ -105,7 +166,8 @@
                 Text(l.text("Layer")).font(.system(size: m(8), weight: .bold)).foregroundStyle(.secondary).tracking(1)
                 HStack(spacing: m(6)) {
                     ForEach(CompactLayer.allCases, id: \.self) { layer in
-                        let isActive = snapshot.hardwareObservation.map { $0.inputLayer == layer } ?? (snapshot.layer == layer)
+                        let isActive = snapshot.hardwareObservation.map { $0.inputLayer == layer }
+                            ?? (snapshot.isMock ? snapshot.layer == layer : snapshot.hardwareDisplayLayer == layer)
                         Button { onSelectLayer(layer) } label: {
                             Text(layer.rawValue.uppercased())
                                 .font(.system(size: m(13), weight: .heavy, design: .rounded))
@@ -192,6 +254,10 @@
         }
 
         private var displayedValue: String {
+            if fader.mirrorsHardware {
+                guard let reading = fader.hardwareReading else { return "—" }
+                return (reading.isCurrent ? "" : "≈") + String(reading.value)
+            }
             if fader.followsObservedPosition {
                 return fader.observed.map { String($0) } ?? "—"
             }
@@ -199,6 +265,10 @@
         }
 
         private var accessibleValue: String {
+            if fader.mirrorsHardware {
+                return fader.hardwareReading.map { String($0.value) + " " + l.text($0.isCurrent ? "Last received input" : "Last input · awaiting confirmation") }
+                    ?? l.text("Not reported")
+            }
             if fader.followsObservedPosition {
                 let position = fader.observed.map { String($0) } ?? l.text("Not reported")
                 let touch = fader.isTouched.map { l.text($0 ? "Touched" : "Released") } ?? l.text("Not reported")
@@ -254,15 +324,16 @@
                         .frame(width: m(26), height: 1)
                         .offset(y: cap / 2 + travel * CGFloat(mark) / 4)
                 }
-                if !fader.followsObservedPosition, let observed = fader.observed, observed != fader.target {
+                if !fader.mirrorsHardware, !fader.followsObservedPosition, let observed = fader.observed, observed != fader.target {
                     // Where the device last reported the fader: the motor has not arrived yet.
                     Capsule()
                         .fill(Theme.observed)
                         .frame(width: m(34), height: m(3))
                         .offset(y: cap / 2 + travel * (1 - FaderTravel.fraction(for: observed)) - m(1.5))
                 }
-                if !fader.followsObservedPosition || fader.observed != nil {
+                if fader.mirrorsHardware ? fader.hardwareReading != nil : (!fader.followsObservedPosition || fader.observed != nil) {
                     capView
+                        .opacity(fader.mirrorsHardware && fader.hardwareReading?.isCurrent == false ? 0.5 : 1)
                         .frame(width: m(36), height: cap)
                         .offset(y: travel * (1 - FaderTravel.fraction(for: fader.capPosition)))
                 } else {
@@ -336,6 +407,14 @@
 
         private static let pointsPerStep: CGFloat = 3
 
+        private var displayedValue: String {
+            if encoder.mirrorsHardware {
+                guard let reading = encoder.hardwareReading else { return "—" }
+                return (reading.isCurrent ? "" : "≈") + String(reading.value)
+            }
+            return encoder.observesInput ? encoder.observedValue.map { String($0) } ?? "—" : encoder.detail ?? "\(encoder.value)"
+        }
+
         var body: some View {
             VStack(spacing: m(2)) {
                 knob
@@ -343,7 +422,7 @@
                     .font(.system(size: m(9), weight: .semibold))
                     .foregroundStyle(encoder.label == nil ? .secondary : Theme.value)
                     .lineLimit(1)
-                Text(encoder.observesInput ? encoder.observedValue.map { String($0) } ?? "—" : encoder.detail ?? "\(encoder.value)")
+                Text(displayedValue)
                     .font(.system(size: m(10), design: .monospaced))
                     .lineLimit(1)
                 pushCap
@@ -358,7 +437,7 @@
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(CompactControl.encoder(encoder.index).localizedName(using: l)) \(encoder.label ?? "")")
-            .accessibilityValue("\(encoder.value)")
+            .accessibilityValue(encoder.panelValue.map { String($0) } ?? l.text("Not reported"))
             .accessibilityAdjustableAction { direction in
                 onSelect()
                 onTurn(direction == .increment ? 1 : -1)
@@ -367,19 +446,23 @@
         }
 
         private var knob: some View {
-            let lit = RingLEDs.lit(encoder.ring, style: encoder.style)
+            let lit = RingLEDs.lit(encoder.ring, style: encoder.style, localAppearance: encoder.localRingAppearance)
             return ZStack {
-                RingView(lit: encoder.observesInput ? RingLEDs.lit(.off, style: nil) : lit)
+                RingView(lit: encoder.observesInput || encoder.mirrorsHardware && encoder.hardwareReading == nil ? RingLEDs.lit(.off, style: nil) : lit)
+                    .opacity(encoder.mirrorsHardware && encoder.hardwareReading?.isCurrent == false ? 0.4 : 1)
                 Circle()
                     .fill(RadialGradient(colors: [Color(white: 0.3), Color(white: 0.1)],
                                          center: .topLeading, startRadius: 1, endRadius: m(26)))
                     .frame(width: m(26), height: m(26))
                     .overlay {
-                        Capsule()
-                            .fill(Color.white.opacity(0.85))
-                            .frame(width: m(2), height: m(8))
-                            .offset(y: -m(8))
-                            .rotationEffect(.degrees(-135 + 270 * Double(encoder.observesInput ? encoder.observedValue ?? 0 : encoder.value) / 127))
+                        if let value = encoder.panelValue {
+                            Capsule()
+                                .fill(Color.white.opacity(0.85))
+                                .frame(width: m(2), height: m(8))
+                                .offset(y: -m(8))
+                                .rotationEffect(.degrees(-135 + 270 * Double(value) / 127))
+                                .opacity(encoder.mirrorsHardware && encoder.hardwareReading?.isCurrent == false ? 0.4 : 1)
+                        }
                     }
                     .scaleEffect((encoder.isPushed ?? isPushing) ? 0.92 : 1)
             }
@@ -433,7 +516,7 @@
         }
     }
 
-    /// Thirteen LEDs on a 270° arc, lit as the host commanded.
+    /// Thirteen LEDs on a 270° arc, from host intent or the labeled local simulation.
     private struct RingView: View {
         @EnvironmentObject private var language: LanguageSettings
         private var l: Localizer {

@@ -1,0 +1,58 @@
+# Startup full-state readback — investigation remains open
+
+Recorded 2026-11-12 after the operator questioned the earlier conclusion. The
+controller was offline for this clarification; no new hardware experiment was run.
+
+## Corrected conclusion
+
+**Whether factory Standard MIDI mode can return all nine current physical fader
+positions at startup is unverified. It must not be described as impossible.**
+The earlier inference from “the current app did not receive or display them” to
+“the device cannot supply them” was not justified. The absence of a full-position
+query in the [manufacturer's RX table](https://www.bhphotovideo.com/lit_files/1142317.pdf)
+does not establish that power-on/USB attachment cannot emit a state burst, or that
+no documented device-specific read-only request exists.
+
+## Evidence so far
+
+- Captured touch-only events used CC101–109 on A or CC111–119 on B, with 127/0.
+  Those events reported touch/release; they did not contain fader positions.
+  This does not characterize every startup or request-triggered response.
+- A later manual F1 movement produced Layer B CC28 values 1 through 8. The host
+  was on A, and the old panel continued drawing A's software value. This was a
+  display/authority separation bug, not evidence that positions were unreadable.
+- No controlled full startup-state capture or read-only full-state request test
+  has established either support or lack of support. Ring calibration and input
+  coverage do not substitute for that test.
+
+## Next hardware session
+
+Distinguish device power-on, USB reattachment, and app/client attachment while the
+controller is already powered. Capture each with a listener ready before the
+relevant event, keeping the physical faders still and retaining raw MIDI/UMP,
+including SysEx fragments. Check that app filtering or late listener attachment
+has not discarded an initial burst. Record the mode, firmware, route, TX channel,
+and the timing and completeness of any nine-position response.
+
+Use passive capture: the normal active connection currently asserts the software
+layer and restores nonmotor feedback, which would alter the initial state under
+investigation. If a documented read-only request is identified, characterize it
+separately from unsolicited startup traffic. Do not invent SysEx commands, rewrite
+presets, switch to uncharacterized modes, flash firmware, or move motors to obtain
+readings. TX evidence never establishes the Global RX channel.
+
+If a complete physical response is verified, prioritize it as the startup panel
+source. Feed received positions through the physical-observation path; do not
+implement synchronization by sending stored targets back to the motors.
+
+## Current fallback and safety policy
+
+The app currently implements timestamped last-input history, displayed as stale
+after restart, and unknown markers where no input has been recorded. **This is a
+fallback while full-state readback remains unverified, not a decision that full
+readback is unsupported.** A cache cannot confirm changes made while the app was
+closed. Fresh verified device input should supersede it.
+
+Reading and actuation are independent: never command a touched motor, and never
+automatically recall motor positions on startup, reconnect, or layer selection.
+Those safety rules remain in force even if startup full-state reading is supported.

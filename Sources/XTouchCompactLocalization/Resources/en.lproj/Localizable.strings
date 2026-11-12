@@ -358,6 +358,9 @@
 "Desired light" = "Desired light";
 "Off" = "Off";
 "On" = "On";
+"Simulated device indicators" = "Simulated device indicators";
+"Enable writeback" = "Enable writeback";
+"Device indicator state is not reported" = "Device indicator state is not reported";
 "Blink" = "Blink";
 "Ring command" = "Ring command";
 "Segment %@ / 13" = "Segment %@ / 13";
@@ -478,3 +481,9 @@
 "OSC limits: 0…1, maximum 0.25/s, independent heartbeat 0.3 s. Never restored on launch." = "OSC limits: 0…1, maximum 0.25/s, independent heartbeat 0.3 s. Never restored on launch.";
 
 "OSC requires trusted destination actual-state feedback and an independent heartbeat. This version has no built-in receiver configuration for that feedback; enabling output alone cannot make it ready." = "OSC requires trusted destination actual-state feedback and an independent heartbeat. This version has no built-in receiver configuration for that feedback; enabling output alone cannot make it ready.";
+
+"≈ Last input · — Not yet reported" = "≈ Last input · — Not yet reported";
+"Last received input" = "Last received input";
+"Last input · awaiting confirmation" = "Last input · awaiting confirmation";
+"Last input layer: %@ · awaiting confirmation" = "Last input layer: %@ · awaiting confirmation";
+"Last hardware input: %@" = "Last hardware input: %@";

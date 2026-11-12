@@ -16,6 +16,7 @@ public struct SavedWorkspace: Codable, Equatable, Sendable {
     public var version = 1
     public var configuration: SurfaceConfiguration
     public var profile: DeviceProfile
+    public var hardwareValues: HardwareValueCache?
     public init(configuration: SurfaceConfiguration, profile: DeviceProfile) {
         self.configuration = configuration; self.profile = profile
     }
@@ -23,6 +24,7 @@ public struct SavedWorkspace: Codable, Equatable, Sendable {
     public func validate() throws {
         guard version == 1 else { throw ParameterError.wrongDeviceOrVersion }
         try configuration.validate(); try profile.validate()
+        try hardwareValues?.validate()
     }
 }
 

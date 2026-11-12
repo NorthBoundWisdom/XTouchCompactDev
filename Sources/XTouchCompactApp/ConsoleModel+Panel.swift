@@ -21,6 +21,9 @@
         var panelSnapshot: PanelSnapshot {
             let observation = observationPresentation
             return PanelSnapshot(
+                surfaceStatus: surfaceStatusPresentation,
+                hardwareDisplayLayer: matchingLiveValues?.lastInputLayer ?? matchingCachedValues?.lastInputLayer,
+                hardwareLayerIsCurrent: matchingLiveValues?.lastInputLayer != nil,
                 nonMotorTests: nonMotorTestPresentation,
                 hardwareObservation: observation,
                 listenOnly: listenOnly, capturePath: capturePath,
@@ -46,6 +49,45 @@
                 oscParameter: oscParameter, oscOutput: oscOutput,
                 agents: agents.slots, businessPlugins: plugins.businessPresentations,
                 parameterValues: session.parameters.values
+            )
+        }
+
+        private func matchesCurrentInput(_ values: HardwareValueCache?) -> Bool {
+            values?.inputID == connection.connectedInput?.id && connection.connectedInput != nil &&
+                values?.transmitChannel == session.state.map.transmitChannel
+        }
+
+        private var matchingCachedValues: HardwareValueCache? {
+            matchesCurrentInput(hardwareValueCache) ? hardwareValueCache : nil
+        }
+
+        private var matchingLiveValues: HardwareValueCache? {
+            matchesCurrentInput(liveHardwareValues) ? liveHardwareValues : nil
+        }
+
+        private func hardwareReading(_ control: CompactControl) -> HardwareValuePresentation? {
+            let inputLayer = matchingLiveValues?.lastInputLayer ?? matchingCachedValues?.lastInputLayer ?? layer
+            func reading(_ values: HardwareValueCache?) -> HardwareValueCache.Reading? {
+                switch control {
+                case let .fader(index): values?.faders[index]
+                case let .encoder(index): values?.encoders[inputLayer]?[index]
+                default: nil
+                }
+            }
+            let current = reading(matchingLiveValues)
+            guard let value = current ?? reading(matchingCachedValues) else { return nil }
+            return HardwareValuePresentation(value: value.value, timestamp: value.timestamp, isCurrent: current != nil)
+        }
+
+        private var surfaceStatusPresentation: SurfaceStatusPresentation {
+            guard !hardwareMode else { return SurfaceStatusPresentation() }
+            // Simulated device directions: host feedback is MIDI IN; a gesture is MIDI OUT.
+            // Pedals are idle and the supported mock mode is Standard. No physical LED claim.
+            return SurfaceStatusPresentation(
+                usb: .on,
+                midiIn: mockMIDIInAt.map { .pulse(until: $0.addingTimeInterval(0.2)) } ?? .off,
+                midiOut: mockMIDIOutAt.map { .pulse(until: $0.addingTimeInterval(0.2)) } ?? .off,
+                footSwitch: .off, footExpression: .off, mcMode: .off
             )
         }
 
@@ -114,6 +156,12 @@
             } else {
                 result.label = parameterLabel(.fader(index))
                 result.detail = parameterDetail(.fader(index))
+                if hardwareMode {
+                    result.mirrorsHardware = true
+                    result.hardwareReading = hardwareReading(.fader(index))
+                    result.observed = matchingLiveValues?.faders[index]?.value
+                    result.isTouched = reportedHardwarePresses[.faderTouch(index)]
+                }
             }
             return result
         }
@@ -134,6 +182,18 @@
             } else {
                 result.label = parameterLabel(.encoder(index))
                 result.detail = parameterDetail(.encoder(index))
+                if hardwareMode {
+                    result.mirrorsHardware = true
+                    result.hardwareReading = hardwareReading(.encoder(index))
+                    result.isPushed = reportedHardwarePresses[.encoderPush(index)]
+                }
+                // Operator reports: top encoders sometimes light adjacent pairs; side encoders
+                // empty the left half before filling the right. Keep protocol style nil unless
+                // the host has explicitly selected one; do not rewrite any hardware profile.
+                if let value = result.panelValue {
+                    result.localRingAppearance = PanelLayout.sideEncoders.contains(index)
+                        ? .bipolar(value: value) : .interpolated(value: value)
+                }
             }
             return result
         }
@@ -143,7 +203,7 @@
             let isDown: Bool? = if let observation {
                 observation.buttonPresses[index]
             } else {
-                session.state.isButtonDown(index)
+                hardwareMode ? reportedHardwarePresses[.button(index)] : session.state.isButtonDown(index)
             }
             return ButtonPresentation(index: index, light: light, isDown: isDown)
         }
@@ -160,6 +220,7 @@
                 resetHardwareObservation: { [weak self] in self?.resetHardwareObservation() },
                 exportInputReview: { [weak self] in self?.chooseExportInputReview() },
                 setListenOnly: { [weak self] in self?.setListenOnly($0) },
+                enableHardwareWriteback: { [weak self] in self?.enableHardwareWriteback() },
                 startCapture: { [weak self] in self?.chooseStartCapture() },
                 stopCapture: { [weak self] in self?.stopCapture() },
                 selectLayer: { [weak self] in self?.setLayer($0) },

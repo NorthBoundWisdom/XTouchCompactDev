@@ -24,6 +24,13 @@
         @Published private(set) var layer: CompactLayer = .a
         @Published private(set) var connection = CompactMIDIConnection()
         @Published private(set) var events: [MonitorEvent] = []
+        @Published private(set) var mockMIDIInAt: Date?
+        @Published private(set) var mockMIDIOutAt: Date?
+        @Published private(set) var hardwareValueCache: HardwareValueCache?
+        @Published private(set) var liveHardwareValues: HardwareValueCache?
+        @Published private(set) var reportedHardwarePresses: [CompactControl: Bool] = [:]
+        private var hardwareValuesDirty = false
+        private var hardwareValuesSavedAt: TimeInterval = 0
         var logs: [LocalizedMessage] {
             events.map(\.text)
         }
@@ -115,10 +122,17 @@
             self.midi.onConnection = { [weak self] snapshot in
                 guard let self else { return }
                 let wasConnected = connection.isConnected
+                if snapshot.connectedInput?.id != connection.connectedInput?.id || snapshot.generation != connection.generation {
+                    liveHardwareValues = nil
+                    reportedHardwarePresses = [:]
+                }
                 if nonMotorTests.approval != nil {
                     lockNonMotorTests("Connection changed; test output locked.")
                 }
                 connection = snapshot
+                if snapshot.isConnected, let connectionError = error as? ConsoleError, connectionError == .noConnection {
+                    error = nil
+                }
                 if isObservingHardware, let newInput = snapshot.connectedInput?.id {
                     if let observationInputID, observationInputID != newInput {
                         resetHardwareObservation()
@@ -141,6 +155,7 @@
             if let store {
                 do {
                     if let saved = try store.load() {
+                        hardwareValueCache = saved.hardwareValues
                         transmitChannel = saved.profile.transmitChannel
                         feedbackChannel = saved.profile.receiveChannel
                         observedLEDVariant = saved.profile.ledProtocol == .observed114
@@ -172,6 +187,8 @@
                 notifications.removeAll { $0.id == "layer" }
             }
             hardwareMode = enabled
+            mockMIDIInAt = nil
+            mockMIDIOutAt = nil
             if enabled {
                 guard connection.isConnected else {
                     error = ConsoleError.noConnection
@@ -221,6 +238,13 @@
             lockNonMotorTests()
             isObservingHardware = false
             // Returning to the console retains passive output and all safety ownership.
+        }
+
+        /// Explicitly leave passive diagnostics for normal writes; enabling itself sends nothing.
+        func enableHardwareWriteback() {
+            guard hardwareMode else { return }
+            endHardwareObservation()
+            setListenOnly(false)
         }
 
         func resetHardwareObservation() {
@@ -335,6 +359,10 @@
 
                 let variant: ButtonLightProtocol = observedLEDVariant ? .observed114 : .manual
                 let inputChannelChanged = session.state.map.transmitChannel != map.transmitChannel
+                if inputChannelChanged {
+                    liveHardwareValues = nil
+                    reportedHardwarePresses = [:]
+                }
                 mock = mock.reconfigured(map: map, lightProtocol: variant)
                 apply { try $0.reconfigure(map: map, lightProtocol: variant) }
                 if isObservingHardware, inputChannelChanged {
@@ -449,6 +477,9 @@
         }
 
         func advanceAgents() {
+            if hardwareValuesDirty, runtimeTime - hardwareValuesSavedAt >= 1 {
+                flushHardwareValues()
+            }
             tickOSC()
             do {
                 var next = plugins
@@ -614,9 +645,36 @@
             catch { self.error = error }
         }
 
+        private func recordHardwareInput(_ input: CompactInput) {
+            guard let inputID = connection.connectedInput?.id else { return }
+            let channel = session.state.map.transmitChannel
+            if hardwareValueCache?.inputID != inputID || hardwareValueCache?.transmitChannel != channel {
+                hardwareValueCache = HardwareValueCache(inputID: inputID, transmitChannel: channel)
+            }
+            if liveHardwareValues?.inputID != inputID || liveHardwareValues?.transmitChannel != channel {
+                liveHardwareValues = HardwareValueCache(inputID: inputID, transmitChannel: channel)
+            }
+            let previous = hardwareValueCache
+            let timestamp = now()
+            hardwareValueCache?.record(input, at: timestamp)
+            liveHardwareValues?.record(input, at: timestamp)
+            if previous != hardwareValueCache {
+                hardwareValuesDirty = true
+            }
+            if let pressed = input.isPressed {
+                reportedHardwarePresses[input.control] = pressed
+            }
+        }
+
         private func receive(_ messages: [MIDIMessage], fromMock: Bool = false) {
+            if fromMock, !messages.isEmpty {
+                mockMIDIOutAt = now()
+            }
             for message in messages {
                 let event = session.state.map.decode(message)
+                if !fromMock, let event {
+                    recordHardwareInput(event)
+                }
                 if !fromMock, let event, case let .faderTouch(index) = event.control {
                     session.setSafetyTouch(index, touched: event.isPressed == true)
                 }
@@ -688,8 +746,12 @@
             for message in messages {
                 guard hardwareMode else {
                     mock.receive(message)
+                    mockMIDIInAt = now()
                     record(message, direction: .output, source: source, delivery: .sent)
                     continue
+                }
+                if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
+                    liveHardwareValues?.invalidateFader(Int(number))
                 }
                 do {
                     if let authorizedTest {
@@ -845,9 +907,20 @@
             profile.inputID = appliedInputID
             profile.outputID = appliedOutputID
             do {
-                try store.save(SavedWorkspace(configuration: session.parameters.configuration, profile: profile))
+                var workspace = SavedWorkspace(configuration: session.parameters.configuration, profile: profile)
+                workspace.hardwareValues = hardwareValueCache
+                try store.save(workspace)
+                hardwareValuesDirty = false
+                hardwareValuesSavedAt = runtimeTime
                 notifications.removeAll { $0.id == "storage" }
             } catch { storageFailure(error) }
+        }
+
+        func flushHardwareValues() {
+            guard hardwareValuesDirty, store != nil else { return }
+            // Limit retries too; a failed save remains visible and never overwrites corrupt data.
+            hardwareValuesSavedAt = runtimeTime
+            saveWorkspace()
         }
 
         func clearMonitor() {
