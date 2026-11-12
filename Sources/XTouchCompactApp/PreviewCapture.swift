@@ -102,6 +102,7 @@
             }
             model.captureScene(name: "Verse")
             model.highlightedGroup = "Drums"
+            model.moveExpression(72)
             content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents,
                                           selection: .fader(2), initialTab: .organize))
         case "encoder-rings":

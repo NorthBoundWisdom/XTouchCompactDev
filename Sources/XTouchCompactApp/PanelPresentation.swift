@@ -351,8 +351,15 @@
         var mcMode: Light?
     }
 
+    /// Simulated pedal positions (mock only; nil on hardware, where pedals are physical input).
+    struct MockPedalPresentation: Equatable, Sendable {
+        var expression: UInt8?
+        var footswitchDown = false
+    }
+
     struct PanelSnapshot: Equatable, Sendable {
         var surfaceStatus = SurfaceStatusPresentation()
+        var mockPedals: MockPedalPresentation?
         /// Last input layer (possibly cached); never changes the software bank or motor gate.
         var hardwareDisplayLayer: CompactLayer?
         var hardwareLayerIsCurrent = false
@@ -479,6 +486,10 @@
         var deleteScene: ((String) -> Void)?
         var undo: (() -> Void)?
         var redo: (() -> Void)?
+
+        // Simulated rear-panel pedals; nil on hardware.
+        var moveExpression: ((UInt8) -> Void)?
+        var pressFootswitch: ((Bool) -> Void)?
     }
 
     extension CompactControl {

@@ -419,8 +419,12 @@ ignore `--hardware-control`. The observation panel no longer shows the recent-in
 debug card; raw input capture and touch safety remain available.
 
 Four device status groups above the master fader represent USB, MIDI IN/OUT,
-FOOT SW/EXP and MC MODE. Mock USB is on, pedals and MC are off, and simulated
+FOOT SW/EXP and MC MODE. Mock USB is on and MC is off. Simulated
 device-side MIDI receipt/transmission pulses the matching indicator for 200 ms.
+In Mock mode the panel header shows FOOT controls: hold **SW** to press the
+footswitch (lit while held), drag **EXP** to move the expression pedal (pulses
+200 ms). They transmit on the physical layer's address (A: CC 26 / 27, B:
+CC 63 / 64) through the normal input path; hardware mode shows no pedal control.
 Pulse timing and pedal/MIDI colors are UI approximations, not hardware measurements.
 Physical status remains unreported (nil, shown as unknown), independently of host
 port connections, USB MIDI activity and sent feedback.

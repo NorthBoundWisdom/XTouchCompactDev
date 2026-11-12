@@ -26,6 +26,8 @@
         @Published private(set) var events: [MonitorEvent] = []
         @Published private(set) var mockMIDIInAt: Date?
         @Published private(set) var mockMIDIOutAt: Date?
+        /// Last simulated expression-pedal movement; drives the mock FOOT EXP pulse only.
+        @Published private(set) var mockExpressionAt: Date?
         @Published private(set) var hardwareValueCache: HardwareValueCache?
         @Published private(set) var liveHardwareValues: HardwareValueCache?
         @Published private(set) var reportedHardwarePresses: [CompactControl: Bool] = [:]
@@ -205,6 +207,7 @@
             hardwareMode = enabled
             mockMIDIInAt = nil
             mockMIDIOutAt = nil
+            mockExpressionAt = nil
             if enabled {
                 guard connection.isConnected else {
                     error = ConsoleError.noConnection
@@ -653,6 +656,18 @@
 
         func pushEncoder(_ index: Int, isDown: Bool) {
             performMockGesture { try $0.pushEncoder(index, isDown: isDown) }
+        }
+
+        /// Simulated rear-panel accessories. Mock only: a real pedal is physical input.
+        func moveExpression(_ value: UInt8) {
+            guard !hardwareMode else { return }
+            mockExpressionAt = now()
+            performMockGesture { try $0.moveExpression(value) }
+        }
+
+        func pressFootswitch(isDown: Bool) {
+            guard !hardwareMode else { return }
+            performMockGesture { $0.pressFootswitch(isDown: isDown) }
         }
 
         func releaseButton(_ index: Int) {

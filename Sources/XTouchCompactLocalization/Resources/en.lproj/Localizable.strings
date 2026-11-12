@@ -529,3 +529,5 @@
 "Undo restores values like any software write: touched faders wait for release." = "Undo restores values like any software write: touched faders wait for release.";
 "Undo value change" = "Undo value change";
 "Update" = "Update";
+"Hold to press the simulated footswitch" = "Hold to press the simulated footswitch";
+"Simulated pedals: CC 26 / 27 on layer A, CC 63 / 64 on layer B" = "Simulated pedals: CC 26 / 27 on layer A, CC 63 / 64 on layer B";

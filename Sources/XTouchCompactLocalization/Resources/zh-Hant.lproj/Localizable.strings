@@ -529,3 +529,5 @@
 "Undo restores values like any software write: touched faders wait for release." = "復原與一般軟體寫入一樣恢復數值：被觸摸的推桿會等放開後再動。";
 "Undo value change" = "復原數值修改";
 "Update" = "更新";
+"Hold to press the simulated footswitch" = "按住即踩下模擬腳踏開關";
+"Simulated pedals: CC 26 / 27 on layer A, CC 63 / 64 on layer B" = "模擬踏板：A 層 CC 26 / 27，B 層 CC 63 / 64";

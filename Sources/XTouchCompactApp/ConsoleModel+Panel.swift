@@ -42,6 +42,7 @@
             let observation = observationPresentation
             return PanelSnapshot(
                 surfaceStatus: surfaceStatusPresentation,
+                mockPedals: hardwareMode ? nil : MockPedalPresentation(expression: mock.expression, footswitchDown: mock.footswitchDown),
                 hardwareDisplayLayer: matchingLiveValues?.lastInputLayer ?? matchingCachedValues?.lastInputLayer,
                 hardwareLayerIsCurrent: matchingLiveValues?.lastInputLayer != nil,
                 nonMotorTests: nonMotorTestPresentation,
@@ -105,12 +106,15 @@
         private var surfaceStatusPresentation: SurfaceStatusPresentation {
             guard !hardwareMode else { return SurfaceStatusPresentation() }
             // Simulated device directions: host feedback is MIDI IN; a gesture is MIDI OUT.
-            // Pedals are idle and the supported mock mode is Standard. No physical LED claim.
+            // Simulated pedals: SW lit while held, EXP pulses on movement. The supported mock
+            // mode is Standard. These are UI conventions, not measured device LED behavior.
             return SurfaceStatusPresentation(
                 usb: .on,
                 midiIn: mockMIDIInAt.map { .pulse(until: $0.addingTimeInterval(0.2)) } ?? .off,
                 midiOut: mockMIDIOutAt.map { .pulse(until: $0.addingTimeInterval(0.2)) } ?? .off,
-                footSwitch: .off, footExpression: .off, mcMode: .off
+                footSwitch: mock.footswitchDown ? .on : .off,
+                footExpression: mockExpressionAt.map { .pulse(until: $0.addingTimeInterval(0.2)) } ?? .off,
+                mcMode: .off
             )
         }
 
@@ -317,7 +321,9 @@
                 recallScene: { [weak self] id in self?.recallScene(id) },
                 deleteScene: { [weak self] id in self?.deleteScene(id) },
                 undo: { [weak self] in self?.undo() },
-                redo: { [weak self] in self?.redo() }
+                redo: { [weak self] in self?.redo() },
+                moveExpression: hardwareMode ? nil : { [weak self] value in self?.moveExpression(value) },
+                pressFootswitch: hardwareMode ? nil : { [weak self] down in self?.pressFootswitch(isDown: down) }
             )
         }
     }

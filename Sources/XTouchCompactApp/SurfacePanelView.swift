@@ -56,6 +56,9 @@
                     .padding(.horizontal, m(7))
                     .padding(.vertical, m(3))
                     .background((snapshot.isMock ? Theme.value : Color.green).opacity(0.14), in: Capsule())
+                if let pedals = snapshot.mockPedals, snapshot.hardwareObservation == nil {
+                    MockPedalControls(pedals: pedals, intents: intents)
+                }
                 Spacer()
                 Text(snapshot.hardwareObservation != nil ? l.text("Highlights show input, not device LEDs") : snapshot.isMock ? l.text("拖动推子 / 旋钮、按下按键 = 模拟实体操作") : l.text("≈ Last input · — Not yet reported"))
                     .font(.system(size: m(10)))
@@ -705,6 +708,70 @@
                     RoundedRectangle(cornerRadius: m(5))
                         .stroke(isSelected ? Theme.selection : Color.black.opacity(0.5), lineWidth: isSelected ? 1.5 : 1)
                 }
+        }
+    }
+
+    // MARK: - Simulated pedals
+
+    /// Rear-panel accessories in the mock: hold SW, drag EXP. Real pedals are physical input
+    /// and get no on-screen control.
+    private struct MockPedalControls: View {
+        @EnvironmentObject private var language: LanguageSettings
+        private var l: Localizer {
+            language.localizer
+        }
+
+        let pedals: MockPedalPresentation
+        let intents: PanelIntents
+        @Environment(\.panelMetrics) private var m
+        @State private var dragged: Double?
+
+        var body: some View {
+            HStack(spacing: m(6)) {
+                Text("FOOT").font(.system(size: m(8), weight: .bold)).tracking(1).foregroundStyle(.secondary)
+                Text("SW")
+                    .font(.system(size: m(9), weight: .heavy))
+                    .frame(width: m(30), height: m(18))
+                    .foregroundStyle(pedals.footswitchDown ? Color.black : .secondary)
+                    .background(pedals.footswitchDown ? Theme.ring : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: m(4)))
+                    .gesture(DragGesture(minimumDistance: 0)
+                        .onChanged {
+                            _ in if !pedals.footswitchDown {
+                                intents.pressFootswitch?(true)
+                            }
+                        }
+                        .onEnded { _ in intents.pressFootswitch?(false) })
+                    .accessibilityLabel(l.text("脚踏开关"))
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { intents.pressFootswitch?(true); intents.pressFootswitch?(false) }
+                    .help(l.text("Hold to press the simulated footswitch"))
+                Text("EXP").font(.system(size: m(8), weight: .bold)).foregroundStyle(.secondary)
+                Slider(value: Binding(get: { dragged ?? Double(pedals.expression ?? 0) },
+                                      set: { value in
+                                          dragged = value
+                                          let raw = UInt8(value.rounded())
+                                          if raw != pedals.expression {
+                                              intents.moveExpression?(raw)
+                                          }
+                                      }),
+                       in: 0 ... 127,
+                       onEditingChanged: {
+                           editing in if !editing {
+                               dragged = nil
+                           }
+                       })
+                       .frame(width: m(90))
+                       .controlSize(.mini)
+                       .accessibilityLabel(l.text("表情踏板"))
+                Text(pedals.expression.map { String($0) } ?? "—")
+                    .font(.system(size: m(9), design: .monospaced))
+                    .foregroundStyle(pedals.expression == nil ? .secondary : Theme.value)
+                    .frame(width: m(22), alignment: .trailing)
+            }
+            .padding(.horizontal, m(7))
+            .padding(.vertical, m(3))
+            .background(Color.black.opacity(0.18), in: Capsule())
+            .help(l.text("Simulated pedals: CC 26 / 27 on layer A, CC 63 / 64 on layer B"))
         }
     }
 #endif
