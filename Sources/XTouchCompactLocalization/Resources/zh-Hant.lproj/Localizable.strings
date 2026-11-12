@@ -170,17 +170,16 @@
 "Edit configuration" = "編輯功能設定";
 "Enable MCP" = "啟用 MCP";
 "Enable output" = "啟用輸出";
-"Export configuration\u2026" = "匯出設定…";
+"Export configuration…" = "匯出設定…";
 "First: %@" = "起始：%@";
 "Host" = "主機";
-"Import configuration\u2026" = "匯入設定…";
+"Import configuration…" = "匯入設定…";
 "Last: %@" = "結束：%@";
 "Loading a configuration does not recall motors." = "載入設定不會召回電動推桿。";
 "Maximum" = "最大值";
 "Minimum" = "最小值";
 "Name" = "名稱";
 "Neutral preset" = "中性預設";
-"OSC limits: 0\u20261, maximum 0.25/s, heartbeat 1 s. Never restored on launch." = "OSC 限制：0…1，最大每秒 0.25，心跳 1 秒。啟動時不恢復輸出。";
 "OSC output" = "OSC 輸出";
 "Parameter" = "參數";
 "Parameters" = "參數";
@@ -204,7 +203,7 @@
 "cycle" = "循環數值";
 "resetGroup" = "重設參數群組";
 "Agent call: %@" = "Agent 呼叫：%@";
-"Load preset\u2026" = "載入預設…";
+"Load preset…" = "載入預設…";
 "Audio example" = "音訊範例";
 "Add parameter" = "新增參數";
 "Group" = "群組";
@@ -229,7 +228,7 @@
 "Device layer differs from the host; motor output is blocked." = "裝置層與主機不一致；已阻止馬達輸出。";
 "OSC output stopped: destination or parameter is invalid." = "OSC 輸出已停止：目的地或參數無效。";
 "OSC output stopped: transport failure." = "OSC 輸出已停止：傳輸失敗。";
-"Reset parameter values\u2026" = "重設參數值…";
+"Reset parameter values…" = "重設參數值…";
 "Reset all parameter values to defaults?" = "將所有參數值重設為預設值？";
 "Reset values" = "重設數值";
 "Configuration edits preserve values; resetting defaults requires confirmation." = "編輯設定保留既有值；重設預設值需明確確認。";

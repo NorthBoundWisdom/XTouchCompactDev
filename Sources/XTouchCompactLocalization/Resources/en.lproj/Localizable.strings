@@ -170,17 +170,16 @@
 "Edit configuration" = "Edit configuration";
 "Enable MCP" = "Enable MCP";
 "Enable output" = "Enable output";
-"Export configuration\u2026" = "Export configuration…";
+"Export configuration…" = "Export configuration…";
 "First: %@" = "First: %@";
 "Host" = "Host";
-"Import configuration\u2026" = "Import configuration…";
+"Import configuration…" = "Import configuration…";
 "Last: %@" = "Last: %@";
 "Loading a configuration does not recall motors." = "Loading a configuration does not recall motors.";
 "Maximum" = "Maximum";
 "Minimum" = "Minimum";
 "Name" = "Name";
 "Neutral preset" = "Neutral preset";
-"OSC limits: 0\u20261, maximum 0.25/s, heartbeat 1 s. Never restored on launch." = "OSC limits: 0…1, maximum 0.25/s, heartbeat 1 s. Never restored on launch.";
 "OSC output" = "OSC output";
 "Parameter" = "Parameter";
 "Parameters" = "Parameters";
@@ -204,7 +203,7 @@
 "cycle" = "cycle";
 "resetGroup" = "resetGroup";
 "Agent call: %@" = "Agent call: %@";
-"Load preset\u2026" = "Load preset…";
+"Load preset…" = "Load preset…";
 "Audio example" = "Audio example";
 "Add parameter" = "Add parameter";
 "Group" = "Group";
@@ -229,7 +228,7 @@
 "Device layer differs from the host; motor output is blocked." = "Device layer differs from the host; motor output is blocked.";
 "OSC output stopped: destination or parameter is invalid." = "OSC output stopped: destination or parameter is invalid.";
 "OSC output stopped: transport failure." = "OSC output stopped: transport failure.";
-"Reset parameter values\u2026" = "Reset parameter values…";
+"Reset parameter values…" = "Reset parameter values…";
 "Reset all parameter values to defaults?" = "Reset all parameter values to defaults?";
 "Reset values" = "Reset values";
 "Configuration edits preserve values; resetting defaults requires confirmation." = "Configuration edits preserve values; resetting defaults requires confirmation.";

@@ -56,28 +56,41 @@
                         let definition = draft.parameters[index]
                         VStack(alignment: .leading) {
                             HStack {
+                                // Color tag is edited in the inspector; shown here for orientation.
+                                Capsule().fill(definition.color.map(Theme.tag) ?? Color.clear).frame(width: 4, height: 18)
                                 TextField(l.text("Name"), text: $draft.parameters[index].name)
                                 TextField(l.text("Unit"), text: $draft.parameters[index].unit).frame(width: 55)
                                 Toggle(l.text("Agent write"), isOn: $draft.parameters[index].agentWritable)
                             }
                             HStack {
-                                TextField(l.text("Group"), text: $draft.parameters[index].group)
-                                TextField(l.text("Default"), value: $draft.parameters[index].defaultValue, format: .number)
+                                labeled(l.text("Group")) { TextField(l.text("Group"), text: $draft.parameters[index].group) }
+                                labeled(l.text("Default")) {
+                                    TextField(l.text("Default"), value: $draft.parameters[index].defaultValue, format: .number)
+                                }
                                 Toggle(l.text("Switch"), isOn: $draft.parameters[index].isSwitch)
                             }
                             HStack {
-                                TextField(l.text("Minimum"), value: $draft.parameters[index].minimum, format: .number)
-                                TextField(l.text("Maximum"), value: $draft.parameters[index].maximum, format: .number)
-                                TextField(l.text("Step"), value: $draft.parameters[index].step, format: .number)
+                                labeled(l.text("Minimum")) {
+                                    TextField(l.text("Minimum"), value: $draft.parameters[index].minimum, format: .number)
+                                }
+                                labeled(l.text("Maximum")) {
+                                    TextField(l.text("Maximum"), value: $draft.parameters[index].maximum, format: .number)
+                                }
+                                labeled(l.text("Step")) { TextField(l.text("Step"), value: $draft.parameters[index].step, format: .number) }
                             }
                             if let applied = snapshot.configuration.parameters.first(where: { $0.id == definition.id }),
                                let value = snapshot.parameterValues[definition.id], applied.minimum < applied.maximum
                             {
-                                Slider(value: Binding(get: { value },
-                                                      set: { intents.setParameter?(definition.id, $0) }),
-                                       in: applied.minimum ... applied.maximum)
-                                Text("\(value) \(definition.unit)")
-                                    .font(.caption.monospaced())
+                                HStack {
+                                    Slider(value: Binding(get: { value },
+                                                          set: { intents.setParameter?(definition.id, $0) }),
+                                           in: applied.minimum ... applied.maximum)
+                                        .accessibilityLabel(definition.name)
+                                    Text(value.formatted(.number.precision(.fractionLength(0 ... 3))) + (applied.unit.isEmpty ? "" : " " + applied.unit))
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(Theme.value)
+                                        .frame(minWidth: 56, alignment: .trailing)
+                                }
                             }
                         }.padding(8).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                     }
@@ -118,6 +131,14 @@
             )) {
                 Button(l.text("Reset values"), role: .destructive) { intents.confirmLoadPreset?() }
                 Button(l.text("Cancel"), role: .cancel) { intents.cancelLoadPreset?() }
+            }
+        }
+
+        /// A caption above a field: filled text fields no longer show their placeholder.
+        private func labeled(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.caption2).foregroundStyle(.secondary)
+                content().labelsHidden()
             }
         }
 

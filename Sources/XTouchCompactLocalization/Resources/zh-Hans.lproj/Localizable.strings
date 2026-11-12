@@ -170,17 +170,16 @@
 "Edit configuration" = "编辑功能配置";
 "Enable MCP" = "启用 MCP";
 "Enable output" = "启用输出";
-"Export configuration\u2026" = "导出配置…";
+"Export configuration…" = "导出配置…";
 "First: %@" = "起始：%@";
 "Host" = "主机";
-"Import configuration\u2026" = "导入配置…";
+"Import configuration…" = "导入配置…";
 "Last: %@" = "结束：%@";
 "Loading a configuration does not recall motors." = "载入配置不会召回电动推子。";
 "Maximum" = "最大值";
 "Minimum" = "最小值";
 "Name" = "名称";
 "Neutral preset" = "中性预置";
-"OSC limits: 0\u20261, maximum 0.25/s, heartbeat 1 s. Never restored on launch." = "OSC 限制：0…1，最大每秒 0.25，心跳 1 秒。启动时不恢复输出。";
 "OSC output" = "OSC 输出";
 "Parameter" = "参数";
 "Parameters" = "参数";
@@ -204,7 +203,7 @@
 "cycle" = "循环数值";
 "resetGroup" = "重置参数组";
 "Agent call: %@" = "Agent 调用：%@";
-"Load preset\u2026" = "载入预置…";
+"Load preset…" = "载入预置…";
 "Audio example" = "音频示例";
 "Add parameter" = "添加参数";
 "Group" = "分组";
@@ -229,7 +228,7 @@
 "Device layer differs from the host; motor output is blocked." = "设备层与主机不一致；已阻止电机输出。";
 "OSC output stopped: destination or parameter is invalid." = "OSC 输出已停止：目的地或参数无效。";
 "OSC output stopped: transport failure." = "OSC 输出已停止：传输失败。";
-"Reset parameter values\u2026" = "重置参数值…";
+"Reset parameter values…" = "重置参数值…";
 "Reset all parameter values to defaults?" = "将所有参数值重置为默认值？";
 "Reset values" = "重置数值";
 "Configuration edits preserve values; resetting defaults requires confirmation." = "编辑配置保留已有值；重置默认值需明确确认。";

@@ -46,3 +46,30 @@ import Testing
         }
     }
 }
+
+/// Every literal key the app passes to `l.text(…)` must exist in the English catalog. A key
+/// that is missing (or mangled, e.g. by an escape the .strings parser does not understand)
+/// silently falls back to the source text in every language.
+@Test func everyLiteralKeyUsedByTheAppExistsInTheCatalog() throws {
+    let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let catalogURL = repository.appendingPathComponent("Sources/XTouchCompactLocalization/Resources/en.lproj/Localizable.strings")
+    let catalog = try #require(PropertyListSerialization.propertyList(from: Data(contentsOf: catalogURL), format: nil) as? [String: String])
+    // No key may contain a leftover escape fragment.
+    #expect(!catalog.keys.contains { $0.contains("u2026") || $0.contains("\\u") })
+    let sources = repository.appendingPathComponent("Sources/XTouchCompactApp")
+    let pattern = try NSRegularExpression(pattern: #"(?:\bl|localizer)\.text\(\s*"((?:[^"\\]|\\.)*)""#)
+    var missing: Set<String> = []
+    for file in try FileManager.default.contentsOfDirectory(at: sources, includingPropertiesForKeys: nil) where file.pathExtension == "swift" {
+        let text = try String(contentsOf: file, encoding: .utf8)
+        for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            let literal = try String(text[#require(Range(match.range(at: 1), in: text))])
+            // Skip interpolated keys; unescape the rest.
+            guard !literal.contains("\\(") else { continue }
+            let key = literal.replacingOccurrences(of: "\\\"", with: "\"").replacingOccurrences(of: "\\\\", with: "\\")
+            if catalog[key] == nil {
+                missing.insert(key)
+            }
+        }
+    }
+    #expect(missing.isEmpty, "Keys used by the app but absent from the catalog: \(missing.sorted())")
+}
