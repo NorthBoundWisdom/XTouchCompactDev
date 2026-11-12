@@ -415,7 +415,40 @@
             return encoder.observesInput ? encoder.observedValue.map { String($0) } ?? "—" : encoder.detail ?? "\(encoder.value)"
         }
 
+        /// Split for the type checker: one long modifier chain timed out on CI's Swift 6.3.
         var body: some View {
+            framedBody
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityName)
+                .accessibilityValue(encoder.panelValue.map { String($0) } ?? l.text("Not reported"))
+                .accessibilityAdjustableAction { (direction: AccessibilityAdjustmentDirection) in
+                    turn(direction)
+                }
+                .help(l.text("上下拖动转动 %@", CompactControl.encoder(encoder.index).shortName))
+        }
+
+        private var accessibilityName: String {
+            CompactControl.encoder(encoder.index).localizedName(using: l) + " " + (encoder.label ?? "")
+        }
+
+        private func turn(_ direction: AccessibilityAdjustmentDirection) {
+            onSelect()
+            let step: Int = direction == .increment ? 1 : -1
+            onTurn(step)
+        }
+
+        private var framedBody: some View {
+            let shape = RoundedRectangle(cornerRadius: m(8))
+            let fill: Color = isSelected ? Theme.selection.opacity(0.16) : Color.black.opacity(0.16)
+            let stroke: Color = isSelected ? Theme.selection : Color.clear
+            return content
+                .frame(maxWidth: .infinity)
+                .frame(height: m(Self.height))
+                .background(fill, in: shape)
+                .overlay { shape.stroke(stroke, lineWidth: 1.5) }
+        }
+
+        private var content: some View {
             VStack(spacing: m(2)) {
                 knob
                 Text(encoder.label ?? "E\(encoder.index)")
@@ -427,22 +460,6 @@
                     .lineLimit(1)
                 pushCap
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: m(Self.height))
-            .background(isSelected ? Theme.selection.opacity(0.16) : Color.black.opacity(0.16),
-                        in: RoundedRectangle(cornerRadius: m(8)))
-            .overlay {
-                RoundedRectangle(cornerRadius: m(8))
-                    .stroke(isSelected ? Theme.selection : Color.clear, lineWidth: 1.5)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(CompactControl.encoder(encoder.index).localizedName(using: l)) \(encoder.label ?? "")")
-            .accessibilityValue(encoder.panelValue.map { String($0) } ?? l.text("Not reported"))
-            .accessibilityAdjustableAction { direction in
-                onSelect()
-                onTurn(direction == .increment ? 1 : -1)
-            }
-            .help(l.text("上下拖动转动 %@", String(CompactControl.encoder(encoder.index).shortName)))
         }
 
         private var knob: some View {
