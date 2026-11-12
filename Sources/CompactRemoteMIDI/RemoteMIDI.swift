@@ -291,6 +291,70 @@ public enum NonMotorFeedbackCommand: Equatable, Sendable {
     }
 }
 
+/// `fader-move --fader 1-9 --value 0-127 --channel C [--observe 0-10]`
+///
+/// The only motor command in this tool, for the single-fader bring-up check (HW-6). One
+/// fader, one position, explicit channel. The sender listens first and refuses to send while
+/// any touch message for that fader arrives; see `mustRefuse`.
+public struct FaderMoveCommand: Equatable, Sendable {
+    public var fader: Int
+    public var value: Int
+    public var channel: Int
+    /// Seconds to keep listening after the send, to record any position echo.
+    public var observe: Double = 3
+
+    public static func parse(_ arguments: [String]) throws -> Self {
+        var reader = ArgumentReader(iterator: arguments.makeIterator())
+        var values: [String: String] = [:]
+        while let argument = reader.next() {
+            guard ["--fader", "--value", "--channel", "--observe"].contains(argument) else {
+                throw RemoteMIDIError.unknownArgument(argument)
+            }
+            values[argument] = try reader.value(for: argument)
+        }
+        func integer(_ flag: String, _ range: ClosedRange<Int>) throws -> Int {
+            guard let text = values[flag], let value = Int(text), range.contains(value) else {
+                throw RemoteMIDIError.missingValue(flag)
+            }
+            return value
+        }
+        var command = try Self(fader: integer("--fader", 1 ... 9), value: integer("--value", 0 ... 127),
+                               channel: integer("--channel", 1 ... 16))
+        if let text = values["--observe"] {
+            guard let seconds = Double(text), (0 ... 10).contains(seconds) else { throw RemoteMIDIError.missingValue("--observe") }
+            command.observe = seconds
+        }
+        return command
+    }
+
+    /// Control Change `fader` (1…9) on the given channel.
+    public var word: UInt32 {
+        0x2000_0000 | UInt32(0xB0 | (channel - 1)) << 16 | UInt32(fader) << 8 | UInt32(value)
+    }
+
+    /// Latest touch state of this fader in received UMP words, on either layer (CC 100+n or
+    /// 110+n, any channel). Nil when no touch message was seen: a hand resting since before
+    /// the listener started is invisible, so nil is "unknown", not "released".
+    public func touchState(in words: [UInt32]) -> Bool? {
+        var state: Bool?
+        for word in words where word >> 28 == 0x2 && (word >> 20) & 0xF == 0xB {
+            let number = Int((word >> 8) & 0x7F)
+            if number == 100 + fader || number == 110 + fader {
+                state = word & 0x7F > 0
+            }
+        }
+        return state
+    }
+
+    /// Whether the sender must refuse after listening to `words`. Any touch message for this
+    /// fader refuses, including a final release: a hand tapping the cap can end the window
+    /// released and be down again when the command arrives (seen on hardware 2026-11-12,
+    /// touch down 64 ms after a send that the latest-state rule had allowed).
+    public func mustRefuse(afterListeningTo words: [UInt32]) -> Bool {
+        touchState(in: words) != nil
+    }
+}
+
 // MARK: - Wire protocol
 
 /// Frames on the SSH stdio stream are `[kind u8][length u16 big-endian][payload]`. MIDI payloads are one CoreMIDI

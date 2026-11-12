@@ -573,6 +573,71 @@ import Foundation
                              "channel": command.channel])
     }
 
+    // MARK: - Single fader move with touch guard (bring-up HW-6)
+
+    /// Listens for `guardSeconds`, refuses on any touch message for the fader, sends one motor
+    /// position, then prints everything received for `observe` seconds as JSON lines.
+    func moveFader(_ command: FaderMoveCommand, guardSeconds: Double = 1.0) throws {
+        var client: MIDIClientRef = 0
+        var input: MIDIPortRef = 0
+        var output: MIDIPortRef = 0
+        let lock = NSLock()
+        var received: [(Double, [UInt32])] = []
+        let started = ProcessInfo.processInfo.systemUptime
+        try check(MIDIClientCreateWithBlock("XTouchRemoteMIDI fader-move" as CFString, &client) { _ in }, "Create MIDI client")
+        defer { MIDIClientDispose(client) }
+        try check(MIDIInputPortCreateWithProtocol(client, "Move In" as CFString, ._1_0, &input) { list, _ in
+            let now = ProcessInfo.processInfo.systemUptime - started
+            let all = packets(list)
+            lock.lock(); received += all.map { (now, $0) }; lock.unlock()
+        }, "Create MIDI input")
+        try check(MIDIOutputPortCreate(client, "Move Out" as CFString, &output), "Create MIDI output")
+        let matcher = RemoteBridgeOptions()
+        func find(_ count: Int, _ at: (Int) -> MIDIEndpointRef) -> MIDIEndpointRef {
+            for index in 0 ..< count {
+                let endpoint = at(index)
+                if endpoint != 0, !isOffline(endpoint), let name = endpointName(endpoint), matcher.matchesDevice(name) {
+                    return endpoint
+                }
+            }
+            return 0
+        }
+        let source = find(MIDIGetNumberOfSources(), MIDIGetSource)
+        let destination = find(MIDIGetNumberOfDestinations(), MIDIGetDestination)
+        guard source != 0, destination != 0 else {
+            throw NSError(domain: "XTouchRemoteMIDI", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Controller input or output not found; nothing was sent"])
+        }
+        try check(MIDIPortConnectSource(input, source, nil), "Connect controller input")
+        func emit(_ fields: [String: Any]) {
+            if let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) {
+                print(String(decoding: data, as: UTF8.self))
+            }
+        }
+        Thread.sleep(forTimeInterval: guardSeconds)
+        lock.lock(); let before = received.flatMap(\.1); lock.unlock()
+        let touch = command.touchState(in: before)
+        guard !command.mustRefuse(afterListeningTo: before) else {
+            emit(["event": "fader-move-refused", "reason": "touch activity while listening", "fader": command.fader,
+                  "lastTouch": touch == true ? "down" : "up", "messagesDuringGuard": before.count])
+            exit(3)
+        }
+        let word = command.word
+        let sentAt = ProcessInfo.processInfo.systemUptime - started
+        guard withEventList([word], { MIDISendEventList(output, destination, $0) }) else {
+            throw NSError(domain: "XTouchRemoteMIDI", code: 2, userInfo: [NSLocalizedDescriptionKey: "MIDI send failed"])
+        }
+        emit(["event": "fader-move-sent", "fader": command.fader, "value": command.value, "channel": command.channel,
+              "word": String(format: "%08X", word), "t": 0, "touchBeforeSend": touch.map { $0 ? "down" : "up" } ?? "unknown",
+              "messagesDuringGuard": before.count, "wallClock": ISO8601DateFormatter().string(from: Date())])
+        Thread.sleep(forTimeInterval: command.observe)
+        lock.lock(); let after = received.filter { $0.0 >= sentAt }; lock.unlock()
+        for (time, words) in after {
+            emit(["event": "midi", "t": ((time - sentAt) * 1000).rounded() / 1000, "words": words.map { String(format: "%08X", $0) }])
+        }
+        emit(["event": "stopped", "t": command.observe])
+    }
+
     // MARK: - Entry
 
     func listDevices() throws {
@@ -614,6 +679,8 @@ import Foundation
             parkOnMainRunLoop()
         case "devices":
             try listDevices()
+        case "fader-move":
+            try moveFader(FaderMoveCommand.parse(Array(arguments.dropFirst())))
         case "button-light":
             try sendButtonLight(ButtonLightCommand.parse(Array(arguments.dropFirst())))
         case let name? where NonMotorFeedbackCommand.names.contains(name):

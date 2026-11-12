@@ -46,10 +46,11 @@ Inputs encoded as Note On velocity 127 for press and Note Off velocity 0 for rel
 
 ## Device state traps observed on real hardware
 
-1. **Motor touch ownership:** while a fader is touched, don't send motor moves; reconcile on release based on application authority. The hardware may suppress the motor while touched, but application state must not race it.
-2. **Motor commands do not reliably echo position** after moving the slider. `commandedPosition` and `observedPosition` are different facts.
+1. **Motor touch ownership:** while a fader is touched, don't send motor moves; reconcile on release based on application authority. Observed 2026-11-12 on F1: a command received while the fader is held has no effect and is **not** applied on release, so the host must send its target again after the release.
+2. **Motor commands do not echo position** (observed 2026-11-12/13: no device TX after any of 14 motor moves, nor during firmware travel). `commandedPosition` and `observedPosition` are different facts.
 3. **Ring mode changes** and **local knob rotation** may overwrite remote ring illumination. Invalidate last-sent cache and reassert desired ring position.
 4. **Six right-area transport buttons** may redraw the whole LED group locally. Invalidate the group cache after a button press.
+5. **Every layer change cycles the motors** (observed 2026-11-13): on the physical A/B key and on Program Change alike, all nine faders travel to the bottom and back to where they were, with no device TX. Motors use the same CC on both layers and the unit keeps one physical position across layers. A layer assertion is therefore not motor-neutral, although it carries no motor command.
 5. **Physical A/B buttons** don't emit explicit layer-changed MIDI, so don't treat cached software layer as immutable. Active connections currently assert the software layer via Program Change; suppress this during passive startup-state investigation because it changes the state being measured. Characterize button transitions and retain input-address layer evidence independently of the host bank.
 6. **MC fader resolution:** stock MC mode carries fader positions in Pitch Bend-shaped messages but independent measurements show mostly zero low byte (roughly 7 bits effective). Standard mode already uses CC 0...127. Advanced firmware research exists but should not be a P0 dependency.
 

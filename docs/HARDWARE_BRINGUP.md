@@ -207,10 +207,28 @@ Expected / assumption 3 (unverified): any untouched position report may be motor
 progress and must never drive any motor in response. Transmitted RX target is not
 an observed position. Touch ownership survives layer/mode/reconnect boundaries.
 
-Actual / position feedback / command count / stop behavior: __________
-Assumption 3 established or rejected: __________
-Capture filename(s): __________
-Conclusion / required Core correction: __________
+Actual / position feedback / command count / stop behavior: partial, 2026-11-12, with
+the `XTouchRemoteMIDI fader-move` tool rather than the app. F1 on layer A followed three
+single CC 1 writes on channel 2 (0, 20, 60); the device transmitted nothing after any of
+them. One write while the operator held F1 still had no effect, and the fader did not move
+after release. See [the session record](HARDWARE_SESSION_2026-11-12.md).
+Assumption 3 established or rejected: no untouched position report followed any of four
+motor moves on F1; not checked on other faders, layer B or longer travel.
+Capture filename(s): `captures/private/fader-move-2026-11-12.jsonl`
+Conclusion / required Core correction: none identified. The firmware does not apply a
+target received during touch once the fader is released, so the Core's reassertion after
+release is required, not redundant. App-level checks on F1 (touch blocking, one command
+on release, no output under layer mismatch, no motor command on realign, reconnect or
+layer change) matched once each. F2–F9 each followed one write on layer A; F1 followed
+writes on layer B. New: on every layer change the firmware cycles all nine faders to the
+bottom and back, unreported, and keeps one physical position across layers. **Open:** the
+app's hardware-mode layer highlight follows the last input layer, not the host selection;
+"realign" and layer buttons are described as motor-free but physically move the faders
+(both corrected in software afterwards, not rechecked on the unit).
+**HW-6 signed off by the operator on 2026-11-13** for the scope recorded here. The sign-off
+does not cover: F2–F9 on layer B or at other values, a held fader other than F1, a layer
+change while a fader is held, and the corrected highlight and wording on the unit. Those
+stay listed in `TODO.md`.
 
 ## Exit record
 

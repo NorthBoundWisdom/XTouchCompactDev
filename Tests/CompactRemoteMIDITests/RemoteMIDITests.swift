@@ -171,3 +171,28 @@ import Testing
         #expect(throws: RemoteMIDIError.self) { _ = try NonMotorFeedbackCommand.parse(name, arguments) }
     }
 }
+
+@Test func faderMoveAddressesOneMotorAndReadsTouchFromEitherLayer() throws {
+    let command = try FaderMoveCommand.parse(["--fader", "1", "--value", "20", "--channel", "2"])
+    #expect(command.word == 0x20B1_0114 && command.observe == 3)
+    #expect(try FaderMoveCommand.parse(["--fader", "9", "--value", "127", "--channel", "16", "--observe", "0"]).word == 0x20BF_097F)
+    for arguments in [["--fader", "0", "--value", "1", "--channel", "2"], ["--fader", "10", "--value", "1", "--channel", "2"],
+                      ["--fader", "1", "--value", "128", "--channel", "2"], ["--fader", "1", "--value", "1"],
+                      ["--fader", "1", "--value", "1", "--channel", "2", "--observe", "11"],
+                      ["--fader", "1", "--value", "1", "--channel", "2", "--all", "1"]]
+    {
+        #expect(throws: RemoteMIDIError.self) { _ = try FaderMoveCommand.parse(arguments) }
+    }
+    // Touch: CC 101 (layer A) or CC 111 (layer B) for fader 1; the latest message wins.
+    #expect(command.touchState(in: []) == nil)
+    #expect(command.touchState(in: [0x20B0_657F]) == true)
+    #expect(command.touchState(in: [0x20B0_657F, 0x20B0_6500]) == false)
+    #expect(command.touchState(in: [0x20B0_6F7F]) == true)
+    #expect(command.touchState(in: [0x20B0_667F, 0x20B0_0140, 0x2090_107F]) == nil) // Fader 2 touch, position, button.
+    // Refusal: any touch message for this fader, even when the last one is a release.
+    #expect(!command.mustRefuse(afterListeningTo: []))
+    #expect(!command.mustRefuse(afterListeningTo: [0x20B0_667F, 0x20B0_0140, 0x2090_107F]))
+    #expect(command.mustRefuse(afterListeningTo: [0x20B0_657F]))
+    #expect(command.mustRefuse(afterListeningTo: [0x20B0_657F, 0x20B0_6500]))
+    #expect(command.mustRefuse(afterListeningTo: [0x20B0_6F7F, 0x20B0_6F00]))
+}

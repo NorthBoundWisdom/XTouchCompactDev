@@ -1,12 +1,13 @@
-# Hardware session 2026-11-12 — input checks and nonmotor output
+# Hardware session 2026-11-12 — input checks, nonmotor output and one motor
 
 Controller attached by USB to the development Mac (VID/PID `0x1397 / 0x00B2`,
 `bcdDevice 0x0200`; the descriptor serial string `1.0.1` is not a verified firmware
 version). The input sections used `XTouchRemoteMIDI listen`, which has no output port, so
 nothing was sent during them. With operator consent, the output sections sent button-LED
 Note On, ring display (CC 26–41), ring style (CC 10–25) and Program Change messages only.
-**No motor command (CC 1–9) and no mode switch (CC 127) was sent**; the sender cannot
-express them. Raw captures are in `captures/private/` (not committed).
+No mode switch (CC 127) was sent; the sender cannot express it. Motor commands were sent
+only in the last section below: five single CC 1 messages to fader 1, each announced to the
+operator first. Raw captures are in `captures/private/` (not committed).
 
 ## What the operator did
 
@@ -124,11 +125,101 @@ operator's F1 touches then arrived on CC 111 (8 messages, all layer B).
 Bring-up assumption 2 holds on this unit: Program Change 0 / 1 on the Global RX channel
 really selects the layer, in both directions.
 
+## Fader 1 motor (output log `fader-move-2026-11-12.jsonl`, 5 commands)
+
+Sent with `XTouchRemoteMIDI fader-move --fader 1 --channel 2`, one CC 1 message per run,
+layer A. No XTouchCompactApp process was running. The tool listened for 1 s before each
+send and for 4–5 s after. Positions are the operator's readings of the printed scale.
+
+| Sent | Operator's hand | Device TX after the send | F1 afterwards |
+| --- | --- | --- | --- |
+| 20 | off | none in 4 s | moved, about −45 |
+| 60 | off | none in 4 s | about −12 |
+| 0 | off | none in 4 s | bottom, −∞ |
+| 60 | tapping; released at the send | touch messages only | about −12 |
+| 0 | holding still, before and throughout | none in 5 s | stayed about −12; still there after release |
+
+- **Motors listen on the Global RX channel (2)**, like LEDs and rings.
+- **The device sent no position message for any motor move.** A host gets no arrival
+  report, so a transmitted target stays unconfirmed. Assumption 3's concern (motor progress
+  echoed as untouched position reports) did not occur in these four moves.
+- **Held fader: the command had no effect and was not applied on release.** The operator
+  felt no force while holding; nothing was sent after the release, and F1 stayed at about
+  −12 with the last command being 0. Observed once, on F1, with a light steady hold.
+  Whether the firmware drops the command or the motor was simply too weak to feel is not
+  separated, but the missing catch-up on release is direct. A host that wants its target
+  after a touch must send it again on release; the firmware does not.
+- In the fourth run the tool's guard saw 7 touch messages while listening, the last a
+  release, and sent. A touch-down arrived 64 ms after the send, a release at 193 ms, then
+  no touch message until 2.5 s. The fader reached the target, so this run says nothing
+  about a touched fader. The guard has since been changed to refuse on any touch message
+  for the fader during the listening window, not only when the latest one is down.
+- A hand resting on the cap since before the listening window sends nothing (fifth run:
+  0 messages), so the tool cannot see it. That stays an operator precaution.
+
+## App-level motor gating on F1 (after midnight; app built from `663771d` plus the uncommitted tool change)
+
+`XTouchCompactApp --hardware-control`, RX channel 2, with `XTouchRemoteMIDI listen` running
+beside it as an independent record of device TX. Captures: `app-hw6-listen-2026-11-13.jsonl`,
+`XTouchCompact-capture-1794500725.jsonl`, `XTouchCompact-capture-1794501019.jsonl`. The
+operator drove the app; no tool command was sent.
+
+- **Touch blocking and release.** With F1 held about 11 s and the software-write slider
+  moved, the app's monitor showed no output; on release it showed one `CC ch2 #1=81`.
+  Evidence for this run is a monitor screenshot (second resolution) plus the listener's
+  touch times, not a capture file. Earlier attempts with unsteady touch are not counted.
+- **Layer mismatch.** After the physical B key and an F1 touch on CC 111, the app reported
+  device B / host A. A slider write then produced no output at all. "Realign current
+  layer" sent Program Change 0, 16 ring and 39 LED messages and no motor command, and did
+  not replay the withheld write. A later slider drag sent five motor commands within
+  0.11 s (44, 47, 54, 61, 63): one per intermediate drag value.
+- **Reconnect and app layer buttons.** USB unplug/replug: on reconnect the app sent Program
+  Change 0 plus the same 55 nonmotor messages, no motor command. Clicking B, then A, each
+  sent one Program Change plus 55 nonmotor messages, no motor command.
+- **The firmware moves the fader on a layer change.** F1 travelled to the bottom and back
+  to where it was on the physical B key (no MIDI involved), on "Realign current layer",
+  on the reconnect, and on each app layer click. The device transmitted nothing during
+  any of these. So Program Change is not motor-neutral on this unit, and firmware motor
+  travel is not reported. For the reconnect it is not separated whether the travel came
+  from power-up or from the Program Change sent 1 ms after the connection appeared. The
+  operator saw only F1 move; where F2–F9 stood was not recorded.
+- **App defect seen, since fixed.** After clicking A the hardware lit A while the app still
+  highlighted B. In hardware mode the layer buttons highlighted the layer of the last
+  device *input* (an F1 touch on B, five minutes earlier), not the host selection. They
+  now show the host selection; the last input layer remains the separate text line. The
+  fix and the corrected "moves no fader" wording were not rechecked on the hardware.
+- The listener recorded two more source losses at 00:33:06 and 00:33:31 local, after the
+  last capture ended: the operator unplugged the unit twice.
+- Slider drags are not rate limited (five commands in 0.11 s above). The fader reached the
+  final value; no limit was added.
+
+## Faders 2–9 and layer B motors (output log `fader-move-2026-11-13.jsonl`, 12 commands)
+
+Sent with `XTouchRemoteMIDI fader-move` and `select-layer` on channel 2, app not running,
+the listener still recording device TX. Each command was announced first.
+
+- **F2–F9, layer A.** One `CC n = 40` each, about 5 s apart. All eight moved; the operator
+  read them between −24 and −26. F1 did not move. No device TX followed any of them.
+- **Program Change to B.** The B key lit and all nine faders travelled to the bottom and
+  back to where they were. No device TX.
+- **F1 on layer B.** `CC 1 = 60` moved it slightly (from about −10), `CC 1 = 20` moved it to
+  about −45. The motor address is the same CC on both layers.
+- **Program Change back to A.** All nine travelled to the bottom and back; F1 ended at
+  about −45, the position given on layer B, not the −10 it had on layer A. The firmware
+  did not restore a separate layer A position. The operator did not report the A key.
+
+So on this unit every layer change, from the key or from Program Change, cycles all nine
+motors and returns them to the same physical positions, and reports nothing. F2–F9 were
+tested at one value on layer A only.
+
 ## Not established by this session
 
 - Only control 1 of each kind was exercised: this is not HW-2/HW-3 coverage and not C2.
-- Firmware version, and all motor behavior (HW-1 remainder, HW-6): no motor command was
-  sent. Motors are expected to listen on channel 2 like LEDs and rings, but this is not observed.
+- Firmware version (HW-1 remainder).
+- Motor behavior beyond the sections above: F2–F9 on layer B, positions other than those
+  listed, repeatability, a held fader other than F1, and what a layer change does to a
+  fader that is being touched. The app-level checks above were each done once, on F1,
+  layer A as host layer.
 - Ring behavior under local knob movement per style, ring LED colors, blink periods, and
   rings E7–E16 beyond the display values listed (E7, E8 were used for 27 and 28).
 - Pedals were not connected.
