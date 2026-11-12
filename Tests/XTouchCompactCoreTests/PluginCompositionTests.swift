@@ -4,13 +4,14 @@ import Testing
 
 @Test func optionalBusinessPluginsAreExplicitIndependentAndVisible() throws {
     let defaultHost = try CompactPluginHost.agent()
-    #expect(defaultHost.instanceIDs == ["agent"])
+    #expect(defaultHost.instanceIDs == ["agent.mock"])
     #expect(defaultHost.businessPresentations.isEmpty)
     for selection in OptionalBusinessPlugin.allCases {
         var host = try CompactPluginHost.agent()
         try host.installOptional([selection], lifetimeID: "test-lifetime", at: 0)
         #expect(host.instanceIDs.count == 2)
-        #expect(host.businessPresentations.map(\.id) == [selection.rawValue])
+        let expectedID = selection == .robot ? "robot.reference" : selection == .chassis ? "chassis.reference" : "output.parameters"
+        #expect(host.businessPresentations.map(\.id) == [expectedID])
         #expect(host.manifests.last?.source == .simulation || host.manifests.first?.source == .simulation)
         var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
         #expect(try session.updateIndicators(host.feedbackIndicators).allSatisfy { message in
@@ -22,7 +23,7 @@ import Testing
     var all = try CompactPluginHost.agent()
     try all.installOptional(Set(OptionalBusinessPlugin.allCases), lifetimeID: "all-lifetime", at: 0)
     #expect(all.businessPresentations.count == 3)
-    #expect(all.binding("output", as: OutputRemoteBinding.self)?.plugin.requestedEnabled == false)
+    #expect(all.binding("output.parameters", as: OutputRemoteBinding.self)?.plugin.requestedEnabled == false)
     let parameters = try CompactPluginHost.referenceArmParameters()
     #expect(!parameters.isEmpty)
     let configuration = SurfaceConfiguration(parameters: parameters, assignments: [], version: 2)

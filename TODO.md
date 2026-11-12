@@ -43,10 +43,11 @@
 - 共享Agent宿主C0–C2已完成：唯一RemoteRegistry拥有插件值；版本1配置翻译为中性动作/指示灯绑定，
   参数使用共享0锚点/平分取低规则。构建只消费Git锁定SHA的build目录副本，见[共享包说明](docs/SURFACE_PLUGINS.md)。
   没有两个宿主之间的源码依赖；跨宿主一致性与Linux验收由工作区监督汇总。
-- R2-12最终共享安全修复后，macOS Swift 6.4.2上154项Swift（Core78、App Swift Testing64、
-  App XCTest9、本地化3）通过；25项Python、格式和命令校验通过。
-  Float32首次/重武装baseline只接受能安全表示的真实actual；无法表示时共享gate拒发并给三语精度提示。
-  产品源与原生Debug/Release/签名/ZIP/DMG/隔离启动证据在工作区reports/C.md按最终提交记录。
+- 本轮TODO_REVIEW整改后，macOS Swift 6.4.2上161项Swift（Core81、App Swift Testing68、
+  App XCTest9、本地化3）及25项Python通过；格式、命令和diff校验通过。
+  共享事件静默记账/4Hz运动策略、1024容量、2秒gap故障边界已接入；新增surface写预算和默认关闭的模拟管理权限。
+  默认instance ID与另一宿主统一，OSC区持续说明可信回传/独立心跳和本版本无内建receiver配置。
+  最终产品源与原生Debug/Release/签名/ZIP/DMG/隔离启动证据在工作区reports/C.md按提交记录。
   Linux与实机不由这些检查推定；工作区监督另汇总Linux证据。
   此前原生打包、签名、启动冒烟、13 项工作流测试通过；观察页面三种隔离预览已生成并检查。
   调整前最新的 [远端运行 43053024236](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43053024236)
@@ -339,3 +340,16 @@ App 测试使用 `ConsoleModel(startsMIDI: false)`，不启动真实 CoreMIDI �
 
 用户本轮明确授权同一开发线程负责必要的PanelSnapshot/PanelIntents、适配器和视图调整；
 这不改变视图只读快照/只发意图的边界。实机记录与既有HW/N5/C4等未验收项目保持原状态。
+
+
+### TODO_REVIEW 本轮收敛
+
+- [x] P1：HB/actual静默提交，output只在status/reason/parameterID/limited改变时写事件；最新值和UI仍每步提交。
+  sim idle静默，motion最多4Hz且critical即时；1024容量与慢cursor真实溢出测试保留。
+- [x] P2-1：new surface独立60次/1秒预算；reset需写权限加默认关闭的simulation administration，realtime始终拒remote advance。
+  legacy三工具的权限、schema/envelope和错误语义保持。
+- [x] P2-2：两模拟器显式2秒最大catch-up，过大gap fault/revoke而不追帧；未知actual不冒充stopped，小步不清fault或自动恢复。
+- [x] P2-3：默认instance IDs使用共享constants：agent.mock/robot.reference/chassis.reference/output.parameters；无short-ID alias。
+- [x] P3-6：OSC设置区持续展示三语可信destination actual/独立heartbeat及无内建receiver配置说明，心跳帮助改实际0.3秒。
+
+硬件/鼠标验收与旧实机checklist状态不由本轮代码/离屏预览签收；U1发布仍暂停。

@@ -114,7 +114,7 @@ public struct CompactPluginHost: Sendable {
         return response
     }
 
-    public mutating func replaceBinding(_ binding: any RemoteBinding, at time: PluginTime, event: PluginEvent) throws {
+    public mutating func replaceBinding(_ binding: any RemoteBinding, at time: PluginTime, event: PluginEvent?) throws {
         var next = self
         try next.registry.replace(binding, at: time, event: event)
         self = next
@@ -122,8 +122,8 @@ public struct CompactPluginHost: Sendable {
 
     public static func agent(at time: PluginTime = 0) throws -> Self {
         var host = Self()
-        try host.registerBindings([AgentRemoteBinding(instanceID: "agent", plugin: AgentPlugin(approvalPolicy: .localOrigins, at: time))], at: time)
-        host.feedbackInstances = ["agent"]
+        try host.registerBindings([AgentRemoteBinding(instanceID: AgentRemoteBinding.defaultInstanceID, plugin: AgentPlugin(approvalPolicy: .localOrigins, at: time))], at: time)
+        host.feedbackInstances = [AgentRemoteBinding.defaultInstanceID]
         return host
     }
 }

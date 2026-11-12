@@ -24,9 +24,14 @@
             Section("MCP · 127.0.0.1:\(String(snapshot.mcpPort))/mcp") {
                 Toggle(l.text("Enable MCP"), isOn: Binding(get: { snapshot.mcpEnabled }, set: { intents.setMCPEnabled?($0) }))
                 Toggle(l.text("Allow Agent writes"), isOn: Binding(get: { snapshot.mcpWritesAllowed }, set: { intents.setMCPWritesAllowed?($0) }))
+                Toggle(l.text("Allow simulation administration"), isOn: Binding(get: { snapshot.mcpSimulationControlAllowed }, set: { intents.setMCPSimulationControlAllowed?($0) }))
+                Text(l.text("Simulation reset also requires Agent writes. Remote time advance is unavailable while the host drives the clock."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Button(l.text("Copy access token")) { intents.copyMCPToken?() }
             }
             Section(l.text("OSC output")) {
+                Text(l.text("OSC requires trusted destination actual-state feedback and an independent heartbeat. This version has no built-in receiver configuration for that feedback; enabling output alone cannot make it ready."))
+                    .font(.caption).foregroundStyle(.secondary)
                 TextField(l.text("Host"), text: $host)
                 TextField(l.text("Port"), value: $port, format: .number.grouping(.never))
                 Picker(l.text("Parameter"), selection: $parameter) {
@@ -34,10 +39,8 @@
                 }
                 Button(l.text("Apply output destination")) { intents.configureOSC?(host, port, parameter) }
                 Toggle(l.text("Enable output"), isOn: Binding(get: { snapshot.oscEnabled }, set: { intents.setOSCEnabled?($0) }))
-                Text(l.text("OSC limits: 0…1, maximum 0.25/s, heartbeat 1 s. Never restored on launch."))
+                Text(l.text("OSC limits: 0…1, maximum 0.25/s, independent heartbeat 0.3 s. Never restored on launch."))
                     .font(.caption)
-                Text(l.text("OSC keeps stationary values active. A scheduler pause over 1 s stops output."))
-                    .font(.caption).foregroundStyle(.secondary)
                 Text("OUT: \(snapshot.oscOutput.formatted())")
             }
             .onChange(of: snapshot.oscHost) { _, value in host = value }

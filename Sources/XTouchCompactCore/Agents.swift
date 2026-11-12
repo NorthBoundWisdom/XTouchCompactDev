@@ -25,7 +25,7 @@ public struct AgentSlot: Identifiable, Equatable, Sendable {
 public struct AgentPresentation: Equatable, Sendable {
     public let slots: [AgentSlot]
     public init(_ host: CompactPluginHost) {
-        slots = host.binding("agent", as: AgentRemoteBinding.self)?.plugin.slots.map {
+        slots = host.binding(AgentRemoteBinding.defaultInstanceID, as: AgentRemoteBinding.self)?.plugin.slots.map {
             AgentSlot(id: $0.id, phase: $0.state, progress: $0.progress, statusKey: $0.statusKey)
         } ?? []
     }

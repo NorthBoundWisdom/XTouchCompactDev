@@ -41,7 +41,7 @@
                 pendingPreset: pendingPreset,
                 configuration: session.parameters.configuration,
                 mcpPort: mcpPort,
-                mcpEnabled: mcpEnabled, mcpWritesAllowed: mcpWritesAllowed,
+                mcpEnabled: mcpEnabled, mcpWritesAllowed: mcpWritesAllowed, mcpSimulationControlAllowed: mcpSimulationControlAllowed,
                 oscEnabled: oscEnabled, oscHost: oscHost, oscPort: oscPort,
                 oscParameter: oscParameter, oscOutput: oscOutput,
                 agents: agents.slots, businessPlugins: plugins.businessPresentations,
@@ -190,6 +190,7 @@
                 setEncoder: { [weak self] index, value in self?.encoderChanged(index, value: Double(value)) },
                 setMCPEnabled: { [weak self] in self?.setMCPEnabled($0) },
                 setMCPWritesAllowed: { [weak self] in self?.mcpWritesAllowed = $0 },
+                setMCPSimulationControlAllowed: { [weak self] in self?.mcpSimulationControlAllowed = $0 },
                 copyMCPToken: { [weak self] in self?.copyMCPToken() },
                 setOSCEnabled: { [weak self] in self?.setOSCEnabled($0) },
                 configureOSC: { [weak self] host, port, parameter in

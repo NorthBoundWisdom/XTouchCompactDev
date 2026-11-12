@@ -85,3 +85,12 @@ the shared gate before any enabled frame. The host maps the stable precision
 reason to a localized actionable notice. A real decoded Float sample remains
 valid. Double-precision outputs retain their existing behavior; do not round
 unrepresentable observations in a host adapter to bypass the gate.
+
+
+The host adapts the shared event policy: silent clock-validated telemetry commits,
+output events only for status/reason/parameterID/limited changes, idle simulations silent and
+continuous motion coalesced to 0.25 seconds. Critical changes remain immediate.
+The journal now defaults to 1024 records. Both optional simulators explicitly use
+the shared 2-second catch-up limit and aligned defaultInstanceID constants; plugin,
+action and indicator namespaces are unchanged. New surface writes have separate
+rate and simulation-administration gates; legacy MCP tools retain their policy.

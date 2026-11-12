@@ -1,5 +1,9 @@
 #if os(macOS)
+    import Combine
     import Foundation
+    import OutputRemoteBinding
+    import RobotRemoteBinding
+    import SurfacePluginContracts
     import Testing
     @testable import XTouchCompactApp
     import XTouchCompactCore
@@ -166,5 +170,69 @@
         model.tickOSC()
         #expect(model.oscEnabled && transport.packets.count == 1)
         #expect(try transport.packets.first == (OSCCodec.encode(address: "/xtouch/value", value: 0.1875)))
+    }
+
+    @MainActor private func journalPage(_ model: ConsoleModel, epoch: String = "discover", after: String = "0") throws -> JSONValue {
+        try model.performSurfaceCall("surface_events", arguments: .object(["epoch": .string(epoch), "after": .string(after), "limit": .number(1024)]))
+    }
+
+    @Test @MainActor func steadyTrafficPreservesEarlyAgentCommandAndFaultEvents() throws {
+        let clock = TestClock()
+        let transport = FakeOSC()
+        let model = ConsoleModel(startsMIDI: false, now: { clock.date }, oscTransport: transport)
+        model.installOptionalPlugins(Set(OptionalBusinessPlugin.allCases))
+        telemetry(model, clock)
+        model.setOSCEnabled(true)
+        clock.time += 0.31
+        model.tickOSC() // Preserve this real heartbeat-expiry episode through long steady traffic.
+        #expect(!model.oscEnabled)
+        telemetry(model, clock)
+        model.setOSCEnabled(true)
+        model.agentPrimary(1)
+        let discovery = try journalPage(model)
+        let epoch = try #require(discovery.value(for: "epoch")?.stringValue)
+        let early = try #require(discovery.value(for: "latestSequence")?.intValue)
+        for _ in 0 ..< 3000 {
+            clock.time += 0.02
+            telemetry(model, clock)
+            model.advanceAgents()
+        }
+        #expect(model.oscEnabled && transport.packets.count == 3000)
+        let page = try journalPage(model, epoch: epoch)
+        #expect(page.value(for: "gap") == .bool(false))
+        let events = try #require(page.value(for: "events")?.arrayValue)
+        #expect(events.count < 40)
+        #expect(events.contains { ($0.value(for: "sequence")?.intValue ?? .max) <= early })
+        #expect(events.contains { $0.value(for: "event")?.value(for: "code") == .string("output.enabled") })
+        #expect(events.contains { $0.value(for: "event")?.value(for: "fields")?.value(for: "status") == .string("heartbeatExpired") })
+        #expect(events.contains { $0.value(for: "instanceID") == .string("agent.mock") })
+        #expect(model.plugins.binding("robot.reference", as: RobotRemoteBinding.self)?.plugin.simulator.control.time ?? 0 > 60)
+        #expect(model.trustedOSCActual?.time == model.runtimeTime)
+    }
+
+    @Test @MainActor func unchangedOutputDecisionStillCommitsLatestValueAndPublishesUI() throws {
+        let clock = TestClock()
+        let transport = FakeOSC()
+        let model = ConsoleModel(startsMIDI: false, now: { clock.date }, oscTransport: transport)
+        telemetry(model, clock)
+        model.setOSCEnabled(true)
+        model.setParameter(model.oscParameter, value: 127)
+        clock.time += 0.25
+        telemetry(model, clock)
+        model.tickOSC()
+        let first = try journalPage(model)
+        let epoch = try #require(first.value(for: "epoch")?.stringValue)
+        let cursor = try String(#require(first.value(for: "latestSequence")?.intValue))
+        var publications = 0
+        let subscription = model.objectWillChange.sink { publications += 1 }
+        clock.time += 0.25
+        telemetry(model, clock)
+        model.tickOSC()
+        let page = try journalPage(model, epoch: epoch, after: cursor)
+        #expect(page.value(for: "events") == .array([]))
+        #expect(model.oscOutput == 0.125)
+        #expect(model.plugins.binding("output.parameters", as: OutputRemoteBinding.self)?.plugin.gate.outputs["output.value"] == 0.125)
+        #expect(transport.packets.count == 2 && publications > 0)
+        withExtendedLifetime(subscription) {}
     }
 #endif

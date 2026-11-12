@@ -14,7 +14,7 @@ import Testing
     #expect(AgentPresentation(agents).slots[0].phase == .waitingApproval)
     for variant in [ButtonLightProtocol.manual, .observed114] {
         var session = try CompactSession(map: FactoryStandardMap(globalReceiveChannel: 3), lightProtocol: variant)
-        let feedback = try session.updateIndicators(#require(agents.snapshots["agent"]?.indicators))
+        let feedback = try session.updateIndicators(#require(agents.snapshots["agent.mock"]?.indicators))
         #expect(feedback.contains(.noteOn(channel: 3, number: 0, velocity: variant.velocity(for: .blink))))
         #expect(!feedback.contains {
             if case let .controlChange(_, n, _) = $0 {
@@ -36,13 +36,13 @@ import Testing
         var agents = try CompactPluginHost.agent()
         try agents.primary(1, now: 0)
         try agents.advance(to: 0.45)
-        #expect(try session.updateIndicators(#require(agents.snapshots["agent"]?.indicators)).contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
+        #expect(try session.updateIndicators(#require(agents.snapshots["agent.mock"]?.indicators)).contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
         try agents.advance(to: 2.65)
-        _ = try session.updateIndicators(#require(agents.snapshots["agent"]?.indicators))
+        _ = try session.updateIndicators(#require(agents.snapshots["agent.mock"]?.indicators))
         let approval = try session.receive([.noteOn(channel: 0, number: 16, velocity: 127)])
         #expect(!approval.feedback.contains(.noteOn(channel: 0, number: 0, velocity: 0)))
         try agents.primary(1, now: 2.65)
-        #expect(try session.updateIndicators(#require(agents.snapshots["agent"]?.indicators)).contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
+        #expect(try session.updateIndicators(#require(agents.snapshots["agent.mock"]?.indicators)).contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
         for feedback in try [session.selectLayer(.b), session.connect(), session.reconfigure(map: FactoryStandardMap(), lightProtocol: variant), session.loadConfiguration(.neutral)] {
             #expect(feedback.contains(.noteOn(channel: 0, number: 0, velocity: variant.velocity(for: .on))))
             #expect(!feedback.contains {

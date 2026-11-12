@@ -97,14 +97,17 @@ when Agent writes are enabled. Local interface and hardware actions can approve;
 
 Shared business tools use the `surface_` prefix and the exact shared input/output
 schemas. `surface_capabilities` lists installed instances; `surface_events` reads
-the bounded 256-record journal using epoch, decimal cursor and limit. Old epochs,
+the bounded 1024-record journal using epoch, decimal cursor and limit. Old epochs,
 future cursors or evicted history report `gap`; refetch snapshots after a gap.
 Snapshots and event reads never advance plugins or replay actions, and failed
 mutations append no event. Agent tools are `surface_agent_snapshot`,
 `surface_agent_primary` and `surface_agent_interrupt`. Optional robot/chassis/output
 tools appear only when that module is explicitly installed.
 
-Every mutation checks the existing Allow Agent writes policy. The authenticated
+Every new mutation checks Allow Agent writes and an independent 60-write/second
+host budget. Reset additionally requires the separate simulation-administration
+permission, off by default. Remote advance is denied because the host owns the
+realtime clock; the administration switch does not permit manual fast-forward. The authenticated
 host supplies monotonic time and fresh opaque control grants; request data cannot
 claim a local origin, provide grant entropy or create actual/heartbeat samples.
 Output enabling is denied by default even when Agent writes are allowed. GUI,
@@ -376,3 +379,18 @@ status. Writes are synchronous and errors close capture with a visible notificat
 Stop capture flushes and writes an end marker. This does not capture unsupported
 SysEx/realtime/UMP packet types. See HARDWARE_BRINGUP.md for exact scope and record
 forms. None of this constitutes physical verification or N5 mouse acceptance.
+
+
+### Shared event traffic and simulation clocks
+
+Idle robot/chassis ticks are silent. Continuous motion produces at most four
+periodic events per second per instance; phase, control, fault and completion
+changes remain immediate. Heartbeat/actual bookkeeping is silent, and unchanged
+output status/reason/parameterID/limited does not add events. Every latest value and UI update
+still commits. The 1024-record journal therefore retains meaningful Agent,
+command and fault history during steady traffic; clients still handle gap.
+
+A host clock gap over two seconds faults/revokes simulations and freezes positions
+without main-thread catch-up. Restoring small ticks does not resume motion or
+restore ownership. The default remote instance IDs match the other host, but
+clients should always discover them through surface_capabilities.

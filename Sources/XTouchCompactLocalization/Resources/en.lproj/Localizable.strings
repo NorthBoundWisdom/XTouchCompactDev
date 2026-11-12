@@ -470,3 +470,11 @@
 "example.arm.j6" = "J6";
 
 "OSC output stopped: actual feedback precision cannot be used safely for OSC." = "OSC output stopped: actual feedback precision cannot be used safely for OSC.";
+
+"Allow simulation administration" = "Allow simulation administration";
+
+"Simulation reset also requires Agent writes. Remote time advance is unavailable while the host drives the clock." = "Simulation reset also requires Agent writes. Remote time advance is unavailable while the host drives the clock.";
+
+"OSC limits: 0…1, maximum 0.25/s, independent heartbeat 0.3 s. Never restored on launch." = "OSC limits: 0…1, maximum 0.25/s, independent heartbeat 0.3 s. Never restored on launch.";
+
+"OSC requires trusted destination actual-state feedback and an independent heartbeat. This version has no built-in receiver configuration for that feedback; enabling output alone cannot make it ready." = "OSC requires trusted destination actual-state feedback and an independent heartbeat. This version has no built-in receiver configuration for that feedback; enabling output alone cannot make it ready.";

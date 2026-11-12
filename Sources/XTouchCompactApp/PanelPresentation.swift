@@ -293,6 +293,7 @@
         var mcpPort: UInt16 = 8765
         var mcpEnabled = false
         var mcpWritesAllowed = false
+        var mcpSimulationControlAllowed = false
         var oscEnabled = false
         var oscHost = "127.0.0.1"
         var oscPort: UInt16 = 9000
@@ -356,6 +357,7 @@
         /// Nil until the backend can describe MIDI addresses per control and layer.
         var setMCPEnabled: ((Bool) -> Void)?
         var setMCPWritesAllowed: ((Bool) -> Void)?
+        var setMCPSimulationControlAllowed: ((Bool) -> Void)?
         var copyMCPToken: (() -> Void)?
         var setOSCEnabled: ((Bool) -> Void)?
         var configureOSC: ((String, UInt16, String) -> Void)?

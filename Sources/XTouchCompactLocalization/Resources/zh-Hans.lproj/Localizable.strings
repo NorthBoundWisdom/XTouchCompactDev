@@ -470,3 +470,11 @@
 "example.arm.j6" = "关节 6";
 
 "OSC output stopped: actual feedback precision cannot be used safely for OSC." = "OSC 输出保持关闭：实际反馈精度不能安全用于 OSC，请检查可信反馈源。";
+
+"Allow simulation administration" = "允许模拟管理操作";
+
+"Simulation reset also requires Agent writes. Remote time advance is unavailable while the host drives the clock." = "重置模拟还需允许 Agent 写入。由宿主驱动时钟时，不允许远程推进时间。";
+
+"OSC limits: 0…1, maximum 0.25/s, independent heartbeat 0.3 s. Never restored on launch." = "OSC 限制：0…1，最高 0.25/秒，独立心跳 0.3 秒；启动时不恢复使能。";
+
+"OSC requires trusted destination actual-state feedback and an independent heartbeat. This version has no built-in receiver configuration for that feedback; enabling output alone cannot make it ready." = "OSC 需要可信的目标设备实际状态反馈和独立心跳。本版本没有内建此类可信回传接收器的配置，不能仅点击使能就进入就绪状态。";

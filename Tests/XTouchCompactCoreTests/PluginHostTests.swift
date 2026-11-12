@@ -34,14 +34,14 @@ import Testing
     for (time, input) in [(1.0, PluginInput.invoke(action, origin: .interface)), (1.45, .advance), (3.65, .advance)] {
         _ = try reference.handle(input, at: time)
         _ = try host.handle(input, pluginID: AgentPlugin.pluginID, at: time)
-        #expect(host.snapshots["agent"] == reference.snapshot())
-        #expect(host.binding("agent", as: AgentRemoteBinding.self)?.plugin.slots == reference.slots)
+        #expect(host.snapshots["agent.mock"] == reference.snapshot())
+        #expect(host.binding("agent.mock", as: AgentRemoteBinding.self)?.plugin.slots == reference.slots)
     }
     for origin in [InputOrigin.remote] {
         #expect(throws: PluginError(code: .permissionDenied, fields: ["allowedOrigins": .array([.string("hardware"), .string("interface")])])) {
             try host.handle(.invoke(action, origin: origin), pluginID: AgentPlugin.pluginID, at: 4)
         }
-        #expect(host.snapshots["agent"] == reference.snapshot())
+        #expect(host.snapshots["agent.mock"] == reference.snapshot())
     }
     try host.handle(.invoke(action, origin: .hardware), pluginID: AgentPlugin.pluginID, at: 4)
     #expect(AgentPresentation(host).slots[1].phase == .running)

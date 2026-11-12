@@ -70,6 +70,8 @@
 
         @Published var mcpEnabled = false
         @Published var mcpWritesAllowed = false
+        @Published var mcpSimulationControlAllowed = false
+        private var surfaceWriteBudget = SurfaceWriteBudget()
         @Published var oscHost = "127.0.0.1"
         @Published var oscPort: UInt16 = 9000
         @Published var oscParameter = "a.Fader.1"
@@ -371,11 +373,11 @@
                 return
             }
             trustedOSCActual = (value, time)
-            guard var binding = plugins.binding("output", as: OutputRemoteBinding.self) else { return }
+            guard var binding = plugins.binding(OutputRemoteBinding.defaultInstanceID, as: OutputRemoteBinding.self) else { return }
             binding.plugin.receiveActual([.init(id: "output.value", value: value, receivedAt: time)])
             do {
                 var next = plugins
-                try next.replaceBinding(binding, at: runtimeTime, event: .init(code: "output.actual.received"))
+                try next.replaceBinding(binding, at: runtimeTime, event: nil)
                 try commitPlugins(next)
             } catch { self.error = error }
         }
@@ -387,11 +389,11 @@
                 return
             }
             trustedOSCHeartbeat = time
-            guard var binding = plugins.binding("output", as: OutputRemoteBinding.self) else { return }
+            guard var binding = plugins.binding(OutputRemoteBinding.defaultInstanceID, as: OutputRemoteBinding.self) else { return }
             binding.plugin.receiveHeartbeat(at: time)
             do {
                 var next = plugins
-                try next.replaceBinding(binding, at: runtimeTime, event: .init(code: "output.heartbeat.received"))
+                try next.replaceBinding(binding, at: runtimeTime, event: nil)
                 try commitPlugins(next)
             } catch { self.error = error }
         }
@@ -410,6 +412,16 @@
         }
 
         func performSurfaceCall(_ name: String, arguments: JSONValue) throws -> JSONValue {
+            if plugins.remoteTools.first(where: { $0.name == name })?.isMutation == true {
+                guard mcpWritesAllowed else { throw RemoteFailure(code: "permissionDenied") }
+                if name == "surface_robot_advance" || name == "surface_chassis_advance" {
+                    throw RemoteFailure(code: "permissionDenied", fields: ["reason": .string("realtimeClock")])
+                }
+                if name == "surface_robot_reset" || name == "surface_chassis_reset" {
+                    guard mcpSimulationControlAllowed else { throw RemoteFailure(code: "permissionDenied", fields: ["reason": .string("simulationControl")]) }
+                }
+                guard surfaceWriteBudget.consume(at: runtimeTime) else { throw RemoteFailure(code: "permissionDenied", fields: ["reason": .string("writeRate")]) }
+            }
             var next = plugins
             let response = try next.callRemote(name, arguments: arguments,
                                                context: .init(time: runtimeTime, controlToken: UUID().uuidString, permitsOutputEnable: false))

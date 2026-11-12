@@ -51,9 +51,8 @@
             defer { logAgentCall(name) }
             guard params["arguments"] == nil || params["arguments"] is [String: Any] else { throw MCPError.invalidRequest }
             let args = params["arguments"] as? [String: Any] ?? [:]
-            if let tool = plugins.remoteTools.first(where: { $0.name == name }) {
+            if plugins.remoteTools.contains(where: { $0.name == name }) {
                 do {
-                    guard !tool.isMutation || mcpWritesAllowed else { throw RemoteFailure(code: "permissionDenied") }
                     guard let data = try? JSONSerialization.data(withJSONObject: args),
                           let arguments = try? JSONDecoder().decode(JSONValue.self, from: data) else { throw RemoteFailure(code: "invalidParameter") }
                     return try surfaceMCPContent(performSurfaceCall(name, arguments: arguments), isError: false)
@@ -102,7 +101,7 @@
             let time = runtimeTime
             if !enabled {
                 oscTransport.stop()
-                if var binding = plugins.binding("output", as: OutputRemoteBinding.self) {
+                if var binding = plugins.binding(OutputRemoteBinding.defaultInstanceID, as: OutputRemoteBinding.self) {
                     do {
                         try binding.plugin.setEnabled(false)
                         _ = binding.plugin.evaluate(targets: [:], at: time)
@@ -128,10 +127,10 @@
             else {
                 oscFault("OSC output stopped: trusted actual state and an independent heartbeat are required."); return
             }
-            if plugins.binding("output", as: OutputRemoteBinding.self) == nil {
+            if plugins.binding(OutputRemoteBinding.defaultInstanceID, as: OutputRemoteBinding.self) == nil {
                 installOptionalPlugins([.output])
             }
-            guard var binding = plugins.binding("output", as: OutputRemoteBinding.self) else { return }
+            guard var binding = plugins.binding(OutputRemoteBinding.defaultInstanceID, as: OutputRemoteBinding.self) else { return }
             do {
                 try oscTransport.start(host: oscHost, port: oscPort) { [weak self] error in
                     self?.oscFault("OSC output stopped: transport failure."); self?.serviceError(error)
@@ -157,14 +156,17 @@
             guard oscEnabled else { return }
             let time = runtimeTime
             guard let value = session.parameters.values[oscParameter], let definition = session.parameters.definition(oscParameter),
-                  var binding = plugins.binding("output", as: OutputRemoteBinding.self)
+                  var binding = plugins.binding(OutputRemoteBinding.defaultInstanceID, as: OutputRemoteBinding.self)
             else {
                 oscFault("OSC output stopped: destination or parameter is invalid."); return
             }
+            let previous = binding.plugin.decision
             let decision = binding.plugin.evaluate(targets: ["output.value": (value - definition.minimum) / (definition.maximum - definition.minimum)], at: time)
+            let changed = previous?.status != decision.status || previous?.reason != decision.reason || previous?.parameterID != decision.parameterID || previous?.limited != decision.limited
+            let event: PluginEvent? = changed ? .init(code: "output.evaluated", fields: ["status": .string(decision.status.rawValue), "reasonKey": .string(decision.reason), "parameterID": decision.parameterID.map { .string($0.rawValue) } ?? .null, "limited": .bool(decision.limited)]) : nil
             do {
                 var next = plugins
-                try next.replaceBinding(binding, at: time, event: .init(code: "output.evaluated"))
+                try next.replaceBinding(binding, at: time, event: event)
                 try commitPlugins(next)
                 guard let command = decision.command, command.enabled, let output = command.values["output.value"] else {
                     oscFault(oscSafetyMessage(decision.reason, fallback: "OSC output stopped: actual feedback or independent heartbeat is missing, stale, or requires rearming.")); return
