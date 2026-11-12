@@ -380,6 +380,7 @@
         func isLayerHighlighted(_ candidate: CompactLayer) -> Bool {
             hardwareObservation.map { $0.inputLayer == candidate } ?? (layer == candidate)
         }
+
         var hardwareLayerIsCurrent = false
         var nonMotorTests = NonMotorTestPresentation()
         var hardwareObservation: HardwareObservationPresentation?
