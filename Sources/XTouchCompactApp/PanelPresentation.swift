@@ -357,7 +357,17 @@
         var footswitchDown = false
     }
 
+    /// The three operating modes. The input-check tool is a view on top of `hardwareListen`,
+    /// not a fourth mode.
+    enum ConsoleMode: String, CaseIterable, Sendable {
+        case mock, hardwareListen, hardwareSend
+    }
+
     struct PanelSnapshot: Equatable, Sendable {
+        var mode: ConsoleMode {
+            isMock ? .mock : listenOnly ? .hardwareListen : .hardwareSend
+        }
+
         var surfaceStatus = SurfaceStatusPresentation()
         var mockPedals: MockPedalPresentation?
         /// Last input layer (possibly cached); never changes the software bank or motor gate.
@@ -487,6 +497,9 @@
         var deleteScene: ((String) -> Void)?
         var undo: (() -> Void)?
         var redo: (() -> Void)?
+
+        /// One entry point for mode changes. Changing mode never sends MIDI by itself.
+        var setMode: ((ConsoleMode) -> Void)?
 
         // Simulated rear-panel pedals; nil on hardware.
         var moveExpression: ((UInt8) -> Void)?

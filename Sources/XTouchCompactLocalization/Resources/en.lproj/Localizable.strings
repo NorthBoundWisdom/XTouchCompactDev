@@ -549,3 +549,16 @@
 "Applied: sends ch %@ · receives ch %@ · LEDs %@" = "Applied: sends ch %@ · receives ch %@ · LEDs %@";
 "Unapplied changes" = "Unapplied changes";
 "Applied" = "Applied";
+"Hardware · listen" = "Hardware · listen";
+"Hardware · send" = "Hardware · send";
+"Allow the app to send lights, rings and fader commands to the controller" = "Allow the app to send lights, rings and fader commands to the controller";
+"Connect the controller first" = "Connect the controller first";
+"Controller connected · receives on ch %@" = "Controller connected · receives on ch %@";
+"Controller not connected" = "Controller not connected";
+"Sync lights to device" = "Sync lights to device";
+"Close input check" = "Close input check";
+"Input check tool" = "Input check tool";
+"A diagnostic view of what the controller sends. Opening it switches to Hardware · listen." = "A diagnostic view of what the controller sends. Opening it switches to Hardware · listen.";
+"Simulated device. Nothing reaches the real controller." = "Simulated device. Nothing reaches the real controller.";
+"Receiving from the controller. Nothing is sent to it." = "Receiving from the controller. Nothing is sent to it.";
+"Sending is on. Use Sync lights to push the current layer and lights." = "Sending is on. Use Sync lights to push the current layer and lights.";

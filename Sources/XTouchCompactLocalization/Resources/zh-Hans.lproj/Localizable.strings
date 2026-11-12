@@ -549,3 +549,16 @@
 "Applied: sends ch %@ · receives ch %@ · LEDs %@" = "已生效：发送通道 %@ · 接收通道 %@ · 按键灯 %@";
 "Unapplied changes" = "有未应用的修改";
 "Applied" = "已应用";
+"Hardware · listen" = "实体 · 只听";
+"Hardware · send" = "实体 · 可发送";
+"Allow the app to send lights, rings and fader commands to the controller" = "允许软件向控制器发送按键灯、灯环和推子指令";
+"Connect the controller first" = "请先连接控制器";
+"Controller connected · receives on ch %@" = "控制器已连接 · 接收通道 %@";
+"Controller not connected" = "控制器未连接";
+"Sync lights to device" = "同步灯光到设备";
+"Close input check" = "关闭输入检查";
+"Input check tool" = "输入检查工具";
+"A diagnostic view of what the controller sends. Opening it switches to Hardware · listen." = "查看控制器发来的输入的诊断界面。打开后会切到“实体 · 只听”。";
+"Simulated device. Nothing reaches the real controller." = "模拟设备：所有操作只在软件里，不会碰到真机。";
+"Receiving from the controller. Nothing is sent to it." = "只接收真机的输入，不向真机发送任何东西。";
+"Sending is on. Use Sync lights to push the current layer and lights." = "已允许发送。点“同步灯光到设备”把当前层和灯光发给真机。";

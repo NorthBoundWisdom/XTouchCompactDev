@@ -143,6 +143,15 @@
             model.captureScene(name: "Chorus")
             content = AnyView(OrganizeWorkspace(snapshot: model.panelSnapshot, intents: model.panelIntents).padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(Theme.background))
+        case "mode-listen", "mode-send":
+            // The mode bar in the two hardware modes, with an isolated fixture (no real port).
+            width = 1600; height = 1000
+            let service = ObservationPreviewService()
+            let preview = ConsoleModel(startsMIDI: false, midi: service, isolated: true)
+            let endpoint = CompactMIDIEndpoint(id: 1, name: "X-TOUCH COMPACT")
+            service.onConnection?(CompactMIDIConnection(connectedInput: endpoint, connectedOutput: endpoint))
+            preview.setConsoleMode(scene == "mode-send" ? .hardwareSend : .hardwareListen)
+            content = AnyView(ContentView(snapshot: preview.panelSnapshot, intents: preview.panelIntents))
         case "connection-page":
             // The Connection page alone, in the mock, with the applied profile shown.
             width = 620; height = 640

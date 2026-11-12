@@ -225,6 +225,32 @@
             }
         }
 
+        /// Single entry point for the mode bar. No transition sends MIDI to the controller:
+        /// entering hardware always goes through listen-only first, and enabling sending does
+        /// not replay anything. The user syncs lights explicitly afterwards.
+        func setConsoleMode(_ mode: ConsoleMode) {
+            switch mode {
+            case .mock:
+                useHardware(false)
+            case .hardwareListen:
+                // Choosing a mode always returns to the console, also from the input-check tool.
+                if isObservingHardware {
+                    endHardwareObservation()
+                }
+                setListenOnly(true)
+                if !hardwareMode {
+                    useHardware(true)
+                }
+            case .hardwareSend:
+                if !hardwareMode {
+                    setListenOnly(true)
+                    useHardware(true)
+                }
+                guard connection.isConnected else { return } // Stay passive until a controller is there.
+                enableHardwareWriteback()
+            }
+        }
+
         func setListenOnly(_ enabled: Bool) {
             if enabled {
                 lockNonMotorTests()

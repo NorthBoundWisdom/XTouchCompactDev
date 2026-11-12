@@ -549,3 +549,16 @@
 "Applied: sends ch %@ · receives ch %@ · LEDs %@" = "已生效：傳送通道 %@ · 接收通道 %@ · 按鍵燈 %@";
 "Unapplied changes" = "有未套用的修改";
 "Applied" = "已套用";
+"Hardware · listen" = "實體 · 只聽";
+"Hardware · send" = "實體 · 可傳送";
+"Allow the app to send lights, rings and fader commands to the controller" = "允許軟體向控制器傳送按鍵燈、燈環和推桿指令";
+"Connect the controller first" = "請先連接控制器";
+"Controller connected · receives on ch %@" = "控制器已連線 · 接收通道 %@";
+"Controller not connected" = "控制器未連線";
+"Sync lights to device" = "同步燈光到裝置";
+"Close input check" = "關閉輸入檢查";
+"Input check tool" = "輸入檢查工具";
+"A diagnostic view of what the controller sends. Opening it switches to Hardware · listen." = "查看控制器傳來的輸入的診斷介面。開啟後會切到「實體 · 只聽」。";
+"Simulated device. Nothing reaches the real controller." = "模擬裝置：所有操作只在軟體裡，不會碰到實機。";
+"Receiving from the controller. Nothing is sent to it." = "只接收實機的輸入，不向實機傳送任何東西。";
+"Sending is on. Use Sync lights to push the current layer and lights." = "已允許傳送。點「同步燈光到裝置」把目前層和燈光傳給實機。";

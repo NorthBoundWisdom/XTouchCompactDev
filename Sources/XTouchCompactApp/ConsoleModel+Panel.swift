@@ -323,6 +323,7 @@
                 deleteScene: { [weak self] id in self?.deleteScene(id) },
                 undo: { [weak self] in self?.undo() },
                 redo: { [weak self] in self?.redo() },
+                setMode: { [weak self] mode in self?.setConsoleMode(mode) },
                 moveExpression: hardwareMode ? nil : { [weak self] value in self?.moveExpression(value) },
                 pressFootswitch: hardwareMode ? nil : { [weak self] down in self?.pressFootswitch(isDown: down) }
             )

@@ -112,7 +112,7 @@
                 Image(systemName: "hand.point.up.left.fill")
                     .font(.system(size: 25)).foregroundStyle(Theme.touch)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(l.text("Hardware observation")).font(.system(size: 22, weight: .bold))
+                    Text(l.text("Input check tool")).font(.system(size: 22, weight: .bold))
                     Text(l.text("Touch a fader, turn an encoder or press a button"))
                         .font(.callout).foregroundStyle(.secondary)
                 }
@@ -121,8 +121,6 @@
                     .font(.callout.bold()).foregroundStyle(snapshot.nonMotorTests.approval == nil ? Theme.value : Theme.touch)
                     .padding(10).background(Theme.value.opacity(0.1), in: Capsule())
                 Button(l.text("Reset observations")) { intents.resetHardwareObservation?() }
-                Button(l.text("Enable writeback")) { intents.enableHardwareWriteback?() }
-                Button(l.text("Back to console")) { intents.endHardwareObservation?() }
             }
             .padding(.horizontal, 20).padding(.vertical, 16)
         }
