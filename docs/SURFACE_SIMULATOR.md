@@ -487,3 +487,22 @@ category; unused quota is not borrowed. Failed validation and rate-limited reque
 commit counters or simulator state. Clock rollback does not grant free quota. Input rest
 and stop remain in the input category even when renew is exhausted. System expiry uses
 no external budget. Legacy GUI tools keep their existing budgets and schemas.
+
+
+## Client compatibility
+
+The frozen delivery SDKs 1.1.0 and 1.2.0 reject discovery of this contract-1.3
+host with `unsupported_contract`: their explicit version allowlists predate 1.3.
+They cannot perform an SDK round trip against this host. Tests import each verified
+zip unchanged in a separate interpreter; they never alter its allowlist or the host's
+reported version. When those historical local delivery zips are absent (including CI),
+these two tests explicitly skip and report why.
+
+Protocol compatibility is tested separately on every real-HTTP integration run,
+including Linux CI, without historical SDK files. Contract-1.1 and 1.2 request shapes
+use global `expected_sequence` inputs, sequenced feedback (1.1) or unsequenced
+feedback (1.2), discovery, snapshots, contiguous event reads, leased inputs, silent
+renewal, release, and reset. The 1.2 case checks current event-page holds. They
+accept additive response fields and do not send 1.3 input cursors or writer IDs.
+These wire-level successes do not mean that an old SDK's version gate accepts 1.3.
+
