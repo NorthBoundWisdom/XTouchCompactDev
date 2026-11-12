@@ -90,6 +90,7 @@ func mockConsumesBothLEDVelocityProtocols(_ variant: ButtonLightProtocol) throws
         try mock.receive(map.motorPosition(fader: i, value: 99))
         #expect(mock.faders[i - 1] == 23)
         _ = try mock.touchFader(i, isTouched: false)
+        #expect(mock.faders[i - 1] == 23) // Firmware does not replay the rejected target.
         try mock.receive(map.motorPosition(fader: i, value: 99))
         #expect(mock.faders[i - 1] == 99)
     }
@@ -151,7 +152,7 @@ func mockConsumesBothLEDVelocityProtocols(_ variant: ButtonLightProtocol) throws
     #expect(!session.bank(.a).buttons[33]) // Unassigned input never latches an LED.
 }
 
-@Test func mockLayerSelectorsDoNotGenerateEventsOrMoveMotors() throws {
+@Test func mockLayerSelectorsCountSilentFirmwareCyclesAndPreserveFinalPositions() throws {
     let map = try FactoryStandardMap()
     var mock = MockXTouchCompact(map: map, lightProtocol: .manual)
     var session = CompactSession(map: map, lightProtocol: .manual)
@@ -192,4 +193,27 @@ func mockConsumesBothLEDVelocityProtocols(_ variant: ButtonLightProtocol) throws
     #expect(mock.ringStyles[0] == .single)
     #expect(mock.rings[0] == .position(1))
     #expect(mock.layer == .a)
+}
+
+@Test func mockFirmwareCycleDiagnosticsIgnoreInvalidRXAndSurviveReconfiguration() throws {
+    let map = try FactoryStandardMap(globalReceiveChannel: 7)
+    var mock = MockXTouchCompact(map: map, lightProtocol: .manual)
+    for i in 1 ... 9 {
+        _ = try mock.moveFader(i, value: UInt8(i * 11))
+    }
+    let positions = mock.faders
+    mock.selectPhysicalLayer(.b)
+    #expect(mock.firmwareFaderCycles == 1)
+    mock.receive(map.selectLayer(.a))
+    #expect(mock.firmwareFaderCycles == 2)
+    // Reassertions count as simulated cycles too; physical repeatability is unverified.
+    mock.receive(map.selectLayer(.a))
+    #expect(mock.firmwareFaderCycles == 3)
+    mock.receive(.programChange(channel: 0, number: 1))
+    mock.receive(.programChange(channel: 7, number: 2))
+    #expect(mock.firmwareFaderCycles == 3)
+    #expect(mock.faders == positions)
+    let next = mock.reconfigured(map: map, lightProtocol: .observed114)
+    #expect(next.firmwareFaderCycles == 3)
+    #expect(next.faders == positions)
 }

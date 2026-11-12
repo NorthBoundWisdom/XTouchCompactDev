@@ -13,6 +13,9 @@ public struct MockXTouchCompact: Sendable {
     public private(set) var buttons: [ButtonLight] = Array(repeating: .off, count: 39)
     public private(set) var rings: [RingDisplay] = Array(repeating: .off, count: 16)
     public private(set) var ringStyles: [RingStyle] = Array(repeating: .single, count: 16)
+    /// Diagnostic only: each local selection or accepted layer assertion models one
+    /// nine-fader firmware cycle, returning to the same positions without TX.
+    public private(set) var firmwareFaderCycles = 0
     public private(set) var ignoredMotorCommands = 0
     public private(set) var expression: UInt8?
     public private(set) var footswitchDown = false
@@ -93,9 +96,11 @@ public struct MockXTouchCompact: Sendable {
         return [.controlChange(channel: map.transmitChannel, number: layer == .a ? 27 : 64, value: isDown ? 127 : 0)]
     }
 
-    /// Physical A/B selectors are local: no outbound MIDI event and no motor recall.
+    /// Physical selectors cycle all nine motors silently; final positions are unchanged.
+    /// Timing, intermediate positions and touched-layer travel remain unmodeled.
     public mutating func selectPhysicalLayer(_ layer: CompactLayer) {
         self.layer = layer
+        firmwareFaderCycles += 1
     }
 
     public mutating func receive(_ messages: [MIDIMessage]) {
@@ -141,7 +146,7 @@ public struct MockXTouchCompact: Sendable {
             buttons[Int(number)] = light
         case let .programChange(channel, number):
             guard channel == map.globalReceiveChannel, number < 2 else { return }
-            layer = number == 0 ? .a : .b
+            selectPhysicalLayer(number == 0 ? .a : .b)
         case .noteOff, .pitchBend: break
         }
     }
@@ -152,6 +157,7 @@ public struct MockXTouchCompact: Sendable {
         next.encoders = encoders; next.pushedEncoders = pushedEncoders; next.pressedButtons = pressedButtons
         next.buttons = buttons; next.rings = rings; next.ringStyles = ringStyles
         next.ignoredMotorCommands = ignoredMotorCommands
+        next.firmwareFaderCycles = firmwareFaderCycles
         return next
     }
 

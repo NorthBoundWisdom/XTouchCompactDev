@@ -93,7 +93,7 @@ motor-safety firmware assumptions.
 
 ### Simulation boundaries
 
-`MockXTouchCompact` deterministically models the tables above with separate configured TX and Global RX channels. Motors arrive immediately without emitting a position acknowledgement; touched motors reject commands and increment a diagnostic counter. Physical layer selection emits no messages and leaves faders in place. Encoders retain a separate local absolute value: RX ring commands change illumination, not that value.
+`MockXTouchCompact` deterministically models the tables above with separate configured TX and Global RX channels. Motors arrive immediately without emitting a position acknowledgement; touched motors reject commands and increment a diagnostic counter. Physical layer selection and accepted Program Change assertions increment `firmwareFaderCycles`: one silent nine-fader firmware cycle, with unchanged final positions and no TX. A rejected touched-motor command is discarded, never replayed on release. The counter is diagnostic, not a position observation. Reasserting the same layer also counts in the simulation; repeatability and touched-layer travel are unverified. Intermediate travel and timing are not simulated. 未在实机复核。 Encoders retain a separate local absolute value: RX ring commands change illumination, not that value.
 
 Local redraws are intentionally disruptive so tests exercise reassertion: rotation and ring-style changes redraw from the local encoder value; a transport press clears the other five LEDs and lights the pressed key; release turns that key off. These redraw patterns, encoder accumulator behavior across layer changes, initial simulated positions and instantaneous motor motion are simulation choices, **not per-firmware physical measurements**.
 
