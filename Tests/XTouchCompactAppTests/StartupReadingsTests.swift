@@ -93,6 +93,42 @@
         #expect(midi.sent.isEmpty)
     }
 
+    @Test @MainActor func acceptedLayerAssertionMakesPriorHardwareReadingsHistorical() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareSend)
+        midi.onMessages?([.controlChange(channel: 0, number: 1, value: 23),
+                          .controlChange(channel: 0, number: 10, value: 64)])
+        #expect(model.panelSnapshot.fader(1)?.hardwareReading?.isCurrent == true)
+        model.setLayer(.b)
+        let snapshot = model.panelSnapshot
+        #expect(snapshot.hardwareDisplayLayer == .a && !snapshot.hardwareLayerIsCurrent)
+        #expect(snapshot.fader(1)?.observed == nil)
+        #expect(snapshot.fader(1)?.hardwareReading?.value == 23)
+        #expect(snapshot.fader(1)?.hardwareReading?.isCurrent == false)
+        #expect(snapshot.encoder(1)?.hardwareReading?.isCurrent == false)
+        #expect(snapshot.fader(1)?.isTouched == nil)
+        #expect(model.hardwareValueCache?.faders[1]?.value == 23)
+        midi.onMessages?([.controlChange(channel: 0, number: 28, value: 40)])
+        #expect(model.panelSnapshot.hardwareLayerIsCurrent)
+        #expect(model.panelSnapshot.fader(1)?.observed == 40)
+        #expect(model.panelSnapshot.fader(1)?.hardwareReading?.isCurrent == true)
+    }
+
+    @Test @MainActor func failedFirstLayerSendPreservesLiveReadingAndMismatchEvidence() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareSend)
+        midi.onMessages?([.controlChange(channel: 0, number: 1, value: 23)])
+        midi.fails = true
+        model.setLayer(.b)
+        #expect(model.panelSnapshot.hardwareLayerIsCurrent)
+        #expect(model.panelSnapshot.fader(1)?.observed == 23)
+        #expect(model.panelSnapshot.fader(1)?.hardwareReading?.isCurrent == true)
+        #expect(model.session.state.observedLayer == .a)
+        #expect(model.session.state.layerMismatch)
+    }
+
     @Test @MainActor func softwareCommandsNeverBecomeCachedHardwareValues() {
         let midi = FakeMIDIService()
         let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)

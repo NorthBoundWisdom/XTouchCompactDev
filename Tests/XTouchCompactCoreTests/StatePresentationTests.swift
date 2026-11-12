@@ -125,3 +125,13 @@ import Testing
     _ = state.receive(.controlChange(channel: 0, number: 111, value: 0))
     #expect(try state.reconcileReleasedFader(1).isEmpty)
 }
+
+@Test func deliveredDiagnosticLayerAssertionInvalidatesMotorPositionFreshness() throws {
+    var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = state.receive(.controlChange(channel: 0, number: 1, value: 42))
+    #expect(try state.setFader(1, value: 42).isEmpty)
+    state.didTransmitLayerAssertion()
+    #expect(state.observedLayer == nil)
+    #expect(state.observedFader(1) == 42) // Historical input, never a new observation.
+    #expect(try state.setFader(1, value: 42) == [.controlChange(channel: 0, number: 1, value: 42)])
+}

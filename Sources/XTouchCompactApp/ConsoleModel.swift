@@ -874,6 +874,8 @@
                     }
                     if case .programChange = message {
                         session.didTransmitLayerAssertion()
+                        liveHardwareValues = nil
+                        reportedHardwarePresses = [:]
                     }
                     record(message, direction: .output, source: source, delivery: .sent,
                            nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control)

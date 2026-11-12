@@ -552,3 +552,10 @@ before each transport call (U12; 未在实机复核). A later touch defers the s
 target until release; a known mismatch withholds it without queueing. A later
 physical report or motor-less write revokes older command authority entirely. A
 batch created before those events cannot resurrect that older target.
+
+An accepted layer assertion can trigger silent firmware travel, so previous live
+readings are downgraded to history and press states become unknown until new input
+(U13; 未在实机复核). Prior values remain in the route-bound history cache; no sent
+command invents a new position. A first transport failure keeps the existing live
+readings and layer evidence. Diagnostic assertions also invalidate motor-command
+history, so old cache entries cannot suppress a later intentional motor reassertion.

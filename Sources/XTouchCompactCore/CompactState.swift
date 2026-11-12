@@ -107,6 +107,7 @@ public struct CompactState: Sendable {
 
     /// Delivery invalidates prior layer evidence; it never acknowledges a physical layer.
     public mutating func didTransmitLayerAssertion() {
+        invalidateMotorCommandHistory()
         observedLayer = nil
     }
 
