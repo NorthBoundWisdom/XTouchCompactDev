@@ -24,6 +24,76 @@ def default_output(root=ROOT):
     return root / "build" / "deliveries" / ("xtouch-surface-simulator-" + short)
 
 
+SHARED = ROOT / "build/dependencies/SurfacePlugins"
+SDK_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.1"
+SDK_ZIP = "surface-control-sdk-" + SDK_VERSION + ".zip"
+# Published shared files, copied byte for byte from the managed dependency (single source, D19-6).
+# integrations/ and clients/python/tests are deliberately not part of a generic delivery.
+SHARED_FILES = {
+    "control-tools.json": "docs/surface-control-tools.json",
+    "surface-control-scenario.schema.json": "docs/surface-control-scenario.schema.json",
+    "surface-control-software-v1.json": "fixtures/surface-control-software-v1.json",
+    "surface-control-software-v1.1.json": "fixtures/surface-control-software-v1.1.json",
+    "surface-control.md": "docs/surface-control.md",
+    "surface-control-scenarios.md": "docs/surface-control-scenarios.md",
+}
+SDK_SOURCE = "clients/python/surface_control/__init__.py"
+
+
+def stage_shared_files(stage, root=ROOT, shared=SHARED):
+    """Copy host files and shared published files into a delivery stage (no binary)."""
+    shutil.copy2(root / "LICENSE", stage)
+    shutil.copy2(root / "examples/surface_simulator/minimal_consumer.py", stage)
+    shutil.copy2(root / "docs/SURFACE_SIMULATOR.md", stage / "README.md")
+    shutil.copy2(root / "configs/surface_plugins.lock.json", stage)
+    for name, source in SHARED_FILES.items():
+        shutil.copy2(shared / source, stage / name)
+    # Fixed timestamp and mode keep the zip reproducible for one shared revision.
+    entry = zipfile.ZipInfo("surface_control/__init__.py", date_time=(1980, 1, 1, 0, 0, 0))
+    entry.compress_type = zipfile.ZIP_DEFLATED
+    entry.external_attr = 0o644 << 16
+    with zipfile.ZipFile(stage / SDK_ZIP, "w") as sdk:
+        sdk.writestr(entry, (shared / SDK_SOURCE).read_bytes())
+    (stage / "examples").mkdir()
+    shutil.copy2(root / "Clients/Python/examples/surface_roundtrip.py", stage / "examples" / "surface_roundtrip.py")
+
+
+def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED):
+    """Hash every staged file and record exact host/shared revisions and shared source hashes."""
+    files = {
+        str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(stage.rglob("*"))
+        if path.is_file()
+    }
+    revision = json.loads((root / "configs/surface_plugins.lock.json").read_text())["revision"]
+    shared_sources = {
+        source: hashlib.sha256((shared / source).read_bytes()).hexdigest()
+        for source in [*SHARED_FILES.values(), SDK_SOURCE]
+    }
+    manifest = {
+        "schema_version": 1,
+        "product": "XTouchSurfaceSimulator",
+        "source": "simulation",
+        "source_commit": source_commit,
+        "source_dirty": False,
+        "surface_control_contract": CONTRACT_VERSION,
+        "surface_control_sdk": SDK_VERSION,
+        "profile_id": "xtouch.compact.standard.simulation",
+        "profile_version": "1.1",
+        "surface_plugins_revision": revision,
+        "surface_plugins_files_sha256": shared_sources,
+        "platform": os.uname().sysname,
+        "architecture": os.uname().machine,
+        "configuration": configuration,
+        "files_sha256": files,
+        "start_protocol": "token stdin pipe/private file, ready JSON stdout/file, POST /mcp on 127.0.0.1",
+        "stop_protocol": "terminate the isolated process; no persistent user state",
+    }
+    (stage / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return manifest
+
+
 def package(output, configuration="release"):
     if command("git", "status", "--porcelain"):
         raise RuntimeError("Commit the reviewed source before packaging")
@@ -54,49 +124,11 @@ def package(output, configuration="release"):
     stage = Path(tempfile.mkdtemp(prefix=".surface-simulator-", dir=output.parent))
     try:
         shutil.copy2(binary_directory / "XTouchSurfaceSimulator", stage)
-        shutil.copy2(ROOT / "LICENSE", stage)
-        shutil.copy2(ROOT / "examples/surface_simulator/minimal_consumer.py", stage)
-        shutil.copy2(ROOT / "docs/SURFACE_SIMULATOR.md", stage / "README.md")
-        shutil.copy2(ROOT / "configs/surface_plugins.lock.json", stage)
-        shared = ROOT / "build/dependencies/SurfacePlugins"
-        shutil.copy2(shared / "docs/surface-control-tools.json", stage / "control-tools.json")
-        shutil.copy2(shared / "fixtures/surface-control-software-v1.json", stage)
-        sdk_source = ROOT / "Clients/Python/surface_control/__init__.py"
-        with zipfile.ZipFile(stage / "surface-control-sdk-1.0.0.zip", "w", compression=zipfile.ZIP_DEFLATED) as sdk:
-            sdk.write(sdk_source, "surface_control/__init__.py")
-        (stage / "examples").mkdir()
-        for name in ("pipe_surface_trial.py", "surface_roundtrip.py"):
-            shutil.copy2(ROOT / "Clients/Python/examples" / name, stage / "examples" / name)
-        shutil.copy2(ROOT / "Clients/Python/SOURCE.json", stage / "surface-control-sdk-source.json")
+        stage_shared_files(stage)
         (stage / "control-contract.json").write_text(
             subprocess.check_output([str(stage / "XTouchSurfaceSimulator"), "--describe"], text=True)
         )
-        files = {
-            str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in sorted(stage.rglob("*"))
-            if path.is_file()
-        }
-        manifest = {
-            "schema_version": 1,
-            "product": "XTouchSurfaceSimulator",
-            "source": "simulation",
-            "source_commit": command("git", "rev-parse", "HEAD"),
-            "source_dirty": False,
-            "surface_control_contract": "1.0",
-            "surface_control_sdk": "1.0.0",
-            "profile_id": "xtouch.compact.standard.simulation",
-            "profile_version": "1.1",
-            "surface_plugins_revision": json.loads((ROOT / "configs/surface_plugins.lock.json").read_text())[
-                "revision"
-            ],
-            "platform": os.uname().sysname,
-            "architecture": os.uname().machine,
-            "configuration": configuration,
-            "files_sha256": files,
-            "start_protocol": "token stdin/file, ready JSON stdout/file, POST /mcp on 127.0.0.1",
-            "stop_protocol": "terminate the isolated process; no persistent user state",
-        }
-        (stage / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+        write_manifest(stage, command("git", "rev-parse", "HEAD"), configuration)
         stage.rename(output)
     finally:
         if stage.exists():

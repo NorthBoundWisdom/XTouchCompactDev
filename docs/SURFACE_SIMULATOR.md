@@ -28,14 +28,27 @@ The default output is `build/deliveries/xtouch-surface-simulator-<short SHA>`, n
 after this repository's HEAD only (no other host's commit appears in the name). Pass
 `--output` to choose another new directory; an existing directory is never reused.
 
-The output contains the binary, `manifest.json`, dependency lock,
-`control-contract.json` (shared tool schemas plus the actual profile), this guide,
-`minimal_consumer.py`, and `surface-control-sdk-1.0.0.zip`. The pinned SDK 1.0.0 copy
-accepts profile version `1.0` only, so it refuses this `1.1` profile with
-`unsupported_profile` before any mutation; `minimal_consumer.py` (raw JSON-RPC) does
-work. The shared SDK 1.1 replaces this copy in the next delivery. The same public Python SDK and `examples/surface_roundtrip.py` can consume both hosts using a pinned manifest; upstream file provenance is in `surface-control-sdk-source.json`. The optional `examples/pipe_surface_trial.py` requires an explicitly isolated Pipe taskless-trial deployment and owned state. The manifest hashes every other file and records exact
-host/shared revisions, platform, architecture, and build configuration. It is a
-local software delivery, without a release tag or notarization claim.
+The output contains the binary, `manifest.json`, dependency lock, `LICENSE`,
+`control-contract.json` (`--describe`: actual discovery plus the seven tool schemas),
+this guide as `README.md`, `minimal_consumer.py`, and `examples/surface_roundtrip.py`.
+The shared SurfacePlugins files come byte for byte from the locked managed dependency
+`build/dependencies/SurfacePlugins` (their single source; this repository keeps no copy):
+
+| Delivery file | Shared source |
+| --- | --- |
+| `surface-control-sdk-1.1.0.zip` (`surface_control/__init__.py`) | `clients/python/surface_control/__init__.py` |
+| `control-tools.json` | `docs/surface-control-tools.json` |
+| `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
+| `surface-control-software-v1.json`, `surface-control-software-v1.1.json` | `fixtures/` |
+| `surface-control.md`, `surface-control-scenarios.md` | `docs/` |
+
+The shared SDK tests and the Pipe integration example (`integrations/pipe/`) are not part
+of this generic delivery. The manifest records `surface_control_contract: "1.1"`,
+`surface_control_sdk: "1.1.0"`, the shared revision, the SHA256 of each shared source
+file, the SHA256 of every delivered file, the exact host commit, platform, architecture,
+and build configuration. `examples/surface_roundtrip.py` imports the SDK only from the
+delivery zip after checking the manifest pin and every file hash. It is a local software
+delivery, without a release tag or notarization claim.
 
 ## Start, readiness, stop
 

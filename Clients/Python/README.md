@@ -1,30 +1,22 @@
 # Surface Control Python client
 
-This stdlib-only `surface_control` package is the same public client as the BCR
-software Surface delivery. It does not import Provider 1.0 or host source. Use it
-with either explicitly pinned simulation endpoint, profile version 1.0, and MCP
-2025-11-25 (default) or 2026-07-28. Neither protocol retries mutations.
+This repository no longer keeps its own copy of the Python SDK. The single source is the
+shared SurfacePlugins package at the revision pinned in
+[`configs/surface_plugins.lock.json`](../../configs/surface_plugins.lock.json):
 
-```python
-from surface_control import Client, CommandCursor
+- SDK 1.1.0: `clients/python/surface_control/__init__.py` (standard library only, contracts
+  1.0 and 1.1, no profile names or business roles built in);
+- its unit tests: `clients/python/tests/`;
+- the Pipe taskless-trial integration example: `integrations/pipe/` (never part of a generic
+  delivery).
 
-client = Client(url, token, instance_id="car.a")
-cursor = CommandCursor(client, {name: "simulation." + name
-    for name in ("arm", "start", "pause", "cancel")})
-initial_values = cursor.bootstrap()  # state only; never an operation
-samples = cursor.poll()             # only subsequent accepted fresh edges
-for sample in samples:
-    cursor.verify(sample)           # immediately before choosing a business operation
-```
+In a checkout, the managed dependency is materialized at `build/dependencies/SurfacePlugins`
+(`python3 configs/surface_plugins_dependency.py ensure`). Use it with
+`PYTHONPATH=build/dependencies/SurfacePlugins/clients/python`, as
+`Tests/SimulatorIntegration` does. A simulator delivery contains the same SDK as
+`surface-control-sdk-1.1.0.zip`, with every file hash in `manifest.json`.
 
-Set `PYTHONPATH=Clients/Python` in a source checkout, or import the packaged module
-alongside the delivery's example. Discovery validates source, instance/profile,
-identity, and exact control shape. CAS is never silently refreshed to replay an
-uncertain operation. Context changes, unknown responses, gaps, and stale input
-invalidate the cursor; recovery requires explicit preparation by the consumer.
+[`examples/surface_roundtrip.py`](examples/surface_roundtrip.py) is a generic consumer that
+imports the SDK only from a pinned delivery zip after checking the manifest pin and file hashes.
+Writes are explicit and never retried; a lost response is an unknown outcome.
 A production operator bridge must continue to reject simulation input.
-
-Run unit tests with `PYTHONPATH=Clients/Python python3 -m unittest discover -s Clients/Python/tests -v`.
-Real HTTP/process checks live in `Tests/SimulatorIntegration`.
-
-The exact upstream commit and source-file hashes are recorded in [SOURCE.json](SOURCE.json). The delivery includes the same SDK zip and `examples/surface_roundtrip.py` as the other host, plus the explicitly optional Pipe taskless-trial example.

@@ -1,11 +1,70 @@
 #!/usr/bin/env python3
-"""Minimal generic simulation consumer using only a pinned public delivery, no Pipe."""
+"""Minimal generic simulation consumer using only a pinned public delivery.
+
+The SDK is imported only from the delivery's `surface-control-sdk-1.1.0.zip`, after the manifest
+pin and every listed file hash are verified. No host or shared source tree is read, and no
+Pipe or business workflow is involved. Writes are explicit and never retried.
+"""
 
 import argparse
+import hashlib
+import importlib
 import json
+import os
+import sys
 from pathlib import Path
 
-from pipe_surface_trial import delivery, private_token, require
+SDK_VERSION = "1.1.0"
+SUPPORTED_CONTRACTS = ("1.0", "1.1")
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def delivery(root, expected):
+    """Verify the manifest pin and file hashes, then import the SDK from the delivery zip."""
+    manifest_path = root / "manifest.json"
+    require(digest(manifest_path) == expected, "artifact manifest pin mismatch")
+    manifest = json.loads(manifest_path.read_text())
+    require(
+        manifest.get("surface_control_contract") in SUPPORTED_CONTRACTS
+        and manifest.get("surface_control_sdk") == SDK_VERSION,
+        "unsupported Surface delivery",
+    )
+    for name, wanted in manifest["files_sha256"].items():
+        path = root / name
+        require(
+            not Path(name).is_absolute()
+            and ".." not in Path(name).parts
+            and path.is_file()
+            and not path.is_symlink()
+            and path.resolve().is_relative_to(root)
+            and digest(path) == wanted,
+            "artifact file hash/path mismatch",
+        )
+    sdk = root / ("surface-control-sdk-" + SDK_VERSION + ".zip")
+    require(sdk.name in manifest["files_sha256"], "Surface SDK is not in manifest")
+    require("surface_control" not in sys.modules, "another Surface SDK is already loaded")
+    sys.path.insert(0, str(sdk))
+    module = importlib.import_module("surface_control")
+    require(str(module.__file__).startswith(str(sdk) + "/"), "SDK import is not from pinned artifact")
+    require(getattr(module, "__version__", None) == SDK_VERSION, "SDK version mismatch")
+    return module, manifest
+
+
+def private_token(path):
+    info = path.stat()
+    require(
+        path.is_file() and not path.is_symlink() and info.st_uid == os.geteuid() and not info.st_mode & 0o077,
+        "token must be an owned private regular file",
+    )
+    return path.read_text().strip()
 
 
 def main():
@@ -42,6 +101,7 @@ def main():
         json.dumps(
             {
                 "source": "simulation",
+                "contract_version": discovery["contract_version"],
                 "expected": client.expected,
                 "before_sequence": before["latest_sequence"],
                 "input": event,
