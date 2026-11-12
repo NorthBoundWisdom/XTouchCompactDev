@@ -23,6 +23,9 @@ XTouchCompactApp ⇄ virtual MIDI ports ⇄ XTouchRemoteMIDI client ══ ssh �
   like a USB device. Stable unique IDs keep a manual port choice across restarts.
 - Neither side parses, filters, generates or acknowledges MIDI. Touch ownership, layer
   gates, listen-only and every other safety rule stay in the app, unchanged.
+- The bridge notices the controller being plugged in or unplugged while it runs. (Until
+  2026-11-12 it only saw devices present at start, because CoreMIDI setup notifications
+  need the creating thread's run loop.)
 - The bridge never forwards a port whose name already contains "(via …)", so the link
   cannot loop through another bridge.
 
@@ -40,6 +43,9 @@ python3 tools/remote_hardware.py devices --ssh henrys-mac-mini   # the controlle
 python3 tools/remote_hardware.py connect --ssh henrys-mac-mini   # keep running; Ctrl-C to stop
 python3 tools/remote_hardware.py status  --ssh henrys-mac-mini   # read-only check, any time
 ```
+
+`listen` (with or without `--ssh`) is a passive raw capture to stdout as JSON lines; it
+cannot send MIDI. See [the startup readback procedure](STARTUP_READBACK_INVESTIGATION.md).
 
 `status` starts nothing. It reports whether the deployed bridge matches a local build
 (`current` / `outdated, run deploy` / `not deployed`), which bridges are running on the

@@ -3,6 +3,7 @@
 //   XTouchRemoteMIDI client --ssh HOST     (developer's Mac; publishes virtual endpoints)
 //   XTouchRemoteMIDI bridge                (started by the client over SSH, beside the device)
 //   XTouchRemoteMIDI devices               (lists what CoreMIDI sees on this Mac)
+//   XTouchRemoteMIDI listen                (passive raw capture as JSON lines; never sends)
 //
 // Raw MIDI 1.0 UMP packets are carried verbatim over the SSH stdio stream. Nothing is
 // parsed, filtered, synthesized or acknowledged here; all safety policy stays in the app.
@@ -12,6 +13,17 @@ import Foundation
 #if os(macOS)
     import CoreMIDI
     import Darwin
+
+    /// CoreMIDI delivers setup-changed notifications (device plug/unplug) through the run loop
+    /// of the thread that created the client. `dispatchMain()` never runs that loop, so
+    /// hot-plug went unnoticed; park the main thread on its run loop instead.
+    func parkOnMainRunLoop() -> Never {
+        let keepAlive = Timer(timeInterval: 3600, repeats: true) { _ in }
+        RunLoop.main.add(keepAlive, forMode: .common)
+        while true {
+            CFRunLoopRun()
+        }
+    }
 
     func log(_ text: String) {
         FileHandle.standardError.write(Data("XTouchRemoteMIDI: \(text)\n".utf8))
@@ -170,7 +182,7 @@ import Foundation
                 handler.resume()
                 _ = Unmanaged.passRetained(handler)
             }
-            dispatchMain()
+            parkOnMainRunLoop()
         }
 
         private func fromDevice(_ list: UnsafePointer<MIDIEventList>) {
@@ -432,6 +444,84 @@ import Foundation
         }
     }
 
+    // MARK: - Passive raw listener
+
+    /// Read-only capture for startup-state investigation: connects to every matching source,
+    /// including ones that appear later, and prints one JSON line per UMP packet with the raw
+    /// words (SysEx included). It creates no output port and can never send MIDI.
+    final class Listener: @unchecked Sendable {
+        private let options: RemoteBridgeOptions
+        private let queue = DispatchQueue(label: "dev.xtouchcompact.remote.listen")
+        private let lock = NSLock()
+        private var client: MIDIClientRef = 0
+        private var port: MIDIPortRef = 0
+        private var connected: [MIDIEndpointRef: String] = [:]
+        private let started = ProcessInfo.processInfo.systemUptime
+
+        init(options: RemoteBridgeOptions) {
+            self.options = options
+        }
+
+        /// `t` is seconds since the listener started (monotonic).
+        private func emit(_ fields: [String: Any]) {
+            var line = fields
+            line["t"] = ((ProcessInfo.processInfo.systemUptime - started) * 1_000_000).rounded() / 1_000_000
+            guard var data = try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys]) else { return }
+            data.append(0x0A)
+            lock.lock(); defer { lock.unlock() }
+            FileHandle.standardOutput.write(data)
+        }
+
+        func run() throws -> Never {
+            try check(MIDIClientCreateWithBlock("XTouchRemoteMIDI listen" as CFString, &client) { [weak self] note in
+                guard note.pointee.messageID == .msgSetupChanged, let self else { return }
+                queue.async { [weak self] in self?.rescan() }
+            }, "Create MIDI client")
+            try check(MIDIInputPortCreateWithProtocol(client, "Listen In" as CFString, ._1_0, &port) { [weak self] list, tag in
+                guard let self else { return }
+                let endpoint = MIDIEndpointRef(UInt(bitPattern: tag))
+                lock.lock(); let name = connected[endpoint] ?? "?"; lock.unlock()
+                for words in packets(list) {
+                    emit(["event": "midi", "source": name, "words": words.map { String(format: "%08X", $0) }])
+                }
+            }, "Create MIDI input")
+            emit(["event": "listening", "device": options.deviceName, "wallClock": ISO8601DateFormatter().string(from: Date())])
+            queue.sync { rescan() }
+            for signalNumber in [SIGINT, SIGTERM, SIGHUP] {
+                signal(signalNumber, SIG_IGN)
+                let handler = DispatchSource.makeSignalSource(signal: signalNumber, queue: queue)
+                handler.setEventHandler { [self] in emit(["event": "stopped"]); exit(0) }
+                handler.resume()
+                _ = Unmanaged.passRetained(handler)
+            }
+            parkOnMainRunLoop()
+        }
+
+        /// Runs on `queue`. Connects new matching sources and reports ones that disappeared.
+        private func rescan() {
+            var present: [MIDIEndpointRef: String] = [:]
+            for index in 0 ..< MIDIGetNumberOfSources() {
+                let endpoint = MIDIGetSource(index)
+                guard endpoint != 0, !isOffline(endpoint), let name = endpointName(endpoint), options.matchesDevice(name) else { continue }
+                present[endpoint] = name
+            }
+            lock.lock(); let known = connected; lock.unlock()
+            for (endpoint, name) in present where known[endpoint] == nil {
+                let status = MIDIPortConnectSource(port, endpoint, UnsafeMutableRawPointer(bitPattern: UInt(endpoint)))
+                if status == noErr {
+                    lock.lock(); connected[endpoint] = name; lock.unlock()
+                    emit(["event": "source-connected", "source": name])
+                } else {
+                    emit(["event": "connect-failed", "source": name, "status": Int(status)])
+                }
+            }
+            for (endpoint, name) in known where present[endpoint] == nil {
+                lock.lock(); connected[endpoint] = nil; lock.unlock()
+                emit(["event": "source-gone", "source": name])
+            }
+        }
+    }
+
     // MARK: - Entry
 
     func listDevices() throws {
@@ -470,13 +560,16 @@ import Foundation
                 _ = Unmanaged.passRetained(handler)
             }
             Thread { client.runForever() }.start()
-            dispatchMain()
+            parkOnMainRunLoop()
         case "devices":
             try listDevices()
+        case "listen":
+            try Listener(options: RemoteBridgeOptions.parse(Array(arguments.dropFirst()))).run()
         default:
             log("usage: XTouchRemoteMIDI client --ssh HOST [--remote-binary PATH] [--label NAME] [--device NAME]\n"
                 + "       XTouchRemoteMIDI bridge [--device NAME] [--status PATH]\n"
-                + "       XTouchRemoteMIDI devices")
+                + "       XTouchRemoteMIDI devices\n"
+                + "       XTouchRemoteMIDI listen [--device NAME]")
             exit(64)
         }
     } catch {

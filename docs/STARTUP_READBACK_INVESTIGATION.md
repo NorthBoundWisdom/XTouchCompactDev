@@ -45,6 +45,45 @@ If a complete physical response is verified, prioritize it as the startup panel
 source. Feed received positions through the physical-observation path; do not
 implement synchronization by sending stored targets back to the motors.
 
+## Capture procedure (ready to run)
+
+`XTouchRemoteMIDI listen` is a passive raw listener: it creates no output port, so it
+cannot send MIDI, and it never asserts a layer or restores feedback. It connects to the
+controller's source as soon as it appears (also after the listener started) and prints
+one JSON line per packet with raw UMP words, SysEx included, and a monotonic `t`.
+
+```sh
+python3 configs/setup_local_project.py
+mkdir -p captures/private          # ignored by Git
+# Controller on this Mac:
+python3 tools/remote_hardware.py listen > captures/private/readback-<case>.jsonl
+# Controller on another Mac (after `deploy`):
+python3 tools/remote_hardware.py listen --ssh henrys-mac-mini > captures/private/readback-<case>.jsonl
+```
+
+Quit XTouchCompactApp and any other MIDI software first, so nothing else writes to the
+device. Put the nine faders at distinct, noted positions (for example a staircase), do not
+touch them during a case, and stop each capture with Ctrl-C about 10 s after the event.
+
+| Case | Start the listener, then… | File |
+| --- | --- | --- |
+| A power-on | Power switch off → start listener → power on | `readback-poweron.jsonl` |
+| B USB reattach | Powered, USB unplugged → start listener → plug USB | `readback-usb.jsonl` |
+| C client attach | Powered and connected, idle 10 s → start listener | `readback-attach.jsonl` |
+| D control | Right after C, move F1 slightly | `readback-control.jsonl` |
+
+Case D proves the listener and route work, so that silence in A–C is meaningful.
+Record firmware, mode (Standard), route (local or remote host), and the fader positions
+you set. Reading the result: `source-connected` marks when CoreMIDI exposed the device;
+position reports are `20B0nnvv` words with `nn` = 01–09 (layer A) or 1C–24 (layer B).
+Nine such words shortly after `source-connected`, matching the set positions, would
+verify an unsolicited startup report for that case. Their absence in all of A–C, with D
+working, shows only that **these three events** do not trigger a report in this
+configuration; it still says nothing about request-triggered readback.
+
+A remote capture adds network delay to `t` ordering only on the SSH stream, not to the
+timestamps, which are taken on the Mac with the controller.
+
 ## Current fallback and safety policy
 
 The app currently implements timestamped last-input history, displayed as stale

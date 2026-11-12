@@ -5,10 +5,13 @@
     python3 tools/remote_hardware.py devices --ssh henrys-mac-mini
     python3 tools/remote_hardware.py connect --ssh henrys-mac-mini
     python3 tools/remote_hardware.py status  --ssh henrys-mac-mini
+    python3 tools/remote_hardware.py listen [--ssh henrys-mac-mini] > capture.jsonl
 
 `status` is read-only: it compares the deployed binary with a local build, lists bridges
 already running on the remote Mac and local clients, and shows whether the controller is
 visible to CoreMIDI there. It starts nothing.
+`listen` is a passive raw capture (JSON lines on stdout, SysEx included; it cannot send
+MIDI). Without --ssh it listens on this Mac; with --ssh on the remote Mac. Ctrl-C stops it.
 `deploy` builds XTouchRemoteMIDI and copies it to ~/.xtouch-remote/ on the remote Mac.
 `connect` runs the local client in the foreground; while the remote controller is present,
 this Mac shows a MIDI port pair named "X-TOUCH COMPACT (via <host>)". Stop with Ctrl-C.
@@ -43,7 +46,8 @@ def validated_host(value: str) -> str:
 def build() -> Path:
     scratch = build_path(ROOT, "remote-midi")
     command = ["swift", "build", "--configuration", "release", "--scratch-path", str(scratch), "--product", PRODUCT]
-    subprocess.run(command, cwd=ROOT, check=True)
+    # Build output goes to stderr so stdout stays clean for `listen` captures.
+    subprocess.run(command, cwd=ROOT, check=True, stdout=sys.stderr)
     binary_directory = subprocess.run(
         [*command[:-2], "--show-bin-path"], cwd=ROOT, check=True, capture_output=True, text=True
     ).stdout.strip()
@@ -123,6 +127,17 @@ def status(host: str) -> int:
     return 0
 
 
+def listen(host: str | None) -> None:
+    if host is None:
+        command = [str(build()), "listen"]
+    else:
+        command = ["ssh", *SSH_OPTIONS, "-T", "--", host, f"{REMOTE_DIRECTORY}/{PRODUCT}", "listen"]
+    try:
+        subprocess.run(command, check=True)
+    except KeyboardInterrupt:
+        pass
+
+
 def connect(host: str, label: str | None) -> None:
     arguments = [str(build()), "client", "--ssh", host]
     if label:
@@ -135,12 +150,17 @@ def connect(host: str, label: str | None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=["deploy", "devices", "connect", "status"])
+    parser.add_argument("action", choices=["deploy", "devices", "connect", "status", "listen"])
     parser.add_argument(
-        "--ssh", required=True, type=validated_host, help="SSH host alias of the Mac with the controller"
+        "--ssh", type=validated_host, help="SSH host alias of the Mac with the controller (optional for listen)"
     )
     parser.add_argument("--label", type=validated_host, help="Name shown in the port name; defaults to the host")
     args = parser.parse_args()
+    if args.action == "listen":
+        listen(args.ssh)
+        return
+    if args.ssh is None:
+        parser.error(f"{args.action} requires --ssh")
     if args.action == "deploy":
         deploy(args.ssh)
     elif args.action == "devices":

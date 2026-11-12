@@ -41,6 +41,23 @@ class RemoteHardwareTests(unittest.TestCase):
         self.assertIsNone(state["remote_sha256"])
         self.assertIsNone(state["controller"])
 
+    def test_listen_runs_locally_without_ssh_and_remotely_with_it(self):
+        with (
+            patch.object(remote_hardware, "build", return_value="/bin/XTouchRemoteMIDI"),
+            patch("subprocess.run") as run,
+        ):
+            remote_hardware.listen(None)
+            self.assertEqual(run.call_args.args[0], ["/bin/XTouchRemoteMIDI", "listen"])
+            remote_hardware.listen("mini")
+            command = run.call_args.args[0]
+            self.assertEqual(command[0], "ssh")
+            self.assertIn("BatchMode=yes", command)
+            self.assertEqual(command[command.index("--") + 1 :], ["mini", ".xtouch-remote/XTouchRemoteMIDI", "listen"])
+
+    def test_only_listen_may_omit_the_host(self):
+        with patch("sys.argv", ["remote_hardware.py", "status"]), self.assertRaises(SystemExit):
+            remote_hardware.main()
+
     def test_local_clients_ignores_non_pid_lines(self):
         listing = "123 XTouchRemoteMIDI client --ssh mini\nnoise\n"
         with patch("subprocess.run") as run:
