@@ -88,8 +88,9 @@ In the 2026-11-12/13 session, Program Change and physical A/B selection cycled a
 nine motors silently. “No motor CC” and “no bank recall” do not mean no movement.
 U2 software behavior: while any fader is touched, A/B selection, Realign and Sync
 lights refuse visibly without sending or queueing; release alone does nothing.
-Mock selection stays unchanged. U3 silent reconnect is a separate pending behavior
-change at this documentation commit. **未在实机复核**.
+Mock selection stays unchanged. U3 hardware reconnect sends no MIDI, invalidates
+old layer evidence and marks lights unsynchronized; the user must sync explicitly.
+A failed/refused sync stays pending. **未在实机复核**.
 
 With an operator present, start with TODO H1 (A/B highlight follows host selection)
 and H6 (U2 refusal and U3 reconnect). H5 must distinguish USB power-up motion from

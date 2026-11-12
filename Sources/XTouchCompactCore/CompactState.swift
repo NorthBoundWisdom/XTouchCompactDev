@@ -73,9 +73,10 @@ public struct CompactState: Sendable {
         pushedEncoders.contains(index)
     }
 
-    /// Always send Program Change on (re)connect; physical A/B presses are not host-visible.
-    /// Deliberately do NOT recall motor positions on reconnect until operator opts in.
-    public mutating func connect() throws -> [MIDIMessage] {
+    /// Software simulation may assert the layer immediately. Physical attachments must
+    /// use assertLayer: false: invalidate old observations/intents without output.
+    /// Neither path clears touch or recalls bank targets.
+    public mutating func connect(assertLayer: Bool = true) throws -> [MIDIMessage] {
         lastMotorCommands.removeAll()
         observedIsCurrent.removeAll()
         observedFaders.removeAll()
@@ -85,6 +86,11 @@ public struct CompactState: Sendable {
         pendingMotor.removeAll()
         pressedButtons.removeAll()
         pushedEncoders.removeAll()
+        guard assertLayer else {
+            observedLayer = nil
+            desiredFader.removeAll()
+            return []
+        }
         var result = [map.selectLayer(layer)]
         result += try restoreNonMotorFeedback()
         return result

@@ -51,8 +51,8 @@ Inputs encoded as Note On velocity 127 for press and Note Off velocity 0 for rel
 3. **Ring mode changes** and **local knob rotation** may overwrite remote ring illumination. Invalidate last-sent cache and reassert desired ring position.
 4. **Six right-area transport buttons** may redraw the whole LED group locally. Invalidate the group cache after a button press.
 5. **Every layer change cycles the motors** (observed 2026-11-13): on the physical A/B key and on Program Change alike, all nine faders travel to the bottom and back to where they were, with no device TX. Motors use the same CC on both layers and the unit keeps one physical position across layers. A layer assertion is therefore not motor-neutral, although it carries no motor command.
-5. **Physical A/B buttons** don't emit explicit layer-changed MIDI, so don't treat cached software layer as immutable. Active connections currently assert the software layer via Program Change; suppress this during passive startup-state investigation because it changes the state being measured. Characterize button transitions and retain input-address layer evidence independently of the host bank.
-6. **MC fader resolution:** stock MC mode carries fader positions in Pitch Bend-shaped messages but independent measurements show mostly zero low byte (roughly 7 bits effective). Standard mode already uses CC 0...127. Advanced firmware research exists but should not be a P0 dependency.
+6. **Physical A/B buttons** don't emit explicit layer-changed MIDI, so don't treat cached software layer as immutable. Hardware attachment/reconnect is silent and invalidates old layer evidence; explicit user synchronization asserts the software layer via Program Change, refused while any input or safety touch is held. An assertion is not acknowledgement. Characterize button transitions and retain input-address layer evidence independently of the host bank. U2/U3: 未在实机复核。
+7. **MC fader resolution:** stock MC mode carries fader positions in Pitch Bend-shaped messages but independent measurements show mostly zero low byte (roughly 7 bits effective). Standard mode already uses CC 0...127. Advanced firmware research exists but should not be a P0 dependency.
 
 ## Example: the common mistake to avoid
 
@@ -125,6 +125,11 @@ Physical fader reports update observations/parameters but do not echo a quantize
 command to their own motor. Real-unit behavior remains subject to HW-6/HW-7.
 
 Explicit layer realignment can reassert the currently selected layer and discard
-old mismatch evidence without recalling motors or clearing touch. A disconnect
+old mismatch evidence without recalling bank targets or clearing touch. The assertion
+can still cycle all nine firmware motors and is refused under any touch in
+hardware-send mode. A disconnect
 while touched keeps the latch until a fresh touch/release cycle is received after
 reconnection; neither reassertion nor reconnect fabricates a release observation.
+Hardware attachment uses `connect(assertLayer: false)`: zero output, old position
+and layer observations invalidated, pending motor targets dropped, touch retained.
+The default asserting connect path remains for deterministic simulation.

@@ -138,10 +138,11 @@ Hardware support is still being verified, so the app is deliberately cautious.
    each includes Program Change and can cycle all nine motors. A fresh value write or confirmed
    **Recall motors…** can also move motors. No bank target is recalled automatically.
 
-In the current hardware-send baseline, reconnect sends a layer assertion and lights;
-that can cycle the motors even without motor CC. U3 will remove this automatic
-assertion in a separate behavior-change commit. Power-up travel on USB replug
-has not been separated from Program Change travel (H5/H6).
+Hardware connection, reconnect and endpoint replacement send no MIDI. The app
+marks the layer unconfirmed and lights unsynchronized; use **Sync lights to device**
+to assert the selected layer and send its lights explicitly, with all faders clear.
+This U3 behavior is software-tested only, **未在实机复核**. Power-up travel on USB
+replug has not been separated from Program Change travel (H5/H6).
 
 If you unplug the controller while touching a fader, touch and release that fader once after
 reconnecting so the app sees a fresh release.

@@ -128,3 +128,25 @@ import Testing
         })
     }
 }
+
+@Test func silentHardwareAttachmentDropsOldTargetsAndObservationsButPreservesTouches() throws {
+    let map = try FactoryStandardMap(globalReceiveChannel: 1)
+    var session = CompactSession(map: map, lightProtocol: .observed114)
+    _ = try session.connect()
+    _ = try session.receive([.controlChange(channel: 0, number: 101, value: 127),
+                             .controlChange(channel: 0, number: 1, value: 32)])
+    #expect(try session.setFader(1, value: 99).isEmpty)
+    session.setSafetyTouch(9, touched: true)
+    #expect(try session.connect(assertLayer: false).isEmpty)
+    #expect(session.state.observedLayer == nil)
+    #expect(session.state.observedFader(1) == nil)
+    #expect(session.state.isTouched(1) && session.state.isTouched(9))
+    #expect(!session.state.isMotorPending(1))
+    #expect(try session.receive([.controlChange(channel: 0, number: 101, value: 0)]).feedback.isEmpty)
+    session.setSafetyTouch(9, touched: false)
+    let explicit = try session.selectLayer(.a)
+    #expect(explicit.first == .programChange(channel: 1, number: 0))
+    #expect(explicit.count == 56)
+    #expect(session.bank(.a).faders[0] == 99) // Target survives, old motor intent does not.
+    #expect(try session.setFader(1, value: 99) == [.controlChange(channel: 1, number: 1, value: 99)])
+}

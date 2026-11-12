@@ -564,3 +564,5 @@
 "Sending is on. Use Sync lights to push the current layer and lights." = "已允許傳送。點「同步燈光到裝置」把目前層和燈光傳給實機。";
 
 "Layer change refused while a fader is touched. Release all faders and retry; nothing was queued." = "有推子被觸摸，已拒絕切層。請鬆開所有推子後重試；操作未排隊。";
+
+"Lights not synchronized; use Sync lights to assert the layer." = "燈光未同步；請點「同步燈光」明確設定裝置層。";

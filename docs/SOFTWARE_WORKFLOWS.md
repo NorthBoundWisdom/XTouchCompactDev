@@ -273,10 +273,15 @@ touch blocks layer selection, realignment and light sync as a whole: a visible
 refusal leaves the operation unqueued; release all faders and retry explicitly.
 Mock layer selection is unchanged. U2 is software-tested only, **未在实机复核**.
 
-The current hardware-send reconnect still sends Program Change plus lights. U3
-will change this to silent reconnect and explicit user synchronization in a
-separate commit. Startup power-up versus assertion travel remains H5; new U2/U3
-behavior requires H6. No observation is fabricated from the last sent command.
+U3: hardware attachment, disconnect/reconnect, endpoint replacement and transport
+generation changes send no MIDI. Old layer and position observations are
+invalidated, touch latches retained, and pending motor intents discarded. The
+header marks lights unsynchronized; **Sync lights to device** explicitly asserts
+the selected layer and sends its rings/LEDs. A successful sync marks transport
+delivery only, never physical acknowledgement; a failure keeps sync pending.
+Changing to hardware-send also replays nothing. Later fresh writes retain their
+usual touch/mismatch rules. Startup power-up versus assertion travel remains H5;
+U2/U3 behavior requires H6 and is **未在实机复核**.
 
 If the controller is unplugged while a fader is touched, the host deliberately
 keeps that safety latch: the release may have happened while disconnected. After
@@ -419,7 +424,7 @@ synthetic inputs and an in-memory writer. The result scene exercises a simulated
 transport and operator report; none accesses a physical port or transmits real MIDI.
 
 Hardware output is blocked by default on every launch. Connection's Listen only
-switch gates the single MIDI send boundary, including connect/reconnect assertions,
+switch gates the single MIDI send boundary, including explicit layer assertions,
 LED sync, gestures, software/Agent writes and recall. Suppressed commands are marked
 explicitly and never treated as accepted transport writes. Disabling listening sends
 nothing and clears withheld motor writes without discarding touch/layer evidence;
@@ -429,9 +434,8 @@ The observation page's **Enable writeback** action returns to the console and
 disables listening without sending MIDI or replaying old targets. Touch ownership
 and layer mismatch evidence remain intact. The same action is available in the
 console header while listening. An explicit `--hardware-control` launch selects
-physical hardware with writeback enabled; startup/reconnect sends no bank-target
-motor recall, but the current automatic layer assertion can cycle the firmware
-motors. U3 will remove that assertion separately. `--hardware-observe` takes precedence, and isolated test launches
+physical hardware with writeback enabled; attachment/reconnect is silent and
+leaves layer/light synchronization pending until an explicit user action. `--hardware-observe` takes precedence, and isolated test launches
 ignore `--hardware-control`. The observation panel no longer shows the recent-input
 debug card; raw input capture and touch safety remain available.
 

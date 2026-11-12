@@ -136,7 +136,11 @@
         #expect(model.panelSnapshot.hardwareObservation == nil)
         #expect(model.listenOnly)
         #expect(model.session.state.isTouched(1))
-        #expect(model.session.state.layerMismatch)
+        #expect(model.session.state.observedLayer == nil) // Reconnect makes the old layer evidence unknown.
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == true)
+        #expect(midi.sent.isEmpty)
+        midi.onMessages?([.controlChange(channel: 0, number: 37, value: 1)])
+        #expect(model.session.state.layerMismatch) // Only fresh input establishes it again.
         #expect(midi.sent.isEmpty)
     }
 

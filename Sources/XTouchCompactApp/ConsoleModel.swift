@@ -41,6 +41,9 @@
 
         @Published private(set) var notifications: [ConsoleNotification] = []
         @Published private(set) var hardwareMode = false
+        /// Host delivery state only, not physical acknowledgement. True after attachment,
+        /// mode/profile changes or failed/suppressed feedback until a full explicit sync.
+        @Published private(set) var hardwareFeedbackNeedsSync = true
         /// Session-only safety choice: every launch starts passively. Never rewrites a device profile.
         @Published private(set) var listenOnly = true
         @Published private(set) var isObservingHardware = false
@@ -129,8 +132,11 @@
             self.midi.onMessages = { [weak self] messages in self?.receive(messages) }
             self.midi.onConnection = { [weak self] snapshot in
                 guard let self else { return }
-                let wasConnected = connection.isConnected
-                if snapshot.connectedInput?.id != connection.connectedInput?.id || snapshot.generation != connection.generation {
+                let routeChanged = snapshot.isConnected != connection.isConnected
+                    || snapshot.connectedInput?.id != connection.connectedInput?.id
+                    || snapshot.connectedOutput?.id != connection.connectedOutput?.id
+                    || snapshot.generation != connection.generation
+                if routeChanged {
                     liveHardwareValues = nil
                     reportedHardwarePresses = [:]
                 }
@@ -149,15 +155,12 @@
                 }
                 appendEvent(MonitorEvent(timestamp: self.now(), direction: nil, source: .application, message: nil,
                                          control: nil, hostLayer: layer, ignored: false, text: LocalizedMessage("MIDI connection changed"), connection: snapshot))
-                if hardwareMode, snapshot.isConnected, !wasConnected {
-                    if listenOnly {
-                        session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
-                    } else {
-                        apply { try $0.connect() }
+                if routeChanged {
+                    hardwareFeedbackNeedsSync = true
+                    if hardwareMode {
+                        // Disconnect/reconnect/endpoint replacement is never an output action.
+                        apply { try $0.connect(assertLayer: false) }
                     }
-                }
-                if hardwareMode, !snapshot.isConnected {
-                    session.invalidateTransportFeedback()
                 }
             }
             if let store {
@@ -214,9 +217,8 @@
                     return
                 }
                 session.setInputTouches([])
-                if !listenOnly {
-                    apply { try $0.selectLayer(layer) }
-                }
+                hardwareFeedbackNeedsSync = true
+                apply { try $0.connect(assertLayer: false) }
             } else {
                 error = nil
                 session.setInputTouches(mock.touchedFaders)
@@ -259,6 +261,7 @@
             listenOnly = enabled
             // No replay or layer assertion on either transition. Preserve hardware touch/layer evidence.
             if hardwareMode {
+                hardwareFeedbackNeedsSync = true
                 session.discardPendingMotorWrites(); session.invalidateTransportFeedback(); updateBank()
             }
         }
@@ -817,6 +820,9 @@
                 } catch { self.error = error; lockNonMotorTests() }
             }
             if authorizedTest != nil && !testAllowed || hardwareMode && (listenOnly || isObservingHardware && !testAllowed) {
+                if hardwareMode, !messages.isEmpty {
+                    hardwareFeedbackNeedsSync = true
+                }
                 session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
                 for message in messages {
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
@@ -850,9 +856,20 @@
                     self.error = error
                     record(message, direction: .output, source: source, ignored: true, delivery: .failed,
                            nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control)
+                    hardwareFeedbackNeedsSync = true
                     session.invalidateTransportFeedback()
                     lockNonMotorTests("MIDI send failed; test output locked.")
                     return .failed
+                }
+            }
+            if hardwareMode, authorizedTest == nil, messages.contains(where: {
+                if case .programChange = $0 {
+                    return true
+                }; return false
+            }) {
+                hardwareFeedbackNeedsSync = false
+                if error as? CompactError == .fadersTouched {
+                    error = nil
                 }
             }
             return .sent

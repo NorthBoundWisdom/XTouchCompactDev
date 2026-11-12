@@ -564,3 +564,5 @@
 "Sending is on. Use Sync lights to push the current layer and lights." = "Sending is on. Use Sync lights to push the current layer and lights.";
 
 "Layer change refused while a fader is touched. Release all faders and retry; nothing was queued." = "Layer change refused while a fader is touched. Release all faders and retry; nothing was queued.";
+
+"Lights not synchronized; use Sync lights to assert the layer." = "Lights not synchronized; use Sync lights to assert the layer.";

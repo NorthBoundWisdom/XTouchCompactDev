@@ -235,9 +235,10 @@ writes on layer B. New: on every layer change the firmware cycles all nine fader
 bottom and back, unreported, and keeps one physical position across layers. **Open:** the
 app's corrected layer highlight and motor-travel wording need H1 visual review.
 U2 touch-time assertion refusal is software-tested, **未在实机复核** (H6).
-The current hardware-send reconnect still sends Program Change and lights; U3
-will remove that behavior separately. H5 must isolate power-up travel on USB
-replug from assertion-induced travel; H6 will check the changed reconnect.
+U3 hardware-send reconnect now sends no MIDI and marks layer/light sync pending;
+the user must sync explicitly with all faders clear. **未在实机复核**. H5 must isolate
+power-up travel on USB replug from assertion-induced travel; H6 will check this
+changed reconnect.
 **HW-6 signed off by the operator on 2026-11-13** for the scope recorded here. The sign-off
 does not cover: F2–F9 on layer B or at other values, a held fader other than F1, a layer
 change while a fader is held, and the corrected highlight and wording on the unit. Those

@@ -48,7 +48,7 @@
                 nonMotorTests: nonMotorTestPresentation,
                 hardwareObservation: observation,
                 listenOnly: listenOnly, capturePath: capturePath,
-                notifications: notifications, runtimeError: error.map { localizedError($0) } ?? connection.error,
+                notifications: notifications, hardwareFeedbackNeedsSync: hardwareMode ? hardwareFeedbackNeedsSync : nil, runtimeError: error.map { localizedError($0) } ?? connection.error,
                 events: events, connection: connection, inputChoice: inputChoice, outputChoice: outputChoice,
                 transmitChannel: transmitChannel, feedbackChannel: feedbackChannel, observedLEDVariant: observedLEDVariant,
                 layer: layer,

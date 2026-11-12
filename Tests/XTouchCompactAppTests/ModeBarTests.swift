@@ -25,9 +25,11 @@
         #expect(model.panelSnapshot.mode == .hardwareSend)
         #expect(midi.sent.isEmpty)
 
-        // The explicit sync sends the layer selection and nonmotor feedback, never a motor.
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == true)
+        // The explicit sync sends the layer selection and nonmotor feedback, never a motor CC.
         try intent(model.panelIntents.realignLayer)()
         #expect(midi.sent.contains(.programChange(channel: 0, number: 0)))
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == false)
         #expect(!midi.sent.contains {
             if case .controlChange(_, 1 ... 9, _) = $0 {
                 return true
@@ -134,5 +136,69 @@
         model.setLayer(.a)
         #expect(midi.sent.count == 56)
         #expect(model.layer == .a)
+    }
+
+    @Test @MainActor func hardwareReconnectAndRouteReplacementStaySilentUntilExplicitSync() {
+        for listening in [true, false] {
+            let midi = FakeMIDIService()
+            let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+            midi.connect()
+            model.setConsoleMode(listening ? .hardwareListen : .hardwareSend)
+            #expect(midi.sent.isEmpty)
+            if !listening {
+                model.realignCurrentLayer()
+            }
+            midi.onMessages?([.controlChange(channel: 0, number: 101, value: 127)])
+            model.faderChanged(1, value: 99)
+            midi.sent.removeAll()
+            midi.onConnection?(CompactMIDIConnection())
+            midi.connect()
+            #expect(midi.sent.isEmpty)
+            #expect(model.session.state.observedLayer == nil)
+            #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == true)
+            #expect(model.session.state.isTouched(1))
+            #expect(!model.session.state.isMotorPending(1))
+            if !listening {
+                model.realignCurrentLayer()
+                #expect(midi.sent.isEmpty)
+                #expect(model.error as? CompactError == .fadersTouched)
+            }
+            midi.onMessages?([.controlChange(channel: 0, number: 101, value: 0)])
+            #expect(midi.sent.isEmpty)
+            if !listening {
+                model.realignCurrentLayer()
+                #expect(midi.sent.count == 56)
+                #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == false)
+            }
+            midi.sent.removeAll()
+            var route = model.connection
+            route.generation += 1 // Same endpoints, new transport generation.
+            midi.onConnection?(route)
+            #expect(midi.sent.isEmpty)
+            #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == true)
+            route.connectedOutput = CompactMIDIEndpoint(id: 2, name: "Replacement")
+            midi.onConnection?(route)
+            #expect(midi.sent.isEmpty)
+            #expect(model.session.state.observedLayer == nil)
+            #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == true)
+        }
+    }
+
+    @Test @MainActor func failedExplicitSyncRemainsPendingAndMockDoesNotExposeHardwareSync() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == nil)
+        midi.connect()
+        model.setConsoleMode(.hardwareSend)
+        midi.fails = true
+        model.realignCurrentLayer()
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == true)
+        midi.fails = false
+        model.realignCurrentLayer()
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == false)
+        #expect(model.panelSnapshot.hardwareDisplayLayer == nil) // Sent is not observed.
+        model.setConsoleMode(.mock)
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == nil)
+        #expect(model.mock.layer == model.layer)
     }
 #endif

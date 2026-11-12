@@ -38,6 +38,10 @@
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(l.text(explanation)).font(.caption).foregroundStyle(.primary.opacity(0.9)).lineLimit(1)
+                    if connected, snapshot.hardwareFeedbackNeedsSync == true {
+                        Text(l.text("Lights not synchronized; use Sync lights to assert the layer."))
+                            .font(.caption2).foregroundStyle(Color.orange).lineLimit(1)
+                    }
                     if snapshot.mode != .mock {
                         Text(connected ? l.text("Controller connected · receives on ch %@", String(snapshot.feedbackChannel))
                             : l.text("Controller not connected"))

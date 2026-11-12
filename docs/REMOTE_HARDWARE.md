@@ -46,8 +46,9 @@ python3 tools/remote_hardware.py status  --ssh henrys-mac-mini   # read-only che
 
 `connect --listen-only` publishes the same ports but drops everything the local app sends,
 in the client and again in the bridge. Use it while the app's own listen-only state is
-uncertain: for example an app started with `--hardware-control` selects the remote port
-automatically and immediately sends its layer assertion and LED sync.
+uncertain. An app started with `--hardware-control` selects hardware with fresh
+writes enabled, but now leaves attachment/reconnect silent; explicit Sync lights
+sends the layer assertion and LED/ring feedback. This U3 change is 未在实机复核。
 
 `listen` (with or without `--ssh`) is a passive raw capture to stdout as JSON lines; it
 cannot send MIDI. See [the startup readback procedure](STARTUP_READBACK_INVESTIGATION.md).

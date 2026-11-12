@@ -2,7 +2,7 @@ import Foundation
 import SurfacePluginContracts
 
 /// Two independent application banks. The two physical layers select which bank is exposed;
-/// motor travel on bank switch is intentionally opt-in, not a side effect of changing layer.
+/// bank-target recall is opt-in. Layer assertions can still cause firmware motor travel.
 public struct CompactParameterBank: Equatable, Sendable {
     public var faders: [UInt8] = Array(repeating: 0, count: 9)
     public var encoders: [UInt8] = Array(repeating: 0, count: 16)
@@ -55,9 +55,11 @@ public struct CompactSession: Sendable {
         banks[layer] ?? .init()
     }
 
-    /// Layer assertion is always sent. LED/rings restored from last host state; faders aren't.
-    public mutating func connect() throws -> [MIDIMessage] {
-        var messages = try state.connect()
+    /// Default is the deterministic simulation path. A physical connection passes false
+    /// to remain entirely silent until an explicit layer/light synchronization.
+    public mutating func connect(assertLayer: Bool = true) throws -> [MIDIMessage] {
+        var messages = try state.connect(assertLayer: assertLayer)
+        guard assertLayer else { return messages }
         messages += try syncVisibleNonMotorFeedback()
         return messages
     }

@@ -387,6 +387,10 @@
         var listenOnly = true
         var capturePath: String?
         var notifications: [ConsoleNotification] = []
+        /// Host has not completed an explicit layer + light synchronization on this
+        /// hardware attachment. False is transport delivery, never physical readback.
+        /// Nil in Mock mode, where no physical attachment is being synchronized.
+        var hardwareFeedbackNeedsSync: Bool?
         var runtimeError: LocalizedMessage?
         var events: [MonitorEvent] = []
         var connection = CompactMIDIConnection()
