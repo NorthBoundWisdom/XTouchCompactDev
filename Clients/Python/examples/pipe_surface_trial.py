@@ -92,12 +92,16 @@ def main(argv=None):
         state = trial.owned_mock(args.state.resolve())
         client = sdk.Client(args.url, private_token(args.token_file), args.instance_id, protocol=args.protocol)
         discovery = client.discover()
+        args.output.mkdir(parents=True, mode=0o700, exist_ok=False)
+        trial.save(
+            args.output / "phase-provider-reset-pending.json", {"phase": "provider-reset-pending", "retry": False}
+        )
         client.reset()  # Explicit new simulation context; no restart/recovery of an old arm.
+        trial.save(args.output / "phase-provider-reset-completed.json", {"phase": "provider-reset-completed"})
         mapping = {name: "simulation." + name for name in ("arm", "start", "pause", "cancel")}
         cursor = sdk.CommandCursor(client, mapping)
         initial = cursor.bootstrap()
         require(not any(initial.values()), "new trial requires all-off controls")
-        args.output.mkdir(parents=True, mode=0o700, exist_ok=False)
         cfg, flash, _ = trial.prepare(trial.JsonHTTP(), state, args.output / "taskless", args.url)
         gate = trial.ActionGate()
         require(gate.sample(initial) is None, "initial snapshot cannot command")

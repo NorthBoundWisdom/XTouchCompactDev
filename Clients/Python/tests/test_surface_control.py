@@ -190,8 +190,13 @@ class SurfaceClientTests(unittest.TestCase):
         self.assertEqual(error.exception.code, "recovery_required")
 
     def test_unknown_event_and_ignored_without_reason_cannot_preserve_arm(self):
-        for fields in ({"kind": "future"}, {"disposition": "future"}, {"disposition": "ignored"},
-                       {"time": float("nan")}, {"origin": "hardware"}):
+        for fields in (
+            {"kind": "future"},
+            {"disposition": "future"},
+            {"disposition": "ignored"},
+            {"time": float("nan")},
+            {"origin": "hardware"},
+        ):
             client, cursor, _ = self.cursor()
             client.event("arm", 127, **fields)
             with self.assertRaises(SurfaceError):

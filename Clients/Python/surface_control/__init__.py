@@ -95,7 +95,7 @@ class Client:
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
     def rpc(self, method, params):
-        if not self.connected and method != "initialize":
+        if self.protocol == "2025-11-25" and not self.connected and method != "initialize":
             initialized = self.rpc(
                 "initialize",
                 {
@@ -108,13 +108,14 @@ class Client:
             self.connected = True
             self._initialized()
         self.sequence += 1
-        params = {
-            **params,
-            "_meta": {
-                "io.modelcontextprotocol/protocolVersion": self.protocol,
-                "io.modelcontextprotocol/clientCapabilities": {},
-            },
-        }
+        if self.protocol == "2026-07-28":
+            params = {
+                **params,
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": self.protocol,
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                },
+            }
         raw = json.dumps(
             {"jsonrpc": "2.0", "id": self.sequence, "method": method, "params": params}, allow_nan=False
         ).encode()

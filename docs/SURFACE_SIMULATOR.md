@@ -23,7 +23,7 @@ python3 configs/package_surface_simulator.py --output build/deliveries/surface-s
 
 The output contains the binary, `manifest.json`, dependency lock,
 `control-contract.json` (shared tool schemas plus the actual profile), this guide,
-`minimal_consumer.py`, and `surface-control-sdk-1.0.0.zip`. The same public Python SDK can consume both hosts; the optional `examples/pipe_surface_trial.py` requires an explicitly isolated Pipe taskless-trial deployment and owned state. The manifest hashes every other file and records exact
+`minimal_consumer.py`, and `surface-control-sdk-1.0.0.zip`. The same public Python SDK and `examples/surface_roundtrip.py` can consume both hosts using a pinned manifest; upstream file provenance is in `surface-control-sdk-source.json`. the optional `examples/pipe_surface_trial.py` requires an explicitly isolated Pipe taskless-trial deployment and owned state. The manifest hashes every other file and records exact
 host/shared revisions, platform, architecture, and build configuration. It is a
 local software delivery, without a release tag or notarization claim.
 

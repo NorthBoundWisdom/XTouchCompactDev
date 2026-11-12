@@ -26,3 +26,5 @@ A production operator bridge must continue to reject simulation input.
 
 Run unit tests with `PYTHONPATH=Clients/Python python3 -m unittest discover -s Clients/Python/tests -v`.
 Real HTTP/process checks live in `Tests/SimulatorIntegration`.
+
+The exact upstream commit and source-file hashes are recorded in [SOURCE.json](SOURCE.json). The delivery includes the same SDK zip and `examples/surface_roundtrip.py` as the other host, plus the explicitly optional Pipe taskless-trial example.

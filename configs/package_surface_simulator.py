@@ -43,7 +43,9 @@ def package(output, configuration="release"):
         with zipfile.ZipFile(stage / "surface-control-sdk-1.0.0.zip", "w", compression=zipfile.ZIP_DEFLATED) as sdk:
             sdk.write(sdk_source, "surface_control/__init__.py")
         (stage / "examples").mkdir()
-        shutil.copy2(ROOT / "Clients/Python/examples/pipe_surface_trial.py", stage / "examples/pipe_surface_trial.py")
+        for name in ("pipe_surface_trial.py", "surface_roundtrip.py"):
+            shutil.copy2(ROOT / "Clients/Python/examples" / name, stage / "examples" / name)
+        shutil.copy2(ROOT / "Clients/Python/SOURCE.json", stage / "surface-control-sdk-source.json")
         (stage / "control-contract.json").write_text(subprocess.check_output(
             [str(stage / "XTouchSurfaceSimulator"), "--describe"], text=True))
         files = {str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(stage.rglob("*")) if path.is_file()}
