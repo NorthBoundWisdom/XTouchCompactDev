@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "fixtures": {
+    "surface-control-software-v1.1": {
+      "roles": {
+        "input_a": "a.encoder.1",
+        "input_b": "a.encoder.2",
+        "input_c": "a.encoder.3",
+        "input_d": "a.encoder.4",
+        "feedback_state": "a.button.1",
+        "feedback_progress": "a.encoder.5",
+        "feedback_link": "a.button.2",
+        "hold_input": "a.touch.1"
+      }
+    },
+    "surface-control-software-v1.2": {
+      "roles": {
+        "input_a": "a.encoder.1",
+        "input_b": "a.encoder.2",
+        "input_c": "a.encoder.3",
+        "input_d": "a.encoder.4",
+        "feedback_state": "a.button.1",
+        "feedback_progress": "a.encoder.5",
+        "feedback_link": "a.button.2",
+        "hold_input": "a.touch.1",
+        "blocked_input": null
+      }
+    },
+    "surface-control-software-v1.3": {
+      "roles": {
+        "input_a": "a.encoder.1",
+        "input_b": "a.encoder.2",
+        "input_c": "a.encoder.3",
+        "input_d": "a.encoder.4",
+        "feedback_state": "a.button.1",
+        "feedback_progress": "a.encoder.5",
+        "feedback_link": "a.button.2",
+        "hold_input": "a.touch.1",
+        "blocked_input": null
+      }
+    },
+    "surface-control-software-v1": {
+      "roles": {
+        "input_a": "a.encoder.1",
+        "input_b": "a.encoder.2",
+        "input_c": "a.encoder.3",
+        "input_d": "a.encoder.4",
+        "feedback_state": "a.button.1",
+        "feedback_progress": "a.encoder.5",
+        "feedback_link": "a.button.2"
+      }
+    }
+  }
+}

@@ -28,6 +28,15 @@ The default output is `build/deliveries/xtouch-surface-simulator-<short SHA>`, n
 after this repository's HEAD only (no other host's commit appears in the name). Pass
 `--output` to choose another new directory; an existing directory is never reused.
 
+Use `--output-root ../deliveries` for the shared workspace outlet. It creates
+`xtouch-surface-1.3-<HEAD SHA7>` and updates that root's `INDEX.json` under the common
+`.index.lock` directory lock. Rebuilding the same full commit replaces its index
+entry and complete delivery directory; a different full commit with a colliding
+short name is refused. The lock is bounded and never removed based on age. Index
+errors are visible, and an index write failure restores the preceding directory.
+This mode preserves other hosts' entries and leaves all old `build/deliveries/`
+directories in place. The two output options are mutually exclusive.
+
 The output contains the binary, `manifest.json`, dependency lock, `LICENSE`,
 `control-contract.json` (`--describe`: actual discovery plus the seven tool schemas),
 this guide as `README.md`, `minimal_consumer.py`, and `examples/surface_roundtrip.py`.
@@ -36,11 +45,13 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 
 | Delivery file | Shared source |
 | --- | --- |
-| `surface-control-sdk-1.3.0.zip` (`surface_control/__init__.py`) | `clients/python/surface_control/__init__.py` |
+| `surface-control-sdk-1.3.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/` Python sources |
 | `control-tools.json` | `docs/surface-control-tools.json` |
 | `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
 | `surface-control-software-v1.json`, `surface-control-software-v1.1.json`, `surface-control-software-v1.2.json`, `surface-control-software-v1.3.json` | `fixtures/` |
 | `surface-control.md`, `surface-control-scenarios.md`, `surface-control-delivery.md` | `docs/` |
+| `surface-control-conformance.md`, `surface-control-conformance-report.schema.json` | `docs/` |
+| `versioning.md`, `release-checklist.md`, `CHANGELOG.md` | `docs/versioning.md`, `docs/release-checklist.md`, `CHANGELOG.md` |
 
 The shared SDK tests and the Pipe integration example (`integrations/pipe/`) are not part
 of this generic delivery. The manifest's common fields have the same names and meanings as
@@ -247,16 +258,12 @@ are withheld while a fader is touched).
 
 ## XTouch profile and semantics
 
-`xtouch.compact.standard.simulation` version `1.3` declares 184 controls. Version 1.2 added
-`accepts_input` to every descriptor, changing the derived mapping revision. Version 1.3
-adds input CAS and trusted writers without changing control mappings. Each layer
+`xtouch.compact.standard.simulation` version `1.3` declares 184 controls. Each layer
 A/B has `a.fader.1` … `a.fader.9`, `a.touch.1` … `a.touch.9`,
 `a.encoder.1` … `a.encoder.16`, `a.push.1` … `a.push.16`,
 `a.button.1` … `a.button.39`, the optional pedals `a.expression.1` and
 `a.footswitch.1`, and corresponding `b.*` IDs. Two layer-independent buttons,
-`global.layer.a` and `global.layer.b`, are the physical A/B layer keys. Version `1.0`
-had only the 178 layered controls; 1.1 is an additive change, with the same IDs and
-semantics for those controls.
+`global.layer.a` and `global.layer.b`, are the physical A/B layer keys.
 
 Faders, stock encoders, and the expression pedal accept integer absolute scalar values `0…127`.
 An endless knob is not advertised as a relative MIDI encoder. Touch, push,
@@ -270,9 +277,7 @@ unprotected parameters declare `true`; action bindings and non-writable or prote
 bindings declare `false`. The default demonstration declares `true` on all 184 controls.
 
 Input permission is checked before layer state: `accepts_input: false` always fails
-`permission_denied`, including on an inactive layer. This intentionally changes action-bound
-input from the previous `unsupported_mapping` error, and inactive action/protected inputs from
-`ignored/inactive_layer` to refusal. Eligible inactive-layer input, and all inactive-layer
+`permission_denied`, including on an inactive layer. Eligible inactive-layer input, and all inactive-layer
 feedback, remains `ignored` with `inactive_layer`. Switching layers changes this runtime
 state, not the declarations, profile, mapping revision, or epoch. Pressing a layer key (`true`) is an ordinary accepted
 input event (`mapped_value` is `"a"` or `"b"`) that selects that layer in the Mock and
@@ -370,6 +375,34 @@ The retained legacy global-CAS tests also run two real HTTP writers concurrently
 accepted, and a stale input is proven unexecuted before an explicit SDK refresh and new input.
 No test here starts a production Pipe service or connects physical hardware.
 
+## Live conformance from a delivery
+
+The SDK zip also contains the shared standard-library checker. The host-owned
+`conformance-roles.json` has one role subset per fixture. Default controls all accept
+input, so the v1.2/v1.3 `blocked_input` role is explicitly null; its checks skip with
+a reason. Clock injection, process-local probes and unavailable trusted writer
+identities also produce explicit skips. Skips do not establish conformance for
+those steps. No private principal record or random runtime writer ID is packaged.
+
+Against a separately started isolated delivery with input, feedback and reset
+permissions, run from the delivery directory (use a fresh process and private token
+as described above):
+
+```sh
+PYTHONPATH=surface-control-sdk-1.3.0.zip python3 -B -m surface_conformance \
+  --url http://127.0.0.1:PORT/mcp --token-file /path/to/private/token \
+  --instance-id INSTANCE --fixture surface-control-software-v1.3.json \
+  --roles conformance-roles.json --report /path/to/evidence/conformance-v1.3.json
+```
+
+Repeat with each of the four fixture files; keep reports outside the immutable
+delivery directory. The checker never retries a mutation. Its exit status is zero
+for pass/skip only, one for a failed step, and two for configuration/discovery
+failure. Inspect the per-step reasons and counts even after exit zero. The real
+HTTP integration suite runs all four fixtures and asserts that every skip has a
+reason, independently of the injected-clock Swift runner.
+
+
 ## Chassis mapping example
 
 The default demonstration configuration can supply the seven controls selected by Pipe's
@@ -408,15 +441,7 @@ python3 -B Tests/SimulatorIntegration/check_pipe_chassis_roles.py \
 It passes the binary's actual `--describe` discovery to Pipe's unmodified
 `resolve_chassis_roles`, importing Pipe with bytecode disabled, and updates only the example's
 profile version and mapping pin in memory. A missing Pipe checkout is reported as skipped.
-Historical N-round evidence: the contract-1.1 binary and example assembled successfully.
-The Pipe consumer checked in that round accepted only contract 1.1 and its registered vocabulary lacks
-`feedback.unsequenced` and `controls.input_declared`. Its original example therefore refuses
-1.2 with `unsupported_contract`; explicitly adding 1.2 to the in-memory config is refused
-by its version allowlist. Pipe needs its contract allowlist, capability vocabulary, and reviewed
-example profile version/mapping pin updated before newer deliveries can assemble there. The
-probe reports that refusal separately from the supplier's descriptor checks; it does not patch
-the consumer or claim an accepted 1.2/1.3 assembly. Contract 1.3 consumer adoption
-is a separate consumer-side task; supplier tests do not establish that compatibility.
+
 
 
 ## Full-chain simulation startup
@@ -487,3 +512,50 @@ category; unused quota is not borrowed. Failed validation and rate-limited reque
 commit counters or simulator state. Clock rollback does not grant free quota. Input rest
 and stop remain in the input category even when renew is exhausted. System expiry uses
 no external budget. Legacy GUI tools keep their existing budgets and schemas.
+
+
+## Client compatibility
+
+The frozen delivery SDKs 1.1.0 and 1.2.0 reject discovery of this contract-1.3
+host with `unsupported_contract`: their explicit version allowlists predate 1.3.
+They cannot perform an SDK round trip against this host. Tests import each verified
+zip unchanged in a separate interpreter; they never alter its allowlist or the host's
+reported version. When those historical local delivery zips are absent (including CI),
+these two tests explicitly skip and report why.
+
+Protocol compatibility is tested separately on every real-HTTP integration run,
+including Linux CI, without historical SDK files. Contract-1.1 and 1.2 request shapes
+use global `expected_sequence` inputs, sequenced feedback (1.1) or unsequenced
+feedback (1.2), discovery, snapshots, contiguous event reads, leased inputs, silent
+renewal, release, and reset. The 1.2 case checks current event-page holds. They
+accept additive response fields and do not send 1.3 input cursors or writer IDs.
+These wire-level successes do not mean that an old SDK's version gate accepts 1.3.
+
+The shared [version rules](https://github.com/NorthBoundWisdom/SurfacePlugins/blob/main/docs/versioning.md)
+define contract, SDK, profile and mapping revision changes. The locked package
+contains the authoritative rules; upgrading the dependency brings that document
+into the managed source alongside this simulator.
+
+## History
+
+Version 1.2 added
+`accepts_input` to every descriptor, changing the derived mapping revision. Version 1.3
+adds input CAS and trusted writers without changing control mappings.
+
+Version `1.0`
+had only the 178 layered controls; 1.1 is an additive change, with the same IDs and
+semantics for those controls.
+
+The 1.2 input permission declaration intentionally changed action-bound
+input from the previous `unsupported_mapping` error, and inactive action/protected inputs from
+`ignored/inactive_layer` to refusal.
+
+Historical N-round evidence: the contract-1.1 binary and example assembled successfully.
+The Pipe consumer checked in that round accepted only contract 1.1 and its registered vocabulary lacks
+`feedback.unsequenced` and `controls.input_declared`. Its original example therefore refuses
+1.2 with `unsupported_contract`; explicitly adding 1.2 to the in-memory config is refused
+by its version allowlist. Pipe needs its contract allowlist, capability vocabulary, and reviewed
+example profile version/mapping pin updated before newer deliveries can assemble there. The
+probe reports that refusal separately from the supplier's descriptor checks; it does not patch
+the consumer or claim an accepted 1.2/1.3 assembly. Contract 1.3 consumer adoption
+is a separate consumer-side task; supplier tests do not establish that compatibility.
