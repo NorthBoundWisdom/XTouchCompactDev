@@ -129,6 +129,20 @@
             width = 650; height = 1100
             model.mcpWritesAllowed = true
             content = AnyView(LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents))
+        case "organization-values":
+            // The Values tab with the same synthetic organization data.
+            width = 1600; height = 1400
+            for (index, name, color, group) in [(1, "Kick", ParameterColor.red, "Drums"), (2, "Snare", .red, "Drums"),
+                                                (4, "Bass", .blue, "Low end")]
+            {
+                model.renameControl(.fader(index), name: name)
+                model.setControlColor(.fader(index), color: color)
+                model.setControlGroup(.fader(index), group: group)
+            }
+            model.saveLink(ParameterLink(id: "drums", name: "Drums", leader: "a.Fader.1", members: ["a.Fader.2"]))
+            model.setParameter("a.Fader.1", value: 80)
+            model.highlightedGroup = "Drums"
+            content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents, selection: .fader(1)))
         case "encoder-rings":
             width = 1600; height = 1000
             for (index, value) in [(1, 6), (2, 10), (3, 11), (4, 39), (9, 18), (10, 22), (11, 32), (12, 43), (13, 64), (14, 96), (15, 127), (16, 127)] {

@@ -118,7 +118,8 @@
                             control: .fader(fader.index),
                             name: fader.label ?? CompactControl.fader(fader.index).localizedName(using: l),
                             value: fader.target,
-                            badge: fader.isTouched == true ? l.text("触摸中") : nil
+                            badge: fader.isTouched == true ? l.text("触摸中") : nil,
+                            color: fader.color, group: fader.group, link: fader.linkRole
                         ) { intents.setFader(fader.index, $0) }
                     }
                 }
@@ -128,7 +129,8 @@
                             control: .encoder(encoder.index),
                             name: encoder.label ?? CompactControl.encoder(encoder.index).localizedName(using: l),
                             value: encoder.value,
-                            badge: nil
+                            badge: nil,
+                            color: encoder.color, group: encoder.group, link: nil
                         ) { intents.setEncoder(encoder.index, $0) }
                     }
                 }
@@ -146,9 +148,13 @@
 
         private func row(
             control: CompactControl, name: String, value: UInt8, badge: String?,
+            color: ParameterColor?, group: String?, link: LinkRole?,
             onChange: @escaping (UInt8) -> Void
         ) -> some View {
-            HStack(spacing: 10) {
+            // Same organization cues as the panel: color tag, link role, group highlight.
+            let isDimmed = snapshot.highlightedGroup.map { $0 != group } ?? false
+            return HStack(spacing: 10) {
+                Capsule().fill(color.map(Theme.tag) ?? Color.clear).frame(width: 3, height: 16)
                 Button(control.shortName) { selection = control }
                     .buttonStyle(.plain)
                     .font(.caption2.monospaced().bold())
@@ -156,6 +162,14 @@
                     .padding(.vertical, 2)
                     .background(Theme.selection.opacity(selection == control ? 0.35 : 0.14), in: Capsule())
                 Text(name).lineLimit(1).frame(width: 84, alignment: .leading)
+                if let link {
+                    let text = switch link {
+                    case let .leader(linkName): "⛓ " + linkName
+                    case let .member(linkName): "→ " + linkName
+                    }
+                    Text(text).font(.caption2).foregroundStyle(Theme.touch.opacity(0.9)).lineLimit(1)
+                        .frame(maxWidth: 70, alignment: .leading)
+                }
                 Slider(
                     value: Binding(get: { Double(value) }, set: { onChange(UInt8($0.rounded())) }),
                     in: 0 ... 127
@@ -169,6 +183,7 @@
                     .foregroundStyle(Theme.value)
                     .frame(width: 36, alignment: .trailing)
             }
+            .opacity(isDimmed ? 0.35 : 1)
         }
     }
 
