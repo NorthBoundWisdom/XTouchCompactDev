@@ -39,6 +39,8 @@ SHARED_FILES = {
     "surface-control-scenarios.md": "docs/surface-control-scenarios.md",
 }
 SDK_SOURCE = "clients/python/surface_control/__init__.py"
+# Common manifest fields follow SurfacePlugins docs/surface-control-delivery.md.
+ARTIFACT = "surface-control-simulator"
 
 
 def stage_shared_files(stage, root=ROOT, shared=SHARED):
@@ -60,7 +62,14 @@ def stage_shared_files(stage, root=ROOT, shared=SHARED):
 
 
 def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED):
-    """Hash every staged file and record exact host/shared revisions and shared source hashes."""
+    """Hash every staged file and record exact host/shared revisions and shared source hashes.
+
+    Profile identity and mapping revision are read from the staged `control-contract.json`,
+    which is the delivered binary's own `--describe` output for the default configuration.
+    """
+    discovery = json.loads((stage / "control-contract.json").read_text())["discovery"]
+    if discovery["contract_version"] != CONTRACT_VERSION:
+        raise RuntimeError("Binary contract version differs from the packaged contract version")
     files = {
         str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(stage.rglob("*"))
@@ -73,14 +82,16 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED
     }
     manifest = {
         "schema_version": 1,
+        "artifact": ARTIFACT,
         "product": "XTouchSurfaceSimulator",
         "source": "simulation",
         "source_commit": source_commit,
         "source_dirty": False,
         "surface_control_contract": CONTRACT_VERSION,
         "surface_control_sdk": SDK_VERSION,
-        "profile_id": "xtouch.compact.standard.simulation",
-        "profile_version": "1.1",
+        "profile_id": discovery["profile"]["id"],
+        "profile_version": discovery["profile"]["version"],
+        "mapping_revision": discovery["expected"]["mapping_revision"],
         "surface_plugins_revision": revision,
         "surface_plugins_files_sha256": shared_sources,
         "platform": os.uname().sysname,

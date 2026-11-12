@@ -43,10 +43,16 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 | `surface-control.md`, `surface-control-scenarios.md` | `docs/` |
 
 The shared SDK tests and the Pipe integration example (`integrations/pipe/`) are not part
-of this generic delivery. The manifest records `surface_control_contract: "1.1"`,
-`surface_control_sdk: "1.1.0"`, the shared revision, the SHA256 of each shared source
-file, the SHA256 of every delivered file, the exact host commit, platform, architecture,
-and build configuration. `examples/surface_roundtrip.py` imports the SDK only from the
+of this generic delivery. The manifest's common fields have the same names and meanings as
+the other host's (shared `docs/surface-control-delivery.md`): `schema_version`, `artifact`
+(`surface-control-simulator`), `surface_control_contract` (`"1.1"`), `surface_control_sdk`
+(`"1.1.0"`), `source`, `source_commit`, `source_dirty`, `profile_id`, `profile_version`,
+`mapping_revision`, `surface_plugins_revision`, `files_sha256` (every delivered file), and
+`surface_plugins_files_sha256` (each shared source file). Profile identity and
+`mapping_revision` are taken from the delivered binary's own `--describe` output, so they
+describe the default demonstration configuration; a running instance is still pinned through
+`surface_control_discover`. Private fields (`product`, platform, architecture, build
+configuration, start/stop notes) are not part of the convention. `examples/surface_roundtrip.py` imports the SDK only from the
 delivery zip after checking the manifest pin and every file hash. It is a local software
 delivery, without a release tag or notarization claim.
 

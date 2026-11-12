@@ -56,6 +56,13 @@ class DeliveryContentTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.stage = Path(self.temporary.name)
         package_surface_simulator.stage_shared_files(self.stage)
+        # Stand-in for the binary's `--describe` output, which packaging stages before the manifest.
+        described = {
+            "contract_version": "1.1",
+            "profile": {"id": "xtouch.compact.standard.simulation", "version": "1.1"},
+            "expected": {"mapping_revision": "0123456789abcdef"},
+        }
+        (self.stage / "control-contract.json").write_text(json.dumps({"discovery": described, "tools": []}))
         self.manifest = package_surface_simulator.write_manifest(self.stage, "0" * 40, "release")
 
     def tearDown(self):
@@ -85,6 +92,31 @@ class DeliveryContentTests(unittest.TestCase):
         lock = json.loads((package_surface_simulator.ROOT / "configs/surface_plugins.lock.json").read_text())
         self.assertEqual((manifest["surface_control_contract"], manifest["surface_control_sdk"]), ("1.1", "1.1.0"))
         self.assertEqual(manifest["surface_plugins_revision"], lock["revision"])
+        # Common fields shared by both hosts (SurfacePlugins docs/surface-control-delivery.md).
+        for field in (
+            "schema_version",
+            "artifact",
+            "surface_control_contract",
+            "surface_control_sdk",
+            "source",
+            "source_commit",
+            "source_dirty",
+            "profile_id",
+            "profile_version",
+            "mapping_revision",
+            "surface_plugins_revision",
+            "files_sha256",
+            "surface_plugins_files_sha256",
+        ):
+            self.assertIn(field, manifest)
+        self.assertEqual((manifest["schema_version"], manifest["artifact"]), (1, "surface-control-simulator"))
+        self.assertEqual((manifest["source"], manifest["source_dirty"]), ("simulation", False))
+        self.assertEqual(
+            (manifest["profile_id"], manifest["profile_version"], manifest["mapping_revision"]),
+            ("xtouch.compact.standard.simulation", "1.1", "0123456789abcdef"),
+        )
+        self.assertIn("control-contract.json", manifest["files_sha256"])
+        self.assertIn("surface-control-sdk-1.1.0.zip", manifest["files_sha256"])
         staged = {str(path.relative_to(self.stage)) for path in self.stage.rglob("*") if path.is_file()} - {
             "manifest.json"
         }
@@ -94,6 +126,14 @@ class DeliveryContentTests(unittest.TestCase):
         shared = package_surface_simulator.SHARED
         for source, digest in manifest["surface_plugins_files_sha256"].items():
             self.assertEqual(hashlib.sha256((shared / source).read_bytes()).hexdigest(), digest)
+
+    def test_manifest_refuses_a_binary_serving_another_contract_version(self):
+        contract = self.stage / "control-contract.json"
+        document = json.loads(contract.read_text())
+        document["discovery"]["contract_version"] = "1.0"
+        contract.write_text(json.dumps(document))
+        with self.assertRaises(RuntimeError):
+            package_surface_simulator.write_manifest(self.stage, "0" * 40, "release")
 
     def test_sdk_zip_is_reproducible(self):
         with tempfile.TemporaryDirectory() as other:

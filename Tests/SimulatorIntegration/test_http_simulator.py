@@ -219,6 +219,16 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(client.expected["mapping_revision"], discovery["expected"]["mapping_revision"])
         self.assertNotEqual(client.expected["epoch"], discovery["expected"]["epoch"])
 
+    def test_describe_matches_live_discovery_and_the_sdk_mapping_revision(self):
+        # The delivery manifest takes profile identity and mapping_revision from --describe.
+        described = json.loads(subprocess.run([str(copy_binary(self.temporary.name)), "--describe"],
+            capture_output=True, text=True, check=True, timeout=10).stdout)["discovery"]
+        live = self.a.discover()
+        self.assertEqual(described["profile"], live["profile"])
+        self.assertEqual(described["contract_version"], live["contract_version"])
+        self.assertEqual(described["expected"]["mapping_revision"], live["expected"]["mapping_revision"])
+        self.assertEqual(described["expected"]["mapping_revision"], mapping_revision(live["profile"]))
+
     def test_renew_is_silent_permissioned_and_budgeted(self):
         client = Client(self.a.ready["url"], TOKEN, "car.a")
         client.discover()
