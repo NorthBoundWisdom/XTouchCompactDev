@@ -19,7 +19,7 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     #expect(discovery.source == .simulation)
     // 2 layers x (89 controls + expression + footswitch) + the two physical layer keys.
     #expect(discovery.profile.controls.count == 184)
-    #expect(discovery.profile.version == "1.2" && discovery.expected.profile_version == "1.2")
+    #expect(discovery.profile.version == "1.3" && discovery.expected.profile_version == "1.3")
     #expect(!discovery.profile.controls.contains { $0.input_kind == .relative })
     #expect(discovery.profile.controls.first { $0.id == "a.encoder.1" }?.mapping?.id == "simulation.arm")
     #expect(discovery.profile.controls.first { $0.id == "a.encoder.5" }?.mapping?.id == "simulation.progress")
@@ -28,8 +28,8 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     #expect(simulator.mock.faders.allSatisfy { $0 == 0 })
     // Contract 1.2: registered vocabulary plus one XTouch-private rule; mapping revision derived.
     #expect(discovery.profile.capabilities == ["simulation", "controls.stable_ids", "controls.layered", "input.absolute", "input.button",
-                                               "input.hold", "feedback.value", "feedback.indicator", "feedback.unsequenced", "controls.input_declared", "x.xtouch.touch_protection"])
-    #expect(discovery.contract_version == "1.2")
+                                               "input.hold", "feedback.value", "feedback.indicator", "feedback.unsequenced", "controls.input_declared", "x.xtouch.touch_protection", "input.independent_sequence", "events.writer_id"])
+    #expect(discovery.contract_version == "1.3")
     #expect(discovery.expected.mapping_revision == discovery.profile.mappingRevision)
     #expect(discovery.expected.mapping_revision.count == 16 && discovery.expected.mapping_revision != "1")
     let held = discovery.profile.controls.filter { $0.hold != nil }.map(\.id)
@@ -490,4 +490,15 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     #expect(try keys(scene) == SimulationConfiguration.sceneKeys)
     let configuration = SurfaceConfiguration(parameters: [parameter], assignments: [assignment], version: 2, links: [link], scenes: [scene])
     #expect(try keys(configuration) == SimulationConfiguration.rootKeys)
+}
+
+@Test func independentWriteBudgetsDoNotBorrowOrResetOnClockRollback() {
+    var budgets = SurfaceWriteBudgets(input: 2, feedback: 1, renew: 1, admin: 1)
+    let accepted = [budgets.consume(.feedback, at: 10), budgets.consume(.feedback, at: 10.1),
+                    budgets.consume(.input, at: 9), budgets.consume(.input, at: 10.2),
+                    budgets.consume(.renew, at: 10.2), budgets.consume(.renew, at: 10.3),
+                    budgets.consume(.input, at: 10.4), budgets.consume(.input, at: 10.5),
+                    budgets.consume(.feedback, at: 11), budgets.consume(.input, at: 10.8),
+                    budgets.consume(.input, at: 11.3)]
+    #expect(accepted == [true, false, false, true, true, false, true, false, true, false, true])
 }

@@ -2,7 +2,7 @@
 """Read-only Pipe role assembly probe against the simulator's real --describe output.
 
 No Pipe source is modified or monkey-patched. A blocked resolution is reported as such;
-independent supplier descriptor checks do not claim that Pipe accepted contract 1.2.
+independent supplier descriptor checks do not claim that Pipe accepted the current contract.
 """
 
 import argparse
@@ -33,7 +33,7 @@ def check(binary, pipe_root):
         row = rows[identifier]
         assert (row["input_kind"], row["encoding"], row["feedback_kinds"]) == (kind, encoding, feedback)
         assert bool(row.get("hold")) == hold
-        if discovery["contract_version"] == "1.2":
+        if discovery["contract_version"] in {"1.2", "1.3"}:
             assert row["accepts_input"] is True
         selected[role] = row
     report = {

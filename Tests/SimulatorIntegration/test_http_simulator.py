@@ -110,7 +110,7 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(discovery["expected"], self.a.ready["surface_control"]["expected"])
         self.assertEqual(discovery["source"], "simulation")
         self.assertEqual(len(discovery["profile"]["controls"]), 184)
-        self.assertEqual(discovery["profile"]["version"], "1.2")
+        self.assertEqual(discovery["profile"]["version"], "1.3")
         request = self.a.input()
         accepted = self.a.request("surface_control_input", request)
         self.assertFalse(accepted["isError"])
@@ -205,10 +205,10 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
                 cursor.poll()
             self.assertTrue(cursor.invalidated)
 
-    def test_shared_sdk_pins_contract_1_2_and_the_derived_mapping_revision(self):
+    def test_shared_sdk_pins_contract_1_3_and_the_derived_mapping_revision(self):
         client = Client(self.a.ready["url"], TOKEN, "car.a")
-        discovery = client.discover(profiles=("xtouch.compact.standard.simulation",), profile_versions=("1.2",))
-        self.assertEqual(discovery["contract_version"], "1.2")
+        discovery = client.discover(profiles=("xtouch.compact.standard.simulation",), profile_versions=("1.3",))
+        self.assertEqual(discovery["contract_version"], "1.3")
         self.assertEqual(discovery["expected"]["mapping_revision"], mapping_revision(discovery["profile"]))
         self.assertIn("input.hold", discovery["profile"]["capabilities"])
         self.assertIn("x.xtouch.touch_protection", discovery["profile"]["capabilities"])
@@ -238,11 +238,11 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         # Force one collision: feedback occupies the operator's old sequence, input is not run.
         display(0)
         with self.assertRaises(SurfaceError) as conflict:
-            operator.input("a.encoder.9", "scalar", 1)
+            operator.input("a.encoder.9", "scalar", 1, cas="global")
         self.assertEqual(conflict.exception.code, "stale_sequence")
         self.assertEqual(self.a.snapshot()["inputs"]["a.encoder.9"], 0)
         operator.refresh_sequence()
-        input_events.append(operator.input("a.encoder.9", "scalar", 1))
+        input_events.append(operator.input("a.encoder.9", "scalar", 1, cas="global"))
         barrier = threading.Barrier(2)
         stale = [1]
 
@@ -252,7 +252,7 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
                 for value in range(2, 14):
                     for attempt in range(30):
                         try:
-                            input_events.append(operator.input("a.encoder.9", "scalar", value))
+                            input_events.append(operator.input("a.encoder.9", "scalar", value, cas="global"))
                             break
                         except SurfaceError as error:
                             if error.code != "stale_sequence":
@@ -808,6 +808,166 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
             described = subprocess.run([str(copy_binary(directory)), "--simulation-configuration", str(path), "--describe"],
                 capture_output=True, text=True, cwd=directory)
             self.assertEqual(described.returncode, 0, described.stderr)
+
+
+class Contract13HTTPTests(unittest.TestCase):
+    def test_independent_input_cas_writer_attribution_and_expiry_conflict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            simulator = RunningSimulator(directory, "contract13")
+            try:
+                operator = Client(simulator.ready["url"], TOKEN, "contract13")
+                discovery = operator.discover()
+                self.assertIn("input.independent_sequence", discovery["profile"]["capabilities"])
+                self.assertIn("events.writer_id", discovery["profile"]["capabilities"])
+                self.assertEqual(discovery["latest_input_sequence"], "0")
+                for value in range(3):
+                    self.assertFalse(simulator.request("surface_control_feedback", {"expected": discovery["expected"],
+                        "control_id": "a.encoder.10", "kind": "value", "value": value})["isError"])
+                event = operator.input("a.encoder.9", "scalar", 50)
+                self.assertEqual((event["sequence"], event["input_sequence"]), ("4", "1"))
+                legacy = {"expected": discovery["expected"], "expected_sequence": "0", "control_id": "a.encoder.9", "encoding": "scalar", "value": 60}
+                self.assertEqual(simulator.request("surface_control_input", legacy)["structuredContent"]["code"], "stale_sequence")
+                held = operator.input("a.touch.1", "boolean", True, hold_s=0.05)
+                stale = {"expected": discovery["expected"], "expected_input_sequence": held["input_sequence"],
+                    "control_id": "a.encoder.9", "encoding": "scalar", "value": 60}
+                time.sleep(0.08)
+                self.assertEqual(simulator.request("surface_control_input", stale)["structuredContent"]["code"], "stale_input_sequence")
+                current = operator.refresh_input_sequence()
+                self.assertEqual(current, "3")
+                self.assertEqual(operator.input("a.encoder.9", "scalar", 60)["input_sequence"], "4")
+                page = simulator.request("surface_control_events", {"instance_id": "contract13", "epoch": discovery["expected"]["epoch"],
+                    "after_sequence": "0", "limit": 100})["structuredContent"]
+                self.assertEqual([row["sequence"] for row in page["events"]], [str(value) for value in range(1, 8)])
+                self.assertEqual([row["input_sequence"] for row in page["events"]], ["0", "0", "0", "1", "2", "3", "4"])
+                remote = event["writer_id"]
+                self.assertTrue(all(row["writer_id"] == remote for row in page["events"] if row.get("reason") != "hold_expired"))
+                expiry = next(row for row in page["events"] if row.get("reason") == "hold_expired")
+                self.assertNotEqual(expiry["writer_id"], remote)
+                # IDs are host-owned, not accepted as a client-supplied request field.
+                forged_writes = [("surface_control_input", {**simulator.input(100), "writer_id": remote}),
+                    ("surface_control_input", {**simulator.input(100), "expected_input_sequence": "4"}),
+                    ("surface_control_feedback", {"expected": discovery["expected"], "control_id": "a.encoder.10", "kind": "value", "value": 10, "writer_id": remote}),
+                    ("surface_control_renew", {"expected": discovery["expected"], "control_id": "a.touch.1", "hold_s": 1, "writer_id": remote}),
+                    ("surface_control_reset", {"expected": discovery["expected"], "expected_sequence": "7", "writer_id": remote})]
+                for name, forged in forged_writes:
+                    before = simulator.snapshot()
+                    self.assertEqual(simulator.request(name, forged)["structuredContent"]["code"], "invalid_argument")
+                    self.assertEqual(simulator.snapshot()["latest_sequence"], before["latest_sequence"])
+            finally:
+                simulator.close()
+
+    def test_principal_file_stability_credential_rotation_and_describe_without_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            record = directory / "principals.json"
+            described = subprocess.run([str(copy_binary(directory)), "--describe", "--surface-principal-file", str(record)],
+                cwd=directory, capture_output=True, text=True)
+            self.assertEqual(described.returncode, 0, described.stderr)
+            self.assertFalse(record.exists())
+            code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(record)], stdin="bad\n")
+            self.assertNotEqual(code, 0)
+            self.assertFalse(record.exists())
+            remote_ids, epochs = [], []
+            for index in range(2):
+                token = directory / ("token-%d" % index)
+                token.write_text(secrets.token_hex(32))
+                token.chmod(0o600)
+                running = RunningSimulator(directory, "persistent", extra=("--surface-principal-file", str(record)), token_file=token)
+                try:
+                    client = Client(running.ready["url"], token.read_text(), "persistent")
+                    d = client.discover(); epochs.append(d["expected"]["epoch"])
+                    first = client.input("a.encoder.1", "scalar", 127)
+                    other = Client(running.ready["url"], token.read_text(), "persistent")
+                    other.discover()
+                    second = other.input("a.encoder.1", "scalar", 0)
+                    self.assertEqual(first["writer_id"], second["writer_id"])
+                    remote_ids.append(first["writer_id"])
+                    self.assertNotIn(token.read_text(), record.read_text())
+                finally:
+                    running.close()
+            self.assertEqual(remote_ids[0], remote_ids[1])
+            self.assertNotEqual(epochs[0], epochs[1])
+            self.assertEqual(record.stat().st_mode & 0o777, 0o600)
+            value = json.loads(record.read_text())
+            self.assertEqual(set(value), {"schema_version", "remote_writer_id", "interface_writer_id", "system_writer_id"})
+            self.assertEqual(value["remote_writer_id"], remote_ids[0])
+            self.assertEqual(len({value[key] for key in value if key != "schema_version"}), 3)
+            # No principal path remains memory-only, including across restarts.
+            ids = []
+            for index in range(2):
+                running = RunningSimulator(directory, "ephemeral")
+                try:
+                    ids.append(running.request("surface_control_input", running.input())["structuredContent"]["writer_id"])
+                finally:
+                    running.close()
+            self.assertNotEqual(ids[0], ids[1])
+
+    def test_principal_file_rejects_unsafe_modes_symlinks_and_invalid_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            valid = {"schema_version": 1, "remote_writer_id": "a" * 32, "interface_writer_id": "b" * 32, "system_writer_id": "c" * 32}
+            record = directory / "principal.json"
+            variants = [{**valid, "unknown": 1}, {**valid, "schema_version": 2},
+                {**valid, "remote_writer_id": "c" * 32}, {**valid, "remote_writer_id": "bad"},
+                {key: value for key, value in valid.items() if key != "interface_writer_id"}]
+            for value in variants:
+                record.write_text(json.dumps(value));record.chmod(0o600)
+                code, stdout, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(record)])
+                self.assertNotEqual(code, 0);self.assertEqual(stdout, "")
+            duplicate = json.dumps(valid)[:-1] + ', "remote_writer_id": "' + "a" * 32 + '"}'
+            record.write_text(duplicate);record.chmod(0o600)
+            code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(record)])
+            self.assertNotEqual(code, 0)
+            record.write_text(json.dumps(valid));record.chmod(0o644)
+            code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(record)])
+            self.assertNotEqual(code, 0)
+            record.chmod(0o600)
+            link = directory / "symlink";link.symlink_to(record)
+            code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(link)])
+            self.assertNotEqual(code, 0)
+            fifo = directory / "fifo";os.mkfifo(fifo, 0o600)
+            code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(fifo)])
+            self.assertNotEqual(code, 0)
+            self.assertEqual(json.loads(record.read_text()), valid)
+
+    def test_independent_budgets_keep_input_rest_renew_and_expiry_available(self):
+        with tempfile.TemporaryDirectory() as directory:
+            running = RunningSimulator(directory, "limits", extra=("--write-limits", "input=4,feedback=1,renew=1,admin=1"))
+            try:
+                discovery = running.discover();expected = discovery["expected"]
+                self.assertIn("writes.independent_limits", discovery["profile"]["capabilities"])
+                self.assertEqual(discovery["write_limits"], {"window_s": 1, "input_per_window": 4,
+                    "feedback_per_window": 1, "renew_per_window": 1, "admin_per_window": 1})
+                self.assertEqual(expected["mapping_revision"], "2fc51394e3593d7c")
+                feedback = {"expected": expected, "control_id": "a.encoder.10", "kind": "value", "value": 1}
+                self.assertFalse(running.request("surface_control_feedback", feedback)["isError"])
+                self.assertEqual(running.request("surface_control_feedback", feedback)["structuredContent"]["code"], "rate_limited")
+                held = running.input(True, "a.touch.1", "boolean");held["hold_s"] = 0.2
+                self.assertFalse(running.request("surface_control_input", held)["isError"])
+                renew = {"expected": expected, "control_id": "a.touch.1", "hold_s": 0.2}
+                self.assertFalse(running.request("surface_control_renew", renew)["isError"])
+                before = running.snapshot()
+                self.assertEqual(running.request("surface_control_renew", renew)["structuredContent"]["code"], "rate_limited")
+                self.assertEqual(running.snapshot()["holds"], before["holds"])
+                # Renew exhaustion cannot block an explicit rest (input category).
+                self.assertFalse(running.request("surface_control_input", running.input(False, "a.touch.1", "boolean"))["isError"])
+                # Exhaust input while another hold is active; system expiry bypasses every budget.
+                held = running.input(True, "a.touch.1", "boolean");held["hold_s"] = 0.05
+                self.assertFalse(running.request("surface_control_input", held)["isError"])
+                self.assertFalse(running.request("surface_control_input", running.input(100))["isError"])
+                self.assertEqual(running.request("surface_control_input", running.input(101))["structuredContent"]["code"], "rate_limited")
+                time.sleep(0.08)
+                after = running.snapshot()
+                self.assertFalse(after.get("holds"));self.assertFalse(after["inputs"]["a.touch.1"])
+                self.assertEqual(after["latest_input_sequence"], "5")
+            finally:
+                running.close()
+            invalid = ["input=1,feedback=1,renew=1", "input=1,feedback=1,renew=1,admin=0", "input=1,feedback=1,renew=1,admin=1,input=2", "input=1,feedback=1,renew=1,unknown=1"]
+            for value in invalid:
+                code, _, _ = start_failure(directory, ["--describe", "--write-limits", value])
+                self.assertNotEqual(code, 0)
+            code, _, _ = start_failure(directory, ["--describe", "--write-limit", "60", "--write-limits", "input=1,feedback=1,renew=1,admin=1"])
+            self.assertNotEqual(code, 0)
 
 
 if __name__ == "__main__":

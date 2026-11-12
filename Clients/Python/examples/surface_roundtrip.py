@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Minimal generic simulation consumer using only a pinned public delivery.
 
-The SDK is imported only from the delivery's `surface-control-sdk-1.2.0.zip`, after the manifest
+The SDK is imported only from the delivery's `surface-control-sdk-1.3.0.zip`, after the manifest
 pin and every listed file hash are verified. No host or shared source tree is read, and no
 Pipe or business workflow is involved. Writes are explicit and never retried.
 """
@@ -14,8 +14,8 @@ import os
 import sys
 from pathlib import Path
 
-SDK_VERSION = "1.2.0"
-SUPPORTED_CONTRACTS = ("1.0", "1.1", "1.2")
+SDK_VERSION = "1.3.0"
+SUPPORTED_CONTRACTS = ("1.0", "1.1", "1.2", "1.3")
 
 
 def require(condition, message):

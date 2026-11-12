@@ -11,13 +11,16 @@ public struct CompactSurfaceSimulator: Sendable {
     public private(set) var mock: MockXTouchCompact
     public private(set) var controls: SurfaceControlSession
     private let configuration: SurfaceConfiguration
+    private let remoteWriterID: String
+    private let systemWriterID: String
+    private let writeLimits: ControlWriteLimits?
     /// Fader display overlays that no longer drive a motor. A fader overlay is a one-shot
     /// motor intent: an accepted position input on that fader or any layer selection
     /// supersedes it until a new feedback request for the same control re-arms it.
     private var releasedMotorOverlays: Set<String> = []
 
     public static let profileID = "xtouch.compact.standard.simulation"
-    public static let profileVersion = "1.2"
+    public static let profileVersion = "1.3"
     /// Physical A/B layer keys. They are layer-independent public buttons.
     public static let layerKeyIDs: [CompactLayer: String] = [.a: "global.layer.a", .b: "global.layer.b"]
     static let layeredKinds: [(kind: String, count: Int)] = [("fader", 9), ("touch", 9), ("encoder", 16), ("push", 16), ("button", 39),
@@ -27,9 +30,9 @@ public struct CompactSurfaceSimulator: Sendable {
     /// lease that returns to released. Buttons bound to parameters toggle on press, so a lease
     /// on them would not restore anything and is deliberately not declared.
     public static let touchHold = ControlHold(restValue: .bool(false), maxHoldSeconds: 10)
-    /// Contract 1.2 registered capabilities plus the XTouch-private touch protection rule.
+    /// Contract 1.3 registered capabilities plus the XTouch-private touch protection rule.
     public static let capabilities = ["simulation", "controls.stable_ids", "controls.layered", "input.absolute", "input.button",
-                                      "input.hold", "feedback.value", "feedback.indicator", "feedback.unsequenced", "controls.input_declared", "x.xtouch.touch_protection"]
+                                      "input.hold", "feedback.value", "feedback.indicator", "feedback.unsequenced", "controls.input_declared", "x.xtouch.touch_protection", "input.independent_sequence", "events.writer_id"]
     public static var demonstrationConfiguration: SurfaceConfiguration {
         let roles = ["arm", "start", "pause", "cancel"]
         var parameters = roles.map { ParameterDefinition(id: "simulation.\($0)", name: $0) }
@@ -44,19 +47,27 @@ public struct CompactSurfaceSimulator: Sendable {
     }
 
     /// The mapping revision is derived from the profile (contract 1.1); it is never chosen by the host.
-    public init(instanceID: String, epoch: String, configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024) throws {
+    public init(instanceID: String, epoch: String, configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024,
+                remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil) throws
+    {
         self.configuration = configuration
+        self.remoteWriterID = remoteWriterID
+        self.systemWriterID = systemWriterID
+        self.writeLimits = writeLimits
         let map = try FactoryStandardMap()
         session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:])
         mock = MockXTouchCompact(map: map, lightProtocol: .manual)
         _ = try session.loadConfiguration(configuration, resetValues: true)
         try mock.receive(session.connect())
         controls = try SurfaceControlSession(instanceID: instanceID, epoch: epoch,
-                                             profile: Self.profile(configuration: configuration), eventCapacity: eventCapacity)
+                                             profile: Self.profile(configuration: configuration, writeLimits: writeLimits), eventCapacity: eventCapacity, writeLimits: writeLimits)
+        try controls.validateWriterID(remoteWriterID)
+        try controls.validateWriterID(systemWriterID)
+        guard remoteWriterID != systemWriterID else { throw ControlContractError("invalid_argument") }
         try controls.seedInputs(mockInputs(), at: 0)
     }
 
-    public static func profile(configuration: SurfaceConfiguration) -> ControlProfile {
+    public static func profile(configuration: SurfaceConfiguration, writeLimits: ControlWriteLimits? = nil) -> ControlProfile {
         var descriptors: [ControlDescriptor] = []
         for layer in CompactLayer.allCases {
             for (kind, count) in layeredKinds {
@@ -82,7 +93,7 @@ public struct CompactSurfaceSimulator: Sendable {
             descriptors.append(.init(id: layerKeyIDs[layer]!, inputKind: .button, encoding: .boolean, acceptsInput: true))
         }
         return .init(id: profileID, version: profileVersion, controls: descriptors,
-                     capabilities: capabilities)
+                     capabilities: capabilities + (writeLimits == nil ? [] : ["writes.independent_limits"]))
     }
 
     /// Input eligibility is static mapping content. The shared session rejects `false` before
@@ -95,7 +106,7 @@ public struct CompactSurfaceSimulator: Sendable {
     }
 
     @discardableResult public mutating func input(_ input: ControlInput, at time: Double) throws -> ControlEvent {
-        _ = try controls.validateInput(input, at: time)
+        _ = try controls.validateInput(input, at: time, writerID: remoteWriterID)
         var next = self
         var disposition: ControlDisposition = .accepted
         var reason: String?
@@ -151,7 +162,7 @@ public struct CompactSurfaceSimulator: Sendable {
                 mapped = next.mappedValue(kind: kind, index: index, layer: layer)
             }
         }
-        let event = try next.controls.recordInput(input, disposition: disposition, mappedValue: mapped, reason: reason, origin: .remote, at: time)
+        let event = try next.controls.recordInput(input, disposition: disposition, mappedValue: mapped, reason: reason, origin: .remote, at: time, writerID: remoteWriterID)
         self = next
         return event
     }
@@ -193,6 +204,12 @@ public struct CompactSurfaceSimulator: Sendable {
     @discardableResult public mutating func processHoldExpiries(at time: Double) throws -> [ControlEvent] {
         let due = controls.dueHoldExpiries(at: time)
         guard !due.isEmpty else { return [] }
+        // Validate every required global/input increment and trusted system identity before
+        // touching the host engine. This copy is discarded; actual records carry mapped values.
+        var validated = controls
+        for expiry in due {
+            _ = try validated.recordHoldExpiry(controlID: expiry.controlID, at: time, writerID: systemWriterID)
+        }
         var next = self
         var events: [ControlEvent] = []
         for expiry in due {
@@ -206,7 +223,7 @@ public struct CompactSurfaceSimulator: Sendable {
             next.mock.receive(update.feedback)
             try next.applyMomentaryTouch(index: index, layer: layer, pressed: false)
             try events.append(next.controls.recordHoldExpiry(controlID: expiry.controlID,
-                                                             mappedValue: next.mappedValue(kind: kind, index: index, layer: layer), at: time))
+                                                             mappedValue: next.mappedValue(kind: kind, index: index, layer: layer), at: time, writerID: systemWriterID))
         }
         try next.reassertDisplay(at: time)
         self = next
@@ -248,7 +265,7 @@ public struct CompactSurfaceSimulator: Sendable {
     }
 
     @discardableResult public mutating func feedback(_ feedback: ControlFeedback, at time: Double) throws -> ControlEvent {
-        _ = try controls.validateFeedback(feedback, at: time)
+        _ = try controls.validateFeedback(feedback, at: time, writerID: remoteWriterID)
         var next = self
         let (layer, _, _) = try Self.address(feedback.control_id)
         let active = layer == next.session.state.layer
@@ -257,7 +274,7 @@ public struct CompactSurfaceSimulator: Sendable {
             try next.applyDisplay(feedback)
         }
         let event = try next.controls.recordFeedback(feedback, disposition: active ? .accepted : .ignored,
-                                                     reason: active ? nil : "inactive_layer", origin: .remote, at: time)
+                                                     reason: active ? nil : "inactive_layer", origin: .remote, at: time, writerID: remoteWriterID)
         self = next
         return event
     }
@@ -283,7 +300,8 @@ public struct CompactSurfaceSimulator: Sendable {
         var nextControls = controls
         try nextControls.reset(expected: expected, expectedSequence: expectedSequence, epoch: epoch, at: time)
         var next = try Self(instanceID: expected.instance_id, epoch: epoch,
-                            configuration: configuration, eventCapacity: controls.eventCapacity)
+                            configuration: configuration, eventCapacity: controls.eventCapacity,
+                            remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits)
         try nextControls.seedInputs(next.mockInputs(), at: time)
         next.controls = nextControls
         self = next

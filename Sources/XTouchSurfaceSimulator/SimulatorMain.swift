@@ -109,6 +109,9 @@ private func removeOwnedReadyFile() {
         var configurationPath: String?
         var describe = false
         var writeLimit = SurfaceWriteBudget.writesPerSecond
+        var explicitWriteLimit = false
+        var writeLimits: ControlWriteLimits?
+        var principalPath: String?
         var allowInput = false, allowFeedback = false, allowReset = false
         while !arguments.isEmpty {
             let option = arguments.removeFirst()
@@ -117,7 +120,21 @@ private func removeOwnedReadyFile() {
                 return arguments.removeFirst()
             }
             switch option {
+            case "--surface-principal-file": principalPath = try value()
+            case "--write-limits":
+                guard writeLimits == nil else { throw StartupError.invalidArguments }
+                var limits: [String: Int] = [:]
+                for item in try value().split(separator: ",", omittingEmptySubsequences: false) {
+                    let pair = item.split(separator: "=", omittingEmptySubsequences: false)
+                    guard pair.count == 2, ["input", "feedback", "renew", "admin"].contains(String(pair[0])),
+                          limits[String(pair[0])] == nil, let limit = Int(pair[1]), (1 ... 10000).contains(limit)
+                    else { throw StartupError.invalidArguments }
+                    limits[String(pair[0])] = limit
+                }
+                guard limits.count == 4 else { throw StartupError.invalidArguments }
+                writeLimits = .init(inputPerWindow: limits["input"]!, feedbackPerWindow: limits["feedback"]!, renewPerWindow: limits["renew"]!, adminPerWindow: limits["admin"]!)
             case "--write-limit":
+                explicitWriteLimit = true
                 guard let limit = try Int(value()), (1 ... 10000).contains(limit) else { throw StartupError.invalidArguments }
                 writeLimit = limit
             case "--describe": describe = true
@@ -135,9 +152,10 @@ private func removeOwnedReadyFile() {
             default: throw StartupError.invalidArguments
             }
         }
+        guard !explicitWriteLimit || writeLimits == nil else { throw StartupError.invalidArguments }
         let configuration = try configurationPath.map { try SimulationConfiguration.decode(Data(contentsOf: URL(fileURLWithPath: $0))) } ?? CompactSurfaceSimulator.demonstrationConfiguration
         if describe {
-            let simulator = try CompactSurfaceSimulator(instanceID: "example.simulation", epoch: "discovery-only", configuration: configuration)
+            let simulator = try CompactSurfaceSimulator(instanceID: "example.simulation", epoch: "discovery-only", configuration: configuration, writeLimits: writeLimits)
             let value: JSONValue = try .object(["discovery": .encoded(simulator.controls.discovery()),
                                                 "tools": .array(SurfaceControlTools.descriptors.map { try .encoded($0) })])
             try FileHandle.standardOutput.write(JSONEncoder().encode(value) + Data("\n".utf8))
@@ -160,7 +178,9 @@ private func removeOwnedReadyFile() {
         if let readyPath, FileManager.default.fileExists(atPath: readyPath) {
             throw StartupError.readyFileExists
         }
-        var simulator = try CompactSurfaceSimulator(instanceID: instance, epoch: UUID().uuidString, configuration: configuration)
+        let principals = try SurfacePrincipals.loadOrCreate(path: principalPath)
+        var simulator = try CompactSurfaceSimulator(instanceID: instance, epoch: UUID().uuidString, configuration: configuration,
+                                                    remoteWriterID: principals.remote_writer_id, systemWriterID: principals.system_writer_id, writeLimits: writeLimits)
         let server = try LoopbackHTTPServer(port: port, token: token)
         let discovery = simulator.controls.discovery()
         let ready: JSONValue = try .object(["expected": .encoded(discovery.expected), "latest_sequence": .string(discovery.latest_sequence),
@@ -173,7 +193,8 @@ private func removeOwnedReadyFile() {
             try writeReadyFile(readyPath, readyBytes)
         }
         FileHandle.standardOutput.write(readyBytes + Data("\n".utf8))
-        var budget = SurfaceWriteBudget(limit: writeLimit)
+        var budget = writeLimits.map { SurfaceWriteBudgets(input: $0.input_per_window, feedback: $0.feedback_per_window, renew: $0.renew_per_window, admin: $0.admin_per_window) }
+            ?? SurfaceWriteBudgets(aggregateLimit: writeLimit)
         // Leases expire on this process's monotonic clock even without requests. Every request
         // processes due expiries at its own time first, so no read or write observes a pending one.
         func advanceHolds(to time: Double) {
@@ -215,8 +236,8 @@ private func removeOwnedReadyFile() {
                         let value: JSONValue
                         // Mutations run on a copy of the value-type simulator. Only a fully
                         // validated, successful operation consumes the write budget and is committed.
-                        func commit(_ candidate: CompactSurfaceSimulator) throws {
-                            guard budget.consume(at: time) else { throw ControlContractError("rate_limited") }
+                        func commit(_ candidate: CompactSurfaceSimulator, category: SurfaceWriteBudgets.Category) throws {
+                            guard budget.consume(category, at: time) else { throw ControlContractError("rate_limited") }
                             simulator = candidate
                         }
                         switch operation {
@@ -228,20 +249,20 @@ private func removeOwnedReadyFile() {
                             guard allowInput else { throw ControlContractError("permission_denied") }
                             var candidate = simulator
                             let event = try candidate.input(input, at: time)
-                            try commit(candidate)
+                            try commit(candidate, category: .input)
                             value = try .encoded(event)
                         case let .feedback(feedback):
                             guard allowFeedback else { throw ControlContractError("permission_denied") }
                             var candidate = simulator
                             let event = try candidate.feedback(feedback, at: time)
-                            try commit(candidate)
+                            try commit(candidate, category: .feedback)
                             value = try .encoded(event)
                         case let .renew(request):
                             // Silent lease renewal: input permission and write budget, no sequence or event.
                             guard allowInput else { throw ControlContractError("permission_denied") }
                             var candidate = simulator
                             let renewed = try candidate.renew(request, at: time)
-                            try commit(candidate)
+                            try commit(candidate, category: .renew)
                             value = try .encoded(renewed)
                         case let .events(instanceID, epoch, afterSequence, limit):
                             value = try .encoded(simulator.controls.events(instanceID: instanceID, epoch: epoch, afterSequence: afterSequence, limit: limit, at: time))
@@ -249,7 +270,7 @@ private func removeOwnedReadyFile() {
                             guard allowReset else { throw ControlContractError("permission_denied") }
                             var candidate = simulator
                             try candidate.reset(expected: expected, expectedSequence: expectedSequence, epoch: UUID().uuidString, at: time)
-                            try commit(candidate)
+                            try commit(candidate, category: .admin)
                             value = try .encoded(simulator.controls.discovery())
                         }
                         result = try content(value, isError: false)

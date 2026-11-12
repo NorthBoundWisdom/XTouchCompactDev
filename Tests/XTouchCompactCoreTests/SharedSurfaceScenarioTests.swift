@@ -82,6 +82,10 @@ private func scenarioFingerprint(_ simulator: CompactSurfaceSimulator, at reques
     try runSharedFixture("surface-control-software-v1.2.json", report: "surface-scenario-report-v1.2.json", steps: 83)
 }
 
+@Test func sharedContract13FixtureDrivesIndependentCASAndTrustedWriters() throws {
+    try runSharedFixture("surface-control-software-v1.3.json", report: "surface-scenario-report-v1.3.json", steps: 97)
+}
+
 private func runSharedFixture(_ fixtureName: String, report reportName: String, steps expectedSteps: Int) throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let fixture = root.appendingPathComponent("build/dependencies/SurfacePlugins/fixtures/\(fixtureName)")
@@ -97,13 +101,16 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
         // Only the v1.2 blocked-control scenario has a test-only action binding.
         // The default demonstration profile and the old fixtures remain unchanged.
         var configuration = CompactSurfaceSimulator.demonstrationConfiguration
-        if fixtureName == "surface-control-software-v1.2.json", name == "declared_read_only_control" {
+        if name == "declared_read_only_control" {
             configuration.assignments.append(.init(control: .button(39), layer: .a, action: .set("simulation.arm", 100)))
         }
         scenarioMappings[name] = .object(["mapping_revision": .string(CompactSurfaceSimulator.profile(configuration: configuration).mappingRevision),
                                           "test_only_blocked_binding": .bool(name == "declared_read_only_control")])
         var sequences = Dictionary(uniqueKeysWithValues: names.map { ($0, "0") })
         var hosts = try Dictionary(uniqueKeysWithValues: names.map { try ($0, CompactSurfaceSimulator(instanceID: "fixture.\($0)", epoch: "\(name).\($0).initial", configuration: configuration, eventCapacity: capacity)) })
+        for required in document.value(for: "required_capabilities")?.arrayValue?.compactMap(\.stringValue) ?? [] {
+            #expect(hosts.values.allSatisfy { $0.controls.profile.capabilities.contains(required) })
+        }
         var initial = hosts.mapValues { $0.controls.expected }
         var lastInput: [String: ControlInput] = [:]
         var accepted = Dictionary(uniqueKeysWithValues: names.map { ($0, 0) })
@@ -151,8 +158,9 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
                         try #require(step.value(for: "value"))
                     }
                     if operation == "input" {
-                        let request = ControlInput(expected: suppliedExpected, expectedSequence: step.value(for: "expected_sequence")?.stringValue ?? sequences[selected]!,
-                                                   controlID: control.id, encoding: step.value(for: "encoding")?.stringValue ?? control.encoding.rawValue, value: value,
+                        let inputSequence = step.value(for: "expected_input_sequence")?.stringValue
+                        let request = ControlInput(expected: suppliedExpected, expectedSequence: inputSequence == nil ? (step.value(for: "expected_sequence")?.stringValue ?? sequences[selected]!) : nil,
+                                                   expectedInputSequence: inputSequence, controlID: control.id, encoding: step.value(for: "encoding")?.stringValue ?? control.encoding.rawValue, value: value,
                                                    holdSeconds: step.value(for: "hold_s")?.finiteNumber)
                         lastInput[selected] = request
                         event = try host.input(request, at: time)
@@ -210,6 +218,26 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
             }
             if expected["instance_changed"] == .bool(true) {
                 checks.append(beforeInstance != host.controls.expected.instance_id)
+            }
+            func writerKind(_ writer: String?) -> String? {
+                switch writer {
+                case "simulation.remote": "remote"
+                case "simulation.system": "system"
+                case "simulation.interface": "interface"
+                default: nil
+                }
+            }
+            if let latest = expected["latest_input_sequence"]?.stringValue {
+                checks.append((page?.latest_input_sequence ?? snapshot.latest_input_sequence) == latest)
+            }
+            if let kind = expected["writer_kind"]?.stringValue {
+                checks.append(writerKind((event ?? expired.last)?.writer_id) == kind)
+            }
+            if let sequences = expected["event_input_sequences"]?.arrayValue {
+                checks.append(page?.events.map { $0.input_sequence.map(JSONValue.string) ?? .null } == sequences)
+            }
+            if let kinds = expected["event_writer_kinds"]?.arrayValue {
+                checks.append(page?.events.map { writerKind($0.writer_id).map(JSONValue.string) ?? .null } == kinds)
             }
             if let sequence = expected["sequence"]?.stringValue {
                 checks.append(snapshot.latest_sequence == sequence)
@@ -269,7 +297,10 @@ private func runSharedFixture(_ fixtureName: String, report reportName: String, 
             try results.append(.object(["scenario": .string(name), "step": .number(index), "operation": .string(operation),
                                         "status": .string(passed ? "pass" : "fail"), "actual_error": actualError.map(JSONValue.string) ?? .null,
                                         "disposition": event.map { .string($0.disposition.rawValue) } ?? .null, "accepted_input_count": .number(#require(accepted[selected])),
-                                        "sequence": .string(snapshot.latest_sequence), "epoch_changed": .bool(beforeEpoch != host.controls.expected.epoch),
+                                        "sequence": .string(snapshot.latest_sequence),
+                                        "input_sequence": snapshot.latest_input_sequence.map(JSONValue.string) ?? .null,
+                                        "writer_kind": writerKind((event ?? expired.last)?.writer_id).map(JSONValue.string) ?? .null,
+                                        "epoch_changed": .bool(beforeEpoch != host.controls.expected.epoch),
                                         "hold_deadline": (renewed?.hold_deadline ?? event?.hold_deadline).map(JSONValue.double) ?? .null,
                                         "expired": .array(expired.map { .string($0.control_id) })]))
             hosts[selected] = host

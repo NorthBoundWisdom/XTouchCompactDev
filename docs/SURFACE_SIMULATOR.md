@@ -36,17 +36,17 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 
 | Delivery file | Shared source |
 | --- | --- |
-| `surface-control-sdk-1.2.0.zip` (`surface_control/__init__.py`) | `clients/python/surface_control/__init__.py` |
+| `surface-control-sdk-1.3.0.zip` (`surface_control/__init__.py`) | `clients/python/surface_control/__init__.py` |
 | `control-tools.json` | `docs/surface-control-tools.json` |
 | `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
-| `surface-control-software-v1.json`, `surface-control-software-v1.1.json`, `surface-control-software-v1.2.json` | `fixtures/` |
+| `surface-control-software-v1.json`, `surface-control-software-v1.1.json`, `surface-control-software-v1.2.json`, `surface-control-software-v1.3.json` | `fixtures/` |
 | `surface-control.md`, `surface-control-scenarios.md`, `surface-control-delivery.md` | `docs/` |
 
 The shared SDK tests and the Pipe integration example (`integrations/pipe/`) are not part
 of this generic delivery. The manifest's common fields have the same names and meanings as
 the other host's (shared `docs/surface-control-delivery.md`): `schema_version`, `artifact`
-(`surface-control-simulator`), `surface_control_contract` (`"1.2"`), `surface_control_sdk`
-(`"1.2.0"`), `source`, `source_commit`, `source_dirty`, `profile_id`, `profile_version`,
+(`surface-control-simulator`), `surface_control_contract` (`"1.3"`), `surface_control_sdk`
+(`"1.3.0"`), `source`, `source_commit`, `source_dirty`, `profile_id`, `profile_version`,
 `mapping_revision`, `surface_plugins_revision`, `files_sha256` (every delivered file), and
 `surface_plugins_files_sha256` (each shared source file). Profile identity and
 `mapping_revision` are taken from the delivered binary's own `--describe` output, so they
@@ -125,11 +125,11 @@ binding even if the active layer changed. Mock/session touch safety still runs f
 Hardware parameter toggle semantics remain unchanged. Only accepted touches declare hold;
 a blocked touch declares none. Display feedback remains independent intent.
 
-## Optional control contract 1.2
+## Optional control contract 1.3
 
 `POST /mcp` accepts authenticated stateless JSON-RPC requests using MCP `2025-11-25` or `2026-07-28`. Initialization negotiates these versions; no session ID is required. Set
 `Authorization: Bearer <token>` and `Content-Type: application/json`. Browser
-Origin requests are rejected. Each complete HTTP request has one absolute three-second read budget, including partial headers and bodies. Discovery reports `contract_version: "1.2"`. The new executable exposes only these seven tools,
+Origin requests are rejected. Each complete HTTP request has one absolute three-second read budget, including partial headers and bodies. Discovery reports `contract_version: "1.3"`. The new executable exposes only these seven tools,
 alongside `initialize`, `ping`, and `tools/list`:
 
 | Tool | Operation |
@@ -146,24 +146,34 @@ The GUI's existing three tools and shared business tools retain their own
 interfaces and permissions. This optional contract does not rename or replace
 them. It is separately discoverable and requires explicit adoption by a consumer.
 
-Every mutation supplies all five `expected` identity fields. Input and reset require a
-canonical `expected_sequence` decimal string. Feedback may omit `expected_sequence`
+Every mutation supplies all five `expected` identity fields. Reset requires the canonical
+global `expected_sequence` decimal string. Input must supply exactly one canonical cursor:
+legacy `expected_sequence` compares the global journal, or `expected_input_sequence`
+compares the independent input cursor. Both missing or both present is invalid_argument.
+Independent input CAS is advertised by `input.independent_sequence`. Feedback may omit `expected_sequence`
 (`feedback.unsequenced`): it validates the identity pin, skips only the sequence comparison,
 and still records a feedback event that occupies a sequence. Supplying a feedback sequence
-keeps the contract 1.1 comparison behavior. Renew remains sequence-free and silent. Accepted and ignored events advance that
-sequence; a duplicate old request fails `stale_sequence`. An input rejected with `stale_sequence` was definitely not executed. The SDK's
+keeps the legacy global comparison behavior. Renew remains sequence-free and silent.
+Accepted and ignored inputs, plus system hold expiry, advance both cursors; display feedback
+advances only global sequence. Reset rotates epoch and clears both. Each discovery,
+snapshot and event page reports `latest_input_sequence`; each event reports its committed
+`input_sequence` highwater. The global journal stays continuous; a duplicate old request fails `stale_sequence`. An input rejected with `stale_sequence` was definitely not executed. The SDK's
 `refresh_sequence()` reads one snapshot to update its local sequence; the caller can then
 explicitly choose a new input. It never resends a write. Get a fresh snapshot
 before choosing a *new* operation. Do not retry an uncertain operation by updating
 its sequence. Failed validation leaves engine, Mock, and journal unchanged.
 Failures use the shared stable code in `structuredContent`, with `isError: true`.
-A transport failure means the operation's outcome is unknown. Malformed JSON-RPC uses
+The SDK defaults to independent input CAS when supported; `Client.input(..., cas="global")`
+explicitly preserves legacy comparison, while `cas="input"` requires the capability.
+`stale_input_sequence` also means definitely not executed. `refresh_input_sequence()` reads
+one snapshot; `refresh_sequence()` still returns global sequence. Neither advances an
+EventCursor's journal cursor or resends a mutation. A transport failure means the operation's outcome is unknown. Malformed JSON-RPC uses
 standard codes instead: `-32700` parse error (body is not JSON), `-32600` invalid
 request (not a JSON-RPC 2.0 request object, invalid `id`, or non-structured `params`),
 `-32601` unknown method, and `-32602` invalid params (`tools/call` without a tool name).
 An unknown tool name remains a tool result with the stable code `unsupported_tool`.
 
-A reset rotates epoch and sets the event cursor to zero. Input state is seeded
+A reset rotates epoch and sets global and input cursors to zero. Input state is seeded
 from the new Mock, without generating input events. Snapshot input values contain initial Mock state and last accepted raw input; they are not actual telemetry or operations that should be replayed. Consumers
 react only to subsequent `accepted` input events. Remapping, restart, and the in-process
 `selectLayer(_:epoch:)` invalidate old pins (layer keys do not); event gaps require snapshot/re-arm rather
@@ -229,15 +239,17 @@ during it. Expiry is still always processed before any later read or write, so
 through unchanged if it ever occurs. Mutations stay strictly serial: lease processing and
 request handling run on the same thread and never interleave within an operation.
 
-Capabilities use the shared 1.2 vocabulary: `simulation`, `controls.stable_ids`,
+Capabilities use the shared 1.3 vocabulary: `simulation`, `controls.stable_ids`,
 `controls.layered`, `input.absolute`, `input.button`, `input.hold`, `feedback.value`,
-`feedback.indicator`, `feedback.unsequenced`, `controls.input_declared`, plus the XTouch-private `x.xtouch.touch_protection` (motor commands
+`feedback.indicator`, `feedback.unsequenced`, `controls.input_declared`,
+`input.independent_sequence`, `events.writer_id`, plus the XTouch-private `x.xtouch.touch_protection` (motor commands
 are withheld while a fader is touched).
 
 ## XTouch profile and semantics
 
-`xtouch.compact.standard.simulation` version `1.2` declares 184 controls. Version 1.2 adds
-`accepts_input` to every descriptor, which changes the derived mapping revision. Each layer
+`xtouch.compact.standard.simulation` version `1.3` declares 184 controls. Version 1.2 added
+`accepts_input` to every descriptor, changing the derived mapping revision. Version 1.3
+adds input CAS and trusted writers without changing control mappings. Each layer
 A/B has `a.fader.1` … `a.fader.9`, `a.touch.1` … `a.touch.9`,
 `a.encoder.1` … `a.encoder.16`, `a.push.1` … `a.push.16`,
 `a.button.1` … `a.button.39`, the optional pedals `a.expression.1` and
@@ -331,12 +343,14 @@ production operator bridges that require hardware input remain ineligible.
 
 ## Verification
 
-`swift test --jobs 2` includes a runner for all three pinned shared versioned fixtures,
+`swift test --jobs 2` includes a runner for all four pinned shared versioned fixtures,
 using real Mock/session values and an injected clock. It emits
 `build/surface-scenario-report.json` (v1, 40 steps),
 `build/surface-scenario-report-v1.1.json` (v1.1, 65 steps, including lease scenarios), and
 `build/surface-scenario-report-v1.2.json` (v1.2, 83 steps, including unsequenced feedback,
-explicit input sequence refresh, current event-page holds, and declared input refusal) with exact source/fixture hashes, mapping revision, role mapping
+explicit sequence refresh, current event-page holds, and declared input refusal), plus
+`build/surface-scenario-report-v1.3.json` (v1.3, 97 steps, including independent input CAS
+and trusted writer attribution) with exact source/fixture hashes, mapping revision, role mapping
 (`hold_input` is `a.touch.1`), and per-step results. The `advance` operation calls
 the same `processHoldExpiries` the executable's scheduler uses. These deterministic
 reports are separate from real HTTP/process evidence.
@@ -347,12 +361,12 @@ both public MCP versions, discard a write response, reject stale CAS, restart a
 default instance at the same port, and isolate A/B processes. They also cover layer
 keys and pedals, JSON-RPC error codes, write-budget ordering, instance-ID and token
 rules, private token files, ready-file ownership and cleanup on SIGTERM/SIGINT,
-`minimal_consumer.py --exercise`, the stdin-pipe requirement, the shared SDK 1.2 round trip
+`minimal_consumer.py --exercise`, the stdin-pipe requirement, the shared SDK 1.3 round trip
 over both MCP versions, mapping-revision pinning, `surface_control_renew` (silent,
 permissioned, budgeted), real-clock lease expiry with no request in flight, and the
 500 ms expiry bound while a slow drip holds the reader for its whole read budget. They import
 the SDK from `build/dependencies/SurfacePlugins/clients/python` without writing bytecode.
-The 1.2 tests also run two real HTTP writers concurrently: all unsequenced feedback is
+The retained legacy global-CAS tests also run two real HTTP writers concurrently: all unsequenced feedback is
 accepted, and a stale input is proven unexecuted before an explicit SDK refresh and new input.
 No test here starts a production Pipe service or connects physical hardware.
 
@@ -374,7 +388,7 @@ startup; select `global.layer.a` before using these layer-A roles after a layer 
 | steer feedback | `a.encoder.11` | true | absolute / scalar 0…127 | value | none |
 | stopped feedback | `a.button.4` | true | button / boolean | indicator | none |
 
-The default profile is `xtouch.compact.standard.simulation` version `1.2`, with
+The default profile is `xtouch.compact.standard.simulation` version `1.3`, with
 `mapping_revision: 2fc51394e3593d7c`. Discover the running instance and pin its actual identity;
 copying a profile pin from documentation never authorizes an instance.
 
@@ -394,14 +408,15 @@ python3 -B Tests/SimulatorIntegration/check_pipe_chassis_roles.py \
 It passes the binary's actual `--describe` discovery to Pipe's unmodified
 `resolve_chassis_roles`, importing Pipe with bytecode disabled, and updates only the example's
 profile version and mapping pin in memory. A missing Pipe checkout is reported as skipped.
-The existing contract-1.1 binary and example assemble successfully. The Pipe consumer checked
-for this delivery accepts only contract 1.1 and its registered vocabulary lacks
+Historical N-round evidence: the contract-1.1 binary and example assembled successfully.
+The Pipe consumer checked in that round accepted only contract 1.1 and its registered vocabulary lacks
 `feedback.unsequenced` and `controls.input_declared`. Its original example therefore refuses
 1.2 with `unsupported_contract`; explicitly adding 1.2 to the in-memory config is refused
 by its version allowlist. Pipe needs its contract allowlist, capability vocabulary, and reviewed
-example profile version/mapping pin updated before this 1.2 delivery can assemble there. The
+example profile version/mapping pin updated before newer deliveries can assemble there. The
 probe reports that refusal separately from the supplier's descriptor checks; it does not patch
-the consumer or claim an accepted 1.2 assembly.
+the consumer or claim an accepted 1.2/1.3 assembly. Contract 1.3 consumer adoption
+is a separate consumer-side task; supplier tests do not establish that compatibility.
 
 
 ## Full-chain simulation startup
@@ -437,3 +452,38 @@ for that trial. It is distinct from the neutral chassis configuration above.
 Stop with SIGTERM or SIGINT and wait for process exit; the process removes its own ready
 file. Delete only the token and directory created for this run after consumers stop. This
 simulator creates no persistent service, containers, volumes or user profile state.
+
+
+## Trusted writers and optional independent budgets (contract 1.3)
+
+`events.writer_id` attributes every event to a trusted host-issued opaque principal.
+The single authenticated bearer credential maps to one remote principal shared by every
+client and connection using that credential. This does not distinguish individual clients.
+Host interface and system principals are separate; automatic hold expiry uses system,
+never the last caller's remote identity. Requests cannot supply writer IDs. Principal IDs
+are random and do not contain credentials or public credential fingerprints.
+
+By default principals live only in memory for this process. Explicit
+`--surface-principal-file /path/to/private/principals.json` loads or creates a private host
+record with three distinct 128-bit random IDs. Existing files must be owned by the current
+user, regular, non-symlink, exactly 0600, and have the supported strict schema. New files
+are staged and atomically linked create-only; competing files are never overwritten.
+The operator controls record lifetime and may preserve it across restart or explicit
+credential rotation. Instance/epoch still rotate normally. `--describe` never loads or
+creates this file, even when the option is present. No path means no file write. Private
+records are not included in the delivery or public manifest.
+
+The default aggregate `--write-limit N` semantics remain unchanged. Opt into four isolated
+per-instance budgets with:
+
+```sh
+--write-limits input=60,feedback=20,renew=60,admin=5
+```
+
+All four categories are required, accept 1..10000, and cannot be duplicated or combined
+with explicit `--write-limit`. The new mode alone declares `writes.independent_limits` and
+discovery's `write_limits` (window_s=1 plus each per-window limit). All clients share each
+category; unused quota is not borrowed. Failed validation and rate-limited requests do not
+commit counters or simulator state. Clock rollback does not grant free quota. Input rest
+and stop remain in the input category even when renew is exhausted. System expiry uses
+no external budget. Legacy GUI tools keep their existing budgets and schemas.
