@@ -100,6 +100,29 @@ Add `--exercise` to send one explicit ordinary input and a separate link display
 update. The example discovers mapping IDs and uses the documented tools; it does
 not import host source. It never retries a mutation after an unknown response.
 
+## Optional simulation configuration
+
+`--simulation-configuration <file>` strictly loads a SurfaceConfiguration JSON for this
+isolated process. It never reads or writes a saved user profile. Both v1 and v2 are supported;
+v1 must omit `externallyProtected`, while v2 may explicitly set it to false. Unknown fields,
+duplicate assignments, nonexistent controls, action bindings, read-only and protected
+parameters are refused before readiness. The default profile and mapping revision
+`2fc51394e3593d7c` stay unchanged when this option is omitted.
+
+The delivery includes `examples/chassis.json` and `examples/CHASSIS.md`: seven neutral
+parameters for enable, two axes, stop, and three displays, all mapped to public controls.
+Inspect it without credentials or opening a listener:
+
+```sh
+./XTouchSurfaceSimulator --simulation-configuration examples/chassis.json --describe
+```
+
+A parameter-bound touch is momentary in this standalone simulator: press writes maximum,
+release or lease expiry writes minimum. Expiry restores its original layer's parameter
+binding even if the active layer changed. Mock/session touch safety still runs first.
+Hardware parameter toggle semantics remain unchanged. Only accepted touches declare hold;
+a blocked touch declares none. Display feedback remains independent intent.
+
 ## Optional control contract 1.2
 
 `POST /mcp` accepts authenticated stateless JSON-RPC requests using MCP `2025-11-25` or `2026-07-28`. Initialization negotiates these versions; no session ID is required. Set
@@ -159,7 +182,7 @@ normalized by the shared session (`80` and `80.0` are the same value), and
 
 ### Leases (`input.hold`)
 
-The fader touch controls `a.touch.1` … `a.touch.9` and `b.touch.1` … `b.touch.9` declare
+The input-eligible fader touch controls `a.touch.1` … `a.touch.9` and `b.touch.1` … `b.touch.9` declare
 `hold: {rest_value: false, max_hold_s: 10}`. A touch is the simulated hand on a motor
 fader: while touched, fader feedback is withheld. A lease ensures that a lost client cannot
 leave a fader touched indefinitely. Other controls declare no lease, and `hold_s` on them

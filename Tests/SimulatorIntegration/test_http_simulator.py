@@ -700,5 +700,75 @@ class SurfaceSimulatorStartupTests(unittest.TestCase):
             running.close()
 
 
+class SimulationConfigurationHTTPTests(unittest.TestCase):
+    def test_example_describe_and_momentary_expiry(self):
+        example = ROOT / "examples/surface_simulator/chassis.json"
+        with tempfile.TemporaryDirectory() as directory:
+            described = subprocess.run([str(copy_binary(directory)), "--simulation-configuration", str(example), "--describe"],
+                capture_output=True, text=True, cwd=directory, check=True)
+            discovery = json.loads(described.stdout)["discovery"]
+            mappings = {row["mapping"]["id"]: row for row in discovery["profile"]["controls"] if row.get("mapping")}
+            self.assertEqual(set(mappings), {"simulation." + role for role in
+                ("enable", "linear", "steer", "stop", "speed_feedback", "steer_feedback", "stopped_feedback")})
+            self.assertTrue(all(row["accepts_input"] for row in mappings.values()))
+            self.assertEqual(mappings["simulation.enable"]["hold"], {"rest_value": False, "max_hold_s": 10})
+            simulator = RunningSimulator(directory, "configured", extra=("--simulation-configuration", str(example)))
+            try:
+                request = simulator.input(True, "a.touch.1", "boolean")
+                request["hold_s"] = 0.05
+                pressed = simulator.request("surface_control_input", request)["structuredContent"]
+                self.assertEqual(pressed["mapped_value"], 1)
+                deadline = time.monotonic() + 1
+                while simulator.snapshot().get("holds") and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                page = simulator.request("surface_control_events", {"instance_id": "configured",
+                    "epoch": discovery["expected"]["epoch"], "after_sequence": "0", "limit": 100})
+                # Describe has a discovery-only epoch; the running process must reject that pin.
+                self.assertEqual(page["structuredContent"]["code"], "stale_epoch")
+                running = simulator.discover()
+                page = simulator.request("surface_control_events", {"instance_id": "configured",
+                    "epoch": running["expected"]["epoch"], "after_sequence": "0", "limit": 100})["structuredContent"]
+                self.assertEqual([(event["kind"], event["mapped_value"]) for event in page["events"]],
+                    [("input", 1), ("input", 0)])
+                self.assertEqual(page["events"][-1]["reason"], "hold_expired")
+            finally:
+                simulator.close()
+
+    def test_strict_configuration_rejects_invalid_fields_bindings_and_permissions(self):
+        original = json.loads((ROOT / "examples/surface_simulator/chassis.json").read_text())
+        variants = []
+        def variant(change):
+            value = json.loads(json.dumps(original))
+            change(value)
+            variants.append(value)
+        variant(lambda value: value.update(unknown=True))
+        variant(lambda value: value["parameters"][0].update(unknown=True))
+        variant(lambda value: value["assignments"][0].update(unknown=True))
+        variant(lambda value: value["assignments"].append(value["assignments"][0]))
+        variant(lambda value: value["assignments"][0].update(control={"faderTouch": {"_0": 10}}))
+        variant(lambda value: value["assignments"][0].update(action={"set": {"_0": "simulation.enable", "_1": 1}}))
+        variant(lambda value: value["parameters"][0].update(agentWritable=False))
+        variant(lambda value: value["parameters"][0].update(externallyProtected=True))
+        variant(lambda value: value.update(version=2) or value["parameters"][0].update(externallyProtected=True))
+        variant(lambda value: value["assignments"][0].update(control={"faderTouch": {"_0": 1, "unknown": 0}}))
+        with tempfile.TemporaryDirectory() as directory:
+            for value in variants:
+                path = Path(directory) / "invalid.json"
+                path.write_text(json.dumps(value))
+                with self.subTest(configuration=value):
+                    code, stdout, stderr = start_failure(directory, ["--simulation-configuration", str(path), "--describe"])
+                    self.assertNotEqual(code, 0)
+                    self.assertEqual(stdout, "")
+                    self.assertIn("failed", stderr)
+            # v2 unprotected is explicitly supported, while v1 with this new field is refused.
+            valid = json.loads(json.dumps(original))
+            valid["version"] = 2
+            valid["parameters"][0]["externallyProtected"] = False
+            path.write_text(json.dumps(valid))
+            described = subprocess.run([str(copy_binary(directory)), "--simulation-configuration", str(path), "--describe"],
+                capture_output=True, text=True, cwd=directory)
+            self.assertEqual(described.returncode, 0, described.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -73,7 +73,7 @@ public struct CompactSurfaceSimulator: Sendable {
                     descriptors.append(.init(id: "\(layer.rawValue).\(kind).\(index)", inputKind: absolute ? .absolute : .button,
                                              encoding: absolute ? .scalar : .boolean,
                                              range: absolute ? .init(minimum: 0, maximum: 127, step: 1) : nil,
-                                             feedbackKinds: feedback, mapping: mapping, hold: kind == "touch" ? touchHold : nil,
+                                             feedbackKinds: feedback, mapping: mapping, hold: kind == "touch" && acceptsInput(assignment, configuration: configuration) ? touchHold : nil,
                                              acceptsInput: acceptsInput(assignment, configuration: configuration)))
                 }
             }
@@ -140,6 +140,9 @@ public struct CompactSurfaceSimulator: Sendable {
                 // New action bindings require an explicit host composition, not a bypass.
                 guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
                 next.mock.receive(update.feedback)
+                if kind == "touch" {
+                    try next.applyMomentaryTouch(index: index, layer: layer, pressed: input.value == .bool(true))
+                }
                 // The hand-placed fader supersedes its own display overlay; it is never pulled back.
                 if kind == "fader" {
                     next.releasedMotorOverlays.insert(input.control_id)
@@ -151,6 +154,17 @@ public struct CompactSurfaceSimulator: Sendable {
         let event = try next.controls.recordInput(input, disposition: disposition, mappedValue: mapped, reason: reason, origin: .remote, at: time)
         self = next
         return event
+    }
+
+    /// Standalone simulation only: a parameter-bound touch is momentary, unlike hardware
+    /// parameter buttons, which retain their existing toggle semantics. Use the original
+    /// layer on expiry; the active layer may have changed since the lease was acquired.
+    private mutating func applyMomentaryTouch(index: Int, layer: CompactLayer, pressed: Bool) throws {
+        try validateExternalWrite(kind: "touch", index: index, layer: layer)
+        guard case let .parameter(id) = session.parameters.assignment(.faderTouch(index), layer: layer),
+              let definition = session.parameters.definition(id) else { return }
+        let feedback = try session.setParameter(id, value: pressed ? definition.maximum : definition.minimum, fromAgent: true)
+        mock.receive(feedback)
     }
 
     private func mappedValue(kind: String, index: Int, layer: CompactLayer) -> JSONValue? {
@@ -190,6 +204,7 @@ public struct CompactSurfaceSimulator: Sendable {
             let update = try next.session.receive(messages)
             guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
             next.mock.receive(update.feedback)
+            try next.applyMomentaryTouch(index: index, layer: layer, pressed: false)
             try events.append(next.controls.recordHoldExpiry(controlID: expiry.controlID,
                                                              mappedValue: next.mappedValue(kind: kind, index: index, layer: layer), at: time))
         }

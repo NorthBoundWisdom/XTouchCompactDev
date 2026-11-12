@@ -433,3 +433,61 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     let defaultProfile = CompactSurfaceSimulator.profile(configuration: CompactSurfaceSimulator.demonstrationConfiguration)
     #expect(defaultProfile.controls.allSatisfy { $0.accepts_input == true })
 }
+
+@Test func defaultSimulationMappingRemainsPinned() throws {
+    let simulator = try CompactSurfaceSimulator(instanceID: "pin", epoch: "test")
+    #expect(simulator.controls.expected.mapping_revision == "2fc51394e3593d7c")
+}
+
+@Test func parameterBoundTouchIsMomentaryAcrossReleaseExpiryAndLayers() throws {
+    let configuration = SurfaceConfiguration(parameters: [ParameterDefinition(id: "a", name: "a"), ParameterDefinition(id: "b", name: "b")],
+                                             assignments: [.init(control: .faderTouch(1), layer: .a, action: .parameter("a")),
+                                                           .init(control: .faderTouch(1), layer: .b, action: .parameter("b"))])
+    var simulator = try CompactSurfaceSimulator(instanceID: "touch", epoch: "test", configuration: configuration)
+    let press = try simulator.input(input(simulator, "a.touch.1", .bool(true), encoding: "boolean", hold: 1), at: 0)
+    #expect(press.mapped_value?.finiteNumber == 127)
+    #expect(simulator.mock.touchedFaders == [1])
+    let release = try simulator.input(input(simulator, "a.touch.1", .bool(false), encoding: "boolean"), at: 0.1)
+    #expect(release.mapped_value?.finiteNumber == 0)
+    #expect(simulator.mock.touchedFaders.isEmpty)
+    _ = try simulator.input(input(simulator, "a.touch.1", .bool(true), encoding: "boolean", hold: 1), at: 0.2)
+    _ = try simulator.input(input(simulator, "global.layer.b", .bool(true), encoding: "boolean"), at: 0.3)
+    // New-layer binding must not be written when the original layer's hold expires.
+    _ = try simulator.input(input(simulator, "b.touch.1", .bool(true), encoding: "boolean"), at: 0.4)
+    #expect(simulator.session.parameters.values["a"] == 127 && simulator.session.parameters.values["b"] == 127)
+    let expired = try simulator.processHoldExpiries(at: 1.3)
+    #expect(expired.count == 1 && expired[0].control_id == "a.touch.1")
+    #expect(expired[0].mapped_value?.finiteNumber == 0)
+    #expect(simulator.session.parameters.values["a"] == 0 && simulator.session.parameters.values["b"] == 127)
+    #expect(simulator.mock.touchedFaders.isEmpty)
+    try simulator.reset(epoch: "reset", at: 2)
+    #expect(simulator.controls.profile.controls.first { $0.id == "a.touch.1" }?.mapping?.id == "a")
+    #expect(simulator.session.parameters.values["a"] == 0)
+}
+
+@Test func deniedTouchHasNoHold() throws {
+    var configuration = SurfaceConfiguration(parameters: [ParameterDefinition(id: "p", name: "p", externallyProtected: true)],
+                                             assignments: [.init(control: .faderTouch(1), layer: .a, action: .parameter("p"))], version: 2)
+    for action in [ParameterAction.parameter("p"), .set("p", 1)] {
+        configuration.assignments[0].action = action
+        let simulator = try CompactSurfaceSimulator(instanceID: "blocked", epoch: "test", configuration: configuration)
+        let descriptor = try #require(simulator.controls.profile.controls.first { $0.id == "a.touch.1" })
+        #expect(descriptor.accepts_input == false && descriptor.hold == nil)
+    }
+}
+
+@Test func strictSimulationFieldsMatchCodableKeys() throws {
+    func keys(_ value: some Encodable) throws -> Set<String> {
+        try Set(#require(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? [String: Any]).keys)
+    }
+    let parameter = ParameterDefinition(id: "p", name: "p", externallyProtected: false, color: .blue)
+    let assignment = ControlAssignment(control: .faderTouch(1), layer: .a, action: .parameter("p"))
+    let link = ParameterLink(id: "link", name: "Link", leader: "p", members: ["q"])
+    let scene = ParameterScene(id: "scene", name: "Scene", values: ["p": 0])
+    #expect(try keys(parameter) == SimulationConfiguration.parameterKeys)
+    #expect(try keys(assignment) == SimulationConfiguration.assignmentKeys)
+    #expect(try keys(link) == SimulationConfiguration.linkKeys)
+    #expect(try keys(scene) == SimulationConfiguration.sceneKeys)
+    let configuration = SurfaceConfiguration(parameters: [parameter], assignments: [assignment], version: 2, links: [link], scenes: [scene])
+    #expect(try keys(configuration) == SimulationConfiguration.rootKeys)
+}

@@ -1,0 +1,183 @@
+{
+  "version": 1,
+  "device": "X-TOUCH COMPACT",
+  "parameters": [
+    {
+      "id": "simulation.enable",
+      "name": "enable",
+      "group": "Simulation",
+      "unit": "",
+      "minimum": 0,
+      "maximum": 1,
+      "defaultValue": 0,
+      "step": 1,
+      "isSwitch": true,
+      "agentWritable": true
+    },
+    {
+      "id": "simulation.linear",
+      "name": "linear",
+      "group": "Simulation",
+      "unit": "",
+      "minimum": 0,
+      "maximum": 127,
+      "defaultValue": 0,
+      "step": 1,
+      "isSwitch": false,
+      "agentWritable": true
+    },
+    {
+      "id": "simulation.steer",
+      "name": "steer",
+      "group": "Simulation",
+      "unit": "",
+      "minimum": 0,
+      "maximum": 127,
+      "defaultValue": 0,
+      "step": 1,
+      "isSwitch": false,
+      "agentWritable": true
+    },
+    {
+      "id": "simulation.stop",
+      "name": "stop",
+      "group": "Simulation",
+      "unit": "",
+      "minimum": 0,
+      "maximum": 1,
+      "defaultValue": 0,
+      "step": 1,
+      "isSwitch": true,
+      "agentWritable": true
+    },
+    {
+      "id": "simulation.speed_feedback",
+      "name": "speed_feedback",
+      "group": "Simulation",
+      "unit": "",
+      "minimum": 0,
+      "maximum": 127,
+      "defaultValue": 0,
+      "step": 1,
+      "isSwitch": false,
+      "agentWritable": true
+    },
+    {
+      "id": "simulation.steer_feedback",
+      "name": "steer_feedback",
+      "group": "Simulation",
+      "unit": "",
+      "minimum": 0,
+      "maximum": 127,
+      "defaultValue": 0,
+      "step": 1,
+      "isSwitch": false,
+      "agentWritable": true
+    },
+    {
+      "id": "simulation.stopped_feedback",
+      "name": "stopped_feedback",
+      "group": "Simulation",
+      "unit": "",
+      "minimum": 0,
+      "maximum": 1,
+      "defaultValue": 0,
+      "step": 1,
+      "isSwitch": true,
+      "agentWritable": true
+    }
+  ],
+  "assignments": [
+    {
+      "control": {
+        "faderTouch": {
+          "_0": 1
+        }
+      },
+      "layer": "a",
+      "action": {
+        "parameter": {
+          "_0": "simulation.enable"
+        }
+      }
+    },
+    {
+      "control": {
+        "fader": {
+          "_0": 1
+        }
+      },
+      "layer": "a",
+      "action": {
+        "parameter": {
+          "_0": "simulation.linear"
+        }
+      }
+    },
+    {
+      "control": {
+        "encoder": {
+          "_0": 9
+        }
+      },
+      "layer": "a",
+      "action": {
+        "parameter": {
+          "_0": "simulation.steer"
+        }
+      }
+    },
+    {
+      "control": {
+        "button": {
+          "_0": 3
+        }
+      },
+      "layer": "a",
+      "action": {
+        "parameter": {
+          "_0": "simulation.stop"
+        }
+      }
+    },
+    {
+      "control": {
+        "encoder": {
+          "_0": 10
+        }
+      },
+      "layer": "a",
+      "action": {
+        "parameter": {
+          "_0": "simulation.speed_feedback"
+        }
+      }
+    },
+    {
+      "control": {
+        "encoder": {
+          "_0": 11
+        }
+      },
+      "layer": "a",
+      "action": {
+        "parameter": {
+          "_0": "simulation.steer_feedback"
+        }
+      }
+    },
+    {
+      "control": {
+        "button": {
+          "_0": 4
+        }
+      },
+      "layer": "a",
+      "action": {
+        "parameter": {
+          "_0": "simulation.stopped_feedback"
+        }
+      }
+    }
+  ]
+}

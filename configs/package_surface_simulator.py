@@ -61,6 +61,8 @@ def stage_shared_files(stage, root=ROOT, shared=SHARED):
         sdk.writestr(entry, (shared / SDK_SOURCE).read_bytes())
     (stage / "examples").mkdir()
     shutil.copy2(root / "Clients/Python/examples/surface_roundtrip.py", stage / "examples" / "surface_roundtrip.py")
+    shutil.copy2(root / "examples/surface_simulator/chassis.json", stage / "examples/chassis.json")
+    shutil.copy2(root / "examples/surface_simulator/CHASSIS.md", stage / "examples/CHASSIS.md")
 
 
 def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED):

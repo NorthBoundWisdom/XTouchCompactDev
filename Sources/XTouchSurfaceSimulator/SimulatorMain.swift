@@ -39,13 +39,6 @@ private func removeOwnedReadyFile() {
 @main struct SimulatorMain {
     static func main() {
         do {
-            if CommandLine.arguments == [CommandLine.arguments[0], "--describe"] {
-                let simulator = try CompactSurfaceSimulator(instanceID: "example.simulation", epoch: "discovery-only")
-                let value: JSONValue = try .object(["discovery": .encoded(simulator.controls.discovery()),
-                                                    "tools": .array(SurfaceControlTools.descriptors.map { try .encoded($0) })])
-                try FileHandle.standardOutput.write(JSONEncoder().encode(value) + Data("\n".utf8))
-                return
-            }
             try run()
         } catch {
             removeOwnedReadyFile()
@@ -102,13 +95,15 @@ private func removeOwnedReadyFile() {
         }
     }
 
-    private static func run() throws -> Never {
+    private static func run() throws {
         var arguments = Array(CommandLine.arguments.dropFirst())
         var instance = "xtouch.simulation." + UUID().uuidString
         var port: UInt16 = 0
         var tokenPath: String?
         var tokenStdin = false
         var readyPath: String?
+        var configurationPath: String?
+        var describe = false
         var allowInput = false, allowFeedback = false, allowReset = false
         while !arguments.isEmpty {
             let option = arguments.removeFirst()
@@ -117,6 +112,8 @@ private func removeOwnedReadyFile() {
                 return arguments.removeFirst()
             }
             switch option {
+            case "--describe": describe = true
+            case "--simulation-configuration": configurationPath = try value()
             case "--surface-instance-id":
                 instance = try value()
                 guard validInstanceID(instance) else { throw StartupError.invalidInstanceID }
@@ -129,6 +126,14 @@ private func removeOwnedReadyFile() {
             case "--allow-surface-reset": allowReset = true
             default: throw StartupError.invalidArguments
             }
+        }
+        let configuration = try configurationPath.map { try SimulationConfiguration.decode(Data(contentsOf: URL(fileURLWithPath: $0))) } ?? CompactSurfaceSimulator.demonstrationConfiguration
+        if describe {
+            let simulator = try CompactSurfaceSimulator(instanceID: "example.simulation", epoch: "discovery-only", configuration: configuration)
+            let value: JSONValue = try .object(["discovery": .encoded(simulator.controls.discovery()),
+                                                "tools": .array(SurfaceControlTools.descriptors.map { try .encoded($0) })])
+            try FileHandle.standardOutput.write(JSONEncoder().encode(value) + Data("\n".utf8))
+            return
         }
         guard tokenPath == nil || !tokenStdin else { throw StartupError.invalidArguments }
         let token: String
@@ -147,7 +152,7 @@ private func removeOwnedReadyFile() {
         if let readyPath, FileManager.default.fileExists(atPath: readyPath) {
             throw StartupError.readyFileExists
         }
-        var simulator = try CompactSurfaceSimulator(instanceID: instance, epoch: UUID().uuidString)
+        var simulator = try CompactSurfaceSimulator(instanceID: instance, epoch: UUID().uuidString, configuration: configuration)
         let server = try LoopbackHTTPServer(port: port, token: token)
         let discovery = simulator.controls.discovery()
         let ready: JSONValue = try .object(["expected": .encoded(discovery.expected), "latest_sequence": .string(discovery.latest_sequence),
@@ -167,8 +172,8 @@ private func removeOwnedReadyFile() {
             do { try simulator.processHoldExpiries(at: time) }
             catch { FileHandle.standardError.write(Data("XTouchSurfaceSimulator hold expiry failed: \(error)\n".utf8)) }
         }
-        return try server.run(nextDeadline: { simulator.nextHoldDeadline },
-                              maintenance: { advanceHolds(to: ProcessInfo.processInfo.systemUptime) })
+        try server.run(nextDeadline: { simulator.nextHoldDeadline },
+                       maintenance: { advanceHolds(to: ProcessInfo.processInfo.systemUptime) })
         { body in
             var id: JSONValue = .null
             do {

@@ -86,6 +86,11 @@ class DeliveryContentTests(unittest.TestCase):
         self.assertNotIn("surface-control-sdk-source.json", names)
         self.assertNotIn("surface-control-sdk-1.0.0.zip", names)
         self.assertIn("examples/surface_roundtrip.py", names)
+        self.assertEqual(
+            (self.stage / "examples/chassis.json").read_bytes(),
+            (package_surface_simulator.ROOT / "examples/surface_simulator/chassis.json").read_bytes(),
+        )
+        self.assertIn("examples/CHASSIS.md", names)
 
     def test_manifest_records_contract_sdk_revision_and_every_hash(self):
         manifest = self.manifest
