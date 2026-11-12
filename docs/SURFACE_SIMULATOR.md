@@ -247,16 +247,12 @@ are withheld while a fader is touched).
 
 ## XTouch profile and semantics
 
-`xtouch.compact.standard.simulation` version `1.3` declares 184 controls. Version 1.2 added
-`accepts_input` to every descriptor, changing the derived mapping revision. Version 1.3
-adds input CAS and trusted writers without changing control mappings. Each layer
+`xtouch.compact.standard.simulation` version `1.3` declares 184 controls. Each layer
 A/B has `a.fader.1` … `a.fader.9`, `a.touch.1` … `a.touch.9`,
 `a.encoder.1` … `a.encoder.16`, `a.push.1` … `a.push.16`,
 `a.button.1` … `a.button.39`, the optional pedals `a.expression.1` and
 `a.footswitch.1`, and corresponding `b.*` IDs. Two layer-independent buttons,
-`global.layer.a` and `global.layer.b`, are the physical A/B layer keys. Version `1.0`
-had only the 178 layered controls; 1.1 is an additive change, with the same IDs and
-semantics for those controls.
+`global.layer.a` and `global.layer.b`, are the physical A/B layer keys.
 
 Faders, stock encoders, and the expression pedal accept integer absolute scalar values `0…127`.
 An endless knob is not advertised as a relative MIDI encoder. Touch, push,
@@ -270,9 +266,7 @@ unprotected parameters declare `true`; action bindings and non-writable or prote
 bindings declare `false`. The default demonstration declares `true` on all 184 controls.
 
 Input permission is checked before layer state: `accepts_input: false` always fails
-`permission_denied`, including on an inactive layer. This intentionally changes action-bound
-input from the previous `unsupported_mapping` error, and inactive action/protected inputs from
-`ignored/inactive_layer` to refusal. Eligible inactive-layer input, and all inactive-layer
+`permission_denied`, including on an inactive layer. Eligible inactive-layer input, and all inactive-layer
 feedback, remains `ignored` with `inactive_layer`. Switching layers changes this runtime
 state, not the declarations, profile, mapping revision, or epoch. Pressing a layer key (`true`) is an ordinary accepted
 input event (`mapped_value` is `"a"` or `"b"`) that selects that layer in the Mock and
@@ -408,15 +402,7 @@ python3 -B Tests/SimulatorIntegration/check_pipe_chassis_roles.py \
 It passes the binary's actual `--describe` discovery to Pipe's unmodified
 `resolve_chassis_roles`, importing Pipe with bytecode disabled, and updates only the example's
 profile version and mapping pin in memory. A missing Pipe checkout is reported as skipped.
-Historical N-round evidence: the contract-1.1 binary and example assembled successfully.
-The Pipe consumer checked in that round accepted only contract 1.1 and its registered vocabulary lacks
-`feedback.unsequenced` and `controls.input_declared`. Its original example therefore refuses
-1.2 with `unsupported_contract`; explicitly adding 1.2 to the in-memory config is refused
-by its version allowlist. Pipe needs its contract allowlist, capability vocabulary, and reviewed
-example profile version/mapping pin updated before newer deliveries can assemble there. The
-probe reports that refusal separately from the supplier's descriptor checks; it does not patch
-the consumer or claim an accepted 1.2/1.3 assembly. Contract 1.3 consumer adoption
-is a separate consumer-side task; supplier tests do not establish that compatibility.
+
 
 
 ## Full-chain simulation startup
@@ -506,3 +492,31 @@ renewal, release, and reset. The 1.2 case checks current event-page holds. They
 accept additive response fields and do not send 1.3 input cursors or writer IDs.
 These wire-level successes do not mean that an old SDK's version gate accepts 1.3.
 
+The shared [version rules](https://github.com/NorthBoundWisdom/SurfacePlugins/blob/main/docs/versioning.md)
+define contract, SDK, profile and mapping revision changes. The locked package
+contains the authoritative rules; upgrading the dependency brings that document
+into the managed source alongside this simulator.
+
+## History
+
+Version 1.2 added
+`accepts_input` to every descriptor, changing the derived mapping revision. Version 1.3
+adds input CAS and trusted writers without changing control mappings.
+
+Version `1.0`
+had only the 178 layered controls; 1.1 is an additive change, with the same IDs and
+semantics for those controls.
+
+The 1.2 input permission declaration intentionally changed action-bound
+input from the previous `unsupported_mapping` error, and inactive action/protected inputs from
+`ignored/inactive_layer` to refusal.
+
+Historical N-round evidence: the contract-1.1 binary and example assembled successfully.
+The Pipe consumer checked in that round accepted only contract 1.1 and its registered vocabulary lacks
+`feedback.unsequenced` and `controls.input_declared`. Its original example therefore refuses
+1.2 with `unsupported_contract`; explicitly adding 1.2 to the in-memory config is refused
+by its version allowlist. Pipe needs its contract allowlist, capability vocabulary, and reviewed
+example profile version/mapping pin updated before newer deliveries can assemble there. The
+probe reports that refusal separately from the supplier's descriptor checks; it does not patch
+the consumer or claim an accepted 1.2/1.3 assembly. Contract 1.3 consumer adoption
+is a separate consumer-side task; supplier tests do not establish that compatibility.
