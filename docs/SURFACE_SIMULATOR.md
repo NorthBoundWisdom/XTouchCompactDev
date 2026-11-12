@@ -18,8 +18,12 @@ swift build --jobs 2 --product XTouchSurfaceSimulator
 For a clean, independently consumable delivery:
 
 ```sh
-python3 configs/package_surface_simulator.py --output build/deliveries/surface-simulator-v1
+python3 configs/package_surface_simulator.py
 ```
+
+The default output is `build/deliveries/xtouch-surface-simulator-<short SHA>`, named
+after this repository's HEAD only (no other host's commit appears in the name). Pass
+`--output` to choose another new directory; an existing directory is never reused.
 
 The output contains the binary, `manifest.json`, dependency lock,
 `control-contract.json` (shared tool schemas plus the actual profile), this guide,

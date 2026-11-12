@@ -18,6 +18,12 @@ def command(*args):
     return subprocess.check_output(args, cwd=ROOT, text=True).strip()
 
 
+def default_output(root=ROOT):
+    """Delivery directory named only after this repository's HEAD, never another host's commit."""
+    short = subprocess.check_output(["git", "rev-parse", "--short=7", "HEAD"], cwd=root, text=True).strip()
+    return root / "build" / "deliveries" / ("xtouch-surface-simulator-" + short)
+
+
 def package(output, configuration="release"):
     if command("git", "status", "--porcelain"):
         raise RuntimeError("Commit the reviewed source before packaging")
@@ -78,6 +84,8 @@ def package(output, configuration="release"):
             "source_dirty": False,
             "surface_control_contract": "1.0",
             "surface_control_sdk": "1.0.0",
+            "profile_id": "xtouch.compact.standard.simulation",
+            "profile_version": "1.1",
             "surface_plugins_revision": json.loads((ROOT / "configs/surface_plugins.lock.json").read_text())[
                 "revision"
             ],
@@ -98,10 +106,14 @@ def package(output, configuration="release"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="new delivery directory (default: build/deliveries/xtouch-surface-simulator-<HEAD short SHA>)",
+    )
     parser.add_argument("--configuration", choices=("debug", "release"), default="release")
     args = parser.parse_args()
-    print(package(args.output.resolve(), args.configuration))
+    print(package((args.output or default_output()).resolve(), args.configuration))
 
 
 if __name__ == "__main__":
