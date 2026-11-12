@@ -18,6 +18,8 @@ jobs:
     container: swift:6.2-noble
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Trust the checked-out workspace in the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Install workflow Python
         # Use GitHub's tool cache; Ubuntu APT DNS outages must not prevent tests.
         uses: actions/setup-python@v7.1.0
