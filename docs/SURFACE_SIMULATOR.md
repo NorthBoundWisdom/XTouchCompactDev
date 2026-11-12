@@ -173,14 +173,16 @@ then records `input / accepted / origin remote / reason hold_expired` with value
 Reset clears every lease. Consumers renew well before the deadline and treat `hold_expired`
 as "released, prepare a new input"; a lost renewal response is an unknown outcome.
 
-**Expiry latency bound.** The `hold_expired` event time is at most 100 ms after the lease
-deadline, independent of client behavior: a peer that connects and stalls, drips an
+**Expiry latency bound.** The `hold_expired` event time is never later than the lease
+deadline plus 0.5 s. This is the guaranteed bound, asserted by a real process test; the
+design target and expected value is well under 100 ms. It is independent of client behavior: a peer that connects and stalls, drips an
 unauthenticated request for its whole three-second read budget, or does not read its
 response cannot postpone expiry, and no client cooperation or further request is needed.
 The lateness consists of the poll wake-up latency (timeouts are rounded up to 1 ms) plus at
 most one request's in-memory processing, which is bounded by the 16 KiB body limit and
-involves no I/O. Measured on the development Mac with a slow drip holding the reader:
-0.9–2.0 ms. The bound does not hold while the process itself cannot run: it is suspended
+involves no I/O. Measured on the development Mac with a slow drip holding the reader
+across the deadline: 0.8–2.0 ms (the integration test writes its measurements to
+`build/surface-expiry-latency.json`). The bound does not hold while the process itself cannot run: it is suspended
 (SIGSTOP, debugger, system sleep) or starved of CPU by the host. `systemUptime` does not
 advance during system sleep, so a lease is then extended by the sleep rather than expired
 during it. Expiry is still always processed before any later read or write, so
@@ -233,6 +235,19 @@ seeded snapshot inputs until its first accepted input; the footswitch starts `fa
 Identical raw input is `ignored` with `no_change`, preventing repeated button-down from toggling twice.
 Simulation writes preserve `agentWritable` and `externallyProtected`; action
 assignments require a separate explicit composition and are not executed here.
+
+**Controls without a mapping accept simulated input.** Most of the 184 controls have no
+`mapping` in the demonstration configuration (for example `a.fader.1` … `a.fader.9`,
+`a.encoder.6` … `a.encoder.16`, `a.button.3` … `a.button.39`, every touch and push, and all
+of layer B). On the active layer they behave like any other control: input is `accepted`,
+advances the sequence, appears in the journal and in snapshot `inputs`, and moves the Mock
+and the session's layer bank (an encoder also redraws its ring). No parameter changes and the
+event has no `mapped_value`. Identical raw input is `ignored/no_change` and inactive-layer
+input is `ignored/inactive_layer`, as for mapped controls. Feedback on such a control is the
+same display intent as on a mapped one. A consumer may therefore own the meaning of unmapped
+controls entirely on its side; `mapping` only tells it which host parameter, if any, also
+follows. The one exception is a control bound to an action rather than a parameter, which fails
+`unsupported_mapping`; the demonstration configuration has none.
 
 Simulated gestures are ordinary input through `CompactSession.receive`, like a local
 hand movement. The App's Agent motor permission (`setParameter(drivesMotors:)`) applies

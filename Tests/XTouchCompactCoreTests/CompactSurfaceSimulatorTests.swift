@@ -357,3 +357,35 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
     _ = try simulator.input(input(simulator, "a.touch.2", .bool(false), encoding: "boolean"), at: 4)
     #expect(simulator.mock.faders[1] == 0)
 }
+
+/// Controls without a mapping are ordinary inputs: accepted, visible in snapshot and journal,
+/// applied to the Mock and the layer bank, with no parameter change and no `mapped_value`.
+@Test func unmappedControlsAcceptSimulatedInputWithoutParameterEffects() throws {
+    var simulator = try CompactSurfaceSimulator(instanceID: "car.a", epoch: "test-epoch")
+    let profile = simulator.controls.profile
+    for id in ["a.fader.3", "a.encoder.9", "a.button.7", "a.push.2", "a.touch.3"] {
+        #expect(profile.controls.first { $0.id == id }?.mapping == nil)
+    }
+    let parameters = simulator.session.parameters.values
+    let fader = try simulator.input(input(simulator, "a.fader.3", .number(64)), at: 1)
+    let encoder = try simulator.input(input(simulator, "a.encoder.9", .number(127)), at: 2)
+    let button = try simulator.input(input(simulator, "a.button.7", .bool(true), encoding: "boolean"), at: 3)
+    let push = try simulator.input(input(simulator, "a.push.2", .bool(true), encoding: "boolean"), at: 4)
+    for event in [fader, encoder, button, push] {
+        #expect(event.disposition == .accepted && event.mapped_value == nil && event.reason == nil)
+    }
+    #expect(simulator.session.parameters.values == parameters)
+    #expect(simulator.mock.faders[2] == 64 && simulator.session.bank(.a).faders[2] == 64)
+    #expect(simulator.mock.encoders[8] == 127 && simulator.session.bank(.a).encoders[8] == 127)
+    #expect(simulator.mock.rings[8] == .position(13))
+    #expect(simulator.mock.pressedButtons == [7] && simulator.mock.pushedEncoders == [2])
+    let snapshot = try simulator.controls.snapshot(at: 4)
+    #expect(snapshot.inputs["a.fader.3"] == .number(64) && snapshot.inputs["a.encoder.9"] == .number(127))
+    #expect(snapshot.inputs["a.button.7"] == .bool(true) && snapshot.inputs["a.push.2"] == .bool(true))
+    #expect(snapshot.latest_sequence == "4")
+    // Feedback on unmapped controls is display intent like on mapped ones.
+    _ = try simulator.feedback(feedback(simulator, "a.button.7", .string("on"), kind: "indicator"), at: 5)
+    _ = try simulator.feedback(feedback(simulator, "a.encoder.9", .number(0)), at: 5)
+    #expect(simulator.mock.buttons[6] == .on && simulator.mock.rings[8] == .position(1))
+    #expect(simulator.session.parameters.values == parameters)
+}
