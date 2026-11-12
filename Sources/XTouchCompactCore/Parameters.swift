@@ -14,11 +14,15 @@ public struct ParameterDefinition: Codable, Equatable, Sendable, Identifiable {
     public var agentWritable: Bool
     /// Optional for version-1 file compatibility; absent means unprotected.
     public var externallyProtected: Bool?
+    /// Optional panel color tag; absent in older files means no tag.
+    public var color: ParameterColor?
 
     public init(id: String, name: String, group: String = "General", unit: String = "", minimum: Double = 0,
                 maximum: Double = 127, defaultValue: Double = 0, step: Double = 1,
-                isSwitch: Bool = false, agentWritable: Bool = true, externallyProtected: Bool? = nil)
+                isSwitch: Bool = false, agentWritable: Bool = true, externallyProtected: Bool? = nil,
+                color: ParameterColor? = nil)
     {
+        self.color = color
         self.id = id; self.name = name; self.group = group; self.unit = unit
         self.minimum = minimum; self.maximum = maximum; self.defaultValue = defaultValue
         self.step = step; self.isSwitch = isSwitch; self.agentWritable = agentWritable; self.externallyProtected = externallyProtected
@@ -47,6 +51,36 @@ public struct ParameterDefinition: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// A fixed palette keeps tags legible on the dark panel and stable across file round trips.
+public enum ParameterColor: String, Codable, CaseIterable, Sendable {
+    case red, orange, yellow, green, teal, blue, purple, pink
+}
+
+/// Linked parameters (VCA style): moving the leader by Δ (normalized 0…1) moves every member
+/// by the same Δ, each clamped to its own range. Members never move the leader or each other.
+public struct ParameterLink: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var leader: String
+    public var members: [String]
+
+    public init(id: String, name: String, leader: String, members: [String]) {
+        self.id = id; self.name = name; self.leader = leader; self.members = members
+    }
+}
+
+/// A named set of parameter values. Recall changes host intent only; motors still require
+/// the explicit recall action, and touched faders keep their deferral.
+public struct ParameterScene: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var values: [String: Double]
+
+    public init(id: String, name: String, values: [String: Double]) {
+        self.id = id; self.name = name; self.values = values
+    }
+}
+
 public enum ParameterAction: Codable, Equatable, Sendable {
     case parameter(String), agent(Int), resetGroup(String), step(String, Double), set(String, Double), cycle(String, [Double])
 }
@@ -65,10 +99,16 @@ public struct SurfaceConfiguration: Codable, Equatable, Sendable {
     public var device = "X-TOUCH COMPACT"
     public var parameters: [ParameterDefinition]
     public var assignments: [ControlAssignment]
+    /// Optional for older files; nil and empty are equivalent.
+    public var links: [ParameterLink]?
+    public var scenes: [ParameterScene]?
 
-    public init(parameters: [ParameterDefinition], assignments: [ControlAssignment], version: Int = 1) {
+    public init(parameters: [ParameterDefinition], assignments: [ControlAssignment], version: Int = 1,
+                links: [ParameterLink]? = nil, scenes: [ParameterScene]? = nil)
+    {
         self.version = version
         self.parameters = parameters; self.assignments = assignments
+        self.links = links; self.scenes = scenes
     }
 
     public func validate() throws {
@@ -76,6 +116,7 @@ public struct SurfaceConfiguration: Codable, Equatable, Sendable {
               version != 1 || parameters.allSatisfy({ $0.externallyProtected == nil }) else { throw ParameterError.wrongDeviceOrVersion }
         guard Set(parameters.map(\.id)).count == parameters.count else { throw ParameterError.duplicateParameter }
         let ids = Set(parameters.map(\.id))
+        try validateLinksAndScenes(ids: ids)
         var keys = Set<String>()
         let map = try FactoryStandardMap()
         for parameter in parameters {
@@ -124,6 +165,35 @@ public struct SurfaceConfiguration: Codable, Equatable, Sendable {
 
 public enum ParameterError: Error, Equatable {
     case wrongDeviceOrVersion, duplicateParameter, invalidDefinition(String), invalidAssignment, unknownParameter(String), agentDenied(String)
+    case invalidLink(String), invalidScene(String)
+}
+
+extension SurfaceConfiguration {
+    func validateLinksAndScenes(ids: Set<String>) throws {
+        var linkIDs = Set<String>()
+        var followers = Set<String>()
+        for link in links ?? [] {
+            guard !link.id.isEmpty, linkIDs.insert(link.id).inserted,
+                  !link.name.trimmingCharacters(in: .whitespaces).isEmpty,
+                  ids.contains(link.leader), !link.members.isEmpty,
+                  Set(link.members).count == link.members.count,
+                  link.members.allSatisfy({ ids.contains($0) && $0 != link.leader })
+            else { throw ParameterError.invalidLink(link.id) }
+            // One leader per follower and no follower leads: links never chain or loop.
+            for member in link.members {
+                guard followers.insert(member).inserted else { throw ParameterError.invalidLink(link.id) }
+            }
+        }
+        let leaders = Set((links ?? []).map(\.leader))
+        guard leaders.isDisjoint(with: followers) else { throw ParameterError.invalidLink("chain") }
+        var sceneIDs = Set<String>()
+        for scene in scenes ?? [] {
+            guard !scene.id.isEmpty, sceneIDs.insert(scene.id).inserted,
+                  !scene.name.trimmingCharacters(in: .whitespaces).isEmpty,
+                  scene.values.allSatisfy({ ids.contains($0.key) && $0.value.isFinite })
+            else { throw ParameterError.invalidScene(scene.id) }
+        }
+    }
 }
 
 public struct ParameterEngine: Sendable {
@@ -139,6 +209,35 @@ public struct ParameterEngine: Sendable {
 
     public func definition(_ id: String) -> ParameterDefinition? {
         configuration.parameters.first { $0.id == id }
+    }
+
+    /// Value as a 0…1 fraction of the definition's range (0 for a degenerate range).
+    public func normalizedPosition(_ id: String) -> Double? {
+        guard let definition = definition(id), let value = values[id] else { return nil }
+        let span = definition.maximum - definition.minimum
+        return span > 0 ? (value - definition.minimum) / span : 0
+    }
+
+    /// Apply a leader's normalized change to its link members. Returns the member IDs whose
+    /// value changed. Members are clamped and snapped by their own definitions; Agent writes
+    /// that the member forbids are skipped rather than failing the leader's write.
+    mutating func propagateLink(from leader: String, delta: Double, fromAgent: Bool) -> Set<String> {
+        guard delta != 0, delta.isFinite else { return [] }
+        var changed = Set<String>()
+        for link in configuration.links ?? [] where link.leader == leader {
+            for member in link.members {
+                guard let definition = definition(member), let position = normalizedPosition(member) else { continue }
+                if fromAgent, !definition.agentWritable || definition.externallyProtected == true {
+                    continue
+                }
+                let target = definition.minimum + min(max(position + delta, 0), 1) * (definition.maximum - definition.minimum)
+                let before = values[member]
+                if (try? set(member, value: target)) != nil, values[member] != before {
+                    changed.insert(member)
+                }
+            }
+        }
+        return changed
     }
 
     public func assignment(_ control: CompactControl, layer: CompactLayer) -> ParameterAction? {
@@ -219,6 +318,8 @@ extension ParameterError: LocalizedError {
         case .invalidAssignment: "Invalid or duplicate control assignment. Check control range and Agent slot."
         case let .unknownParameter(id): "Unknown parameter: \(id)."
         case let .agentDenied(id): "Agent writes are disabled for parameter: \(id)."
+        case let .invalidLink(id): "Invalid parameter link: \(id). Leader and members must exist, differ, and not chain."
+        case let .invalidScene(id): "Invalid scene: \(id). Scenes need a name and finite values for existing parameters."
         }
     }
 }

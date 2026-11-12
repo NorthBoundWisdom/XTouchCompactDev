@@ -59,6 +59,12 @@
         var isMotorPending: Bool?
         var label: String?
         var detail: String?
+        /// Bound parameter (nil when the control has none) and its organization metadata.
+        var parameterID: String?
+        var color: ParameterColor?
+        var group: String?
+        /// Name of the link this fader leads, or of the leader it follows.
+        var linkRole: LinkRole?
         var followsObservedPosition = false
         var mirrorsHardware = false
         var hardwareReading: HardwareValuePresentation?
@@ -91,6 +97,11 @@
         case bipolar(value: UInt8)
     }
 
+    enum LinkRole: Equatable, Sendable {
+        case leader(String)
+        case member(String)
+    }
+
     struct EncoderPresentation: Equatable, Identifiable, Sendable {
         let index: Int
         var value: UInt8
@@ -100,6 +111,9 @@
         var isPushed: Bool?
         var label: String?
         var detail: String?
+        var parameterID: String?
+        var color: ParameterColor?
+        var group: String?
         var observedValue: UInt8?
         var observesInput = false
         var localRingAppearance: EncoderRingAppearance?
@@ -376,6 +390,10 @@
         var agents: [AgentSlot] = []
         var businessPlugins: [BusinessPluginPresentation] = []
         var parameterValues: [String: Double] = [:]
+        var canUndo = false
+        var canRedo = false
+        /// Group shown highlighted on the panel; nil shows every control normally.
+        var highlightedGroup: String?
 
         func fader(_ index: Int) -> FaderPresentation? {
             faders.first { $0.index == index }
@@ -448,6 +466,19 @@
         var confirmLoadPreset: (() -> Void)?
         var cancelLoadPreset: (() -> Void)?
         var addressing: ((_ control: CompactControl, _ layer: CompactLayer) -> ControlAddressing?)?
+
+        // Organization. Metadata edits never move a motor; scene recall changes targets only.
+        var renameControl: ((_ control: CompactControl, _ name: String) -> Void)?
+        var setControlColor: ((_ control: CompactControl, _ color: ParameterColor?) -> Void)?
+        var setControlGroup: ((_ control: CompactControl, _ group: String) -> Void)?
+        var highlightGroup: ((String?) -> Void)?
+        var saveLink: ((ParameterLink) -> Void)?
+        var deleteLink: ((String) -> Void)?
+        var captureScene: ((_ name: String) -> Void)?
+        var recallScene: ((String) -> Void)?
+        var deleteScene: ((String) -> Void)?
+        var undo: (() -> Void)?
+        var redo: (() -> Void)?
     }
 
     extension CompactControl {

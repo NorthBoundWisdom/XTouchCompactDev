@@ -11,7 +11,13 @@
 
         let snapshot: PanelSnapshot
         let intents: PanelIntents
-        @State private var selection: CompactControl? = .fader(1)
+        @State private var selection: CompactControl?
+        private let initialTab: WorkspaceTab
+
+        init(snapshot: PanelSnapshot, intents: PanelIntents, selection: CompactControl? = .fader(1), initialTab: WorkspaceTab = .values) {
+            self.snapshot = snapshot; self.intents = intents
+            _selection = State(initialValue: selection); self.initialTab = initialTab
+        }
 
         var body: some View {
             Group {
@@ -44,7 +50,7 @@
                 GeometryReader { proxy in
                     let inspectorWidth = min(max(proxy.size.width * 0.24, 300), 380)
                     HStack(spacing: 0) {
-                        SurfaceArea(snapshot: snapshot, intents: intents, selection: $selection)
+                        SurfaceArea(snapshot: snapshot, intents: intents, selection: $selection, initialTab: initialTab)
                         Divider()
                         ControlInspectorView(snapshot: snapshot, intents: intents, selection: selection)
                             .frame(width: inspectorWidth)
@@ -113,6 +119,7 @@
         let snapshot: PanelSnapshot
         let intents: PanelIntents
         @Binding var selection: CompactControl?
+        let initialTab: WorkspaceTab
 
         var body: some View {
             GeometryReader { proxy in
@@ -137,7 +144,7 @@
             SurfacePanelView(snapshot: snapshot, intents: intents, selection: $selection,
                              onSelectLayer: { intents.selectLayer?($0) })
                 .environment(\.panelMetrics, PanelMetrics(scale: layout.scale))
-            WorkspaceTabsView(snapshot: snapshot, intents: intents, selection: $selection)
+            WorkspaceTabsView(snapshot: snapshot, intents: intents, selection: $selection, initialTab: initialTab)
                 .frame(width: layout.workspaceWidth)
         }
     }

@@ -12,6 +12,26 @@
             return session.parameters.definition(id)?.name
         }
 
+        private func applyOrganization(_ control: CompactControl, to id: inout String?, _ color: inout ParameterColor?,
+                                       _ group: inout String?)
+        {
+            guard case let .parameter(bound) = session.parameters.assignment(control, layer: layer),
+                  let definition = session.parameters.definition(bound) else { return }
+            id = bound; color = definition.color; group = definition.group
+        }
+
+        private func linkRole(_ id: String) -> LinkRole? {
+            for link in session.parameters.configuration.links ?? [] {
+                if link.leader == id {
+                    return .leader(link.name)
+                }
+                if link.members.contains(id) {
+                    return .member(link.name)
+                }
+            }
+            return nil
+        }
+
         private func parameterDetail(_ control: CompactControl) -> String? {
             guard case let .parameter(id) = session.parameters.assignment(control, layer: layer),
                   let value = session.parameters.values[id], let definition = session.parameters.definition(id) else { return nil }
@@ -49,7 +69,9 @@
                 oscEnabled: oscEnabled, oscHost: oscHost, oscPort: oscPort,
                 oscParameter: oscParameter, oscOutput: oscOutput,
                 agents: agents.slots, businessPlugins: plugins.businessPresentations,
-                parameterValues: session.parameters.values
+                parameterValues: session.parameters.values,
+                canUndo: session.canUndo, canRedo: session.canRedo,
+                highlightedGroup: highlightedGroup
             )
         }
 
@@ -159,6 +181,8 @@
             } else {
                 result.label = parameterLabel(.fader(index))
                 result.detail = parameterDetail(.fader(index))
+                applyOrganization(.fader(index), to: &result.parameterID, &result.color, &result.group)
+                result.linkRole = result.parameterID.flatMap(linkRole)
                 if hardwareMode {
                     result.mirrorsHardware = true
                     result.hardwareReading = hardwareReading(.fader(index))
@@ -185,6 +209,7 @@
             } else {
                 result.label = parameterLabel(.encoder(index))
                 result.detail = parameterDetail(.encoder(index))
+                applyOrganization(.encoder(index), to: &result.parameterID, &result.color, &result.group)
                 if hardwareMode {
                     result.mirrorsHardware = true
                     result.hardwareReading = hardwareReading(.encoder(index))
@@ -281,7 +306,18 @@
                         feedback = "\(display) [RingDisplay]; \(style) [RingStyle]"
                     }
                     return ControlAddressing(input: input.description, feedback: feedback)
-                }
+                },
+                renameControl: { [weak self] control, name in self?.renameControl(control, name: name) },
+                setControlColor: { [weak self] control, color in self?.setControlColor(control, color: color) },
+                setControlGroup: { [weak self] control, group in self?.setControlGroup(control, group: group) },
+                highlightGroup: { [weak self] group in self?.highlightedGroup = group },
+                saveLink: { [weak self] link in self?.saveLink(link) },
+                deleteLink: { [weak self] id in self?.deleteLink(id) },
+                captureScene: { [weak self] name in self?.captureScene(name: name) },
+                recallScene: { [weak self] id in self?.recallScene(id) },
+                deleteScene: { [weak self] id in self?.deleteScene(id) },
+                undo: { [weak self] in self?.undo() },
+                redo: { [weak self] in self?.redo() }
             )
         }
     }

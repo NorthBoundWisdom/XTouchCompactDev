@@ -188,11 +188,18 @@
 
         // MARK: Cells
 
+        /// With a highlighted group, controls outside it are dimmed (display only).
+        private func isDimmed(_ group: String?) -> Bool {
+            guard let highlighted = snapshot.highlightedGroup else { return false }
+            return group != highlighted
+        }
+
         @ViewBuilder
         private func faderCell(_ index: Int) -> some View {
             if let fader = snapshot.fader(index) {
                 FaderCell(
                     fader: fader,
+                    isDimmed: isDimmed(fader.group),
                     isSelected: selection == .fader(index),
                     onSelect: { selection = .fader(index) },
                     onMove: { intents.moveFader(index, $0) },
@@ -206,6 +213,7 @@
             if let encoder = snapshot.encoder(index) {
                 EncoderCell(
                     encoder: encoder,
+                    isDimmed: isDimmed(encoder.group),
                     isSelected: selection == .encoder(index) || selection == .encoderPush(index),
                     onSelect: { selection = .encoder(index) },
                     onTurn: { intents.turnEncoder(index, $0) },
@@ -239,6 +247,7 @@
         }
 
         let fader: FaderPresentation
+        let isDimmed: Bool
         let isSelected: Bool
         let onSelect: () -> Void
         let onMove: (UInt8) -> Void
@@ -279,7 +288,9 @@
 
         var body: some View {
             VStack(spacing: m(4)) {
+                linkBadge
                 slot
+                colorStrip(fader.color)
                 Text(fader.label ?? (fader.isMaster ? "MAIN" : "F\(fader.index)"))
                     .font(.system(size: m(9), weight: .semibold))
                     .foregroundStyle(fader.label == nil ? .secondary : Theme.value)
@@ -291,6 +302,7 @@
             }
             .padding(.vertical, m(5))
             .frame(maxWidth: .infinity)
+            .opacity(isDimmed ? 0.35 : 1)
             .background(isSelected ? Theme.selection.opacity(0.16) : Color.black.opacity(0.16),
                         in: RoundedRectangle(cornerRadius: m(8)))
             .overlay {
@@ -307,6 +319,32 @@
                 onMove(UInt8(nextValue))
             }
             .help(l.text("拖动 %@", String(CompactControl.fader(fader.index).shortName)))
+        }
+
+        /// Leader shows ⛓ name; members show → name. Empty space keeps strips aligned.
+        private var linkBadge: some View {
+            let text = switch fader.linkRole {
+            case let .leader(name): "⛓ " + name
+            case let .member(name): "→ " + name
+            case nil: " "
+            }
+            return Text(text)
+                .font(.system(size: m(8), weight: .semibold))
+                .foregroundStyle(Theme.touch.opacity(0.9))
+                .lineLimit(1)
+                .frame(height: m(10))
+                .help(fader.linkRole.map { role in
+                    switch role {
+                    case let .leader(name): l.text("Leads link %@", name)
+                    case let .member(name): l.text("Follows link %@", name)
+                    }
+                } ?? "")
+        }
+
+        private func colorStrip(_ color: ParameterColor?) -> some View {
+            Capsule()
+                .fill(color.map(Theme.tag) ?? Color.clear)
+                .frame(width: m(28), height: m(3))
         }
 
         private var slot: some View {
@@ -397,6 +435,7 @@
         static let height: CGFloat = 92
 
         let encoder: EncoderPresentation
+        let isDimmed: Bool
         let isSelected: Bool
         let onSelect: () -> Void
         let onTurn: (Int) -> Void
@@ -441,9 +480,14 @@
             let shape = RoundedRectangle(cornerRadius: m(8))
             let fill: Color = isSelected ? Theme.selection.opacity(0.16) : Color.black.opacity(0.16)
             let stroke: Color = isSelected ? Theme.selection : Color.clear
+            let tag: Color = encoder.color.map(Theme.tag) ?? Color.clear
             return content
                 .frame(maxWidth: .infinity)
                 .frame(height: m(Self.height))
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(tag).frame(width: m(6), height: m(6)).padding(m(4))
+                }
+                .opacity(isDimmed ? 0.35 : 1)
                 .background(fill, in: shape)
                 .overlay { shape.stroke(stroke, lineWidth: 1.5) }
         }

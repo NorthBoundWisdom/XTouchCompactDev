@@ -83,6 +83,27 @@
                 service.onMessages?([.controlChange(channel: 0, number: 28, value: 8)])
             }
             content = AnyView(ContentView(snapshot: preview.panelSnapshot, intents: preview.panelIntents))
+        case "organization":
+            // Synthetic names, tags, a link and a scene; isolated, nothing is persisted.
+            width = 1600; height = 1100
+            for (index, name, color, group) in [(1, "Kick", ParameterColor.red, "Drums"), (2, "Snare", .red, "Drums"),
+                                                (3, "Hats", .orange, "Drums"), (4, "Bass", .blue, "Low end"),
+                                                (5, "Keys", .green, "Music"), (6, "Pad", .green, "Music")]
+            {
+                model.renameControl(.fader(index), name: name)
+                model.setControlColor(.fader(index), color: color)
+                model.setControlGroup(.fader(index), group: group)
+            }
+            model.renameControl(.encoder(1), name: "Reverb")
+            model.setControlColor(.encoder(1), color: .purple)
+            model.saveLink(ParameterLink(id: "drums", name: "Drums", leader: "a.Fader.1", members: ["a.Fader.2", "a.Fader.3"]))
+            for (index, value) in [(1, 90.0), (4, 70), (5, 50), (6, 40)] {
+                model.setParameter("a.Fader.\(index)", value: value)
+            }
+            model.captureScene(name: "Verse")
+            model.highlightedGroup = "Drums"
+            content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents,
+                                          selection: .fader(2), initialTab: .organize))
         case "encoder-rings":
             width = 1600; height = 1000
             for (index, value) in [(1, 6), (2, 10), (3, 11), (4, 39), (9, 18), (10, 22), (11, 32), (12, 43), (13, 64), (14, 96), (15, 127), (16, 127)] {

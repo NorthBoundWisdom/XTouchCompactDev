@@ -40,6 +40,38 @@ versions reject version 2 rather than silently dropping the protection. Neutral
 and audio presets retain their version-1 shape. BCR2000 and unknown-version
 configurations are rejected before changing session state. Import/export is explicit.
 
+## Naming, groups, links, scenes and undo
+
+These are configuration and host-intent features. None sends a motor command on its own.
+
+- **Name, color, group.** Select a fader or encoder. The inspector's *Name and organize*
+  card renames the bound parameter, sets one of eight color tags, and sets or picks a group.
+  Renaming an unbound fader or encoder creates a continuous parameter on the current
+  layer, initialized from that control's bank value, so nothing jumps. Buttons and pushes
+  carry actions and are not renamed here. The panel shows a color strip under each fader
+  cap and a dot on each encoder.
+- **Group highlight.** The *Organize* tab lists groups. The eye button dims every control
+  outside that group. This is session-only display state.
+- **Fader links.** A link has one leader and one or more members. When the leader moves by Δ
+  (as a fraction of its range), each member moves by the same Δ of its own range, clamped.
+  Members never move the leader or each other. A follower belongs to at most one link, and a
+  follower cannot lead, so links never chain or loop. Member motors use the normal path:
+  a touched member defers until release; without Agent motor permission an Agent write
+  neither commands nor queues any linked motor; an Agent write skips members that refuse
+  Agent writes. A physical leader leads only while touched, because an untouched position
+  report may be motor progress.
+- **Scenes.** *Save current values* stores every parameter value under a name (an
+  existing name is updated). *Recall* is one undoable step that updates targets, banks,
+  rings and LEDs; faders move only through the explicit motor recall.
+- **Undo / redo.** Covers value changes from the panel, inspector, Agent, scenes and links.
+  A drag, or consecutive edits of one control, is one step. History holds 50 steps and
+  clears on reset or preset replacement. Undo is a software write, so touched faders defer
+  as usual. Menu: Edit › Undo value change (⌥⌘Z) / Redo value change (⇧⌥⌘Z); text fields
+  keep ⌘Z.
+
+Configurations gain optional `color` on parameters and `links` / `scenes` arrays. Files
+without them still load; import accepts version 1 and 2.
+
 ## Persistence and diagnostics
 
 The normal app stores configuration and applied device profile together in

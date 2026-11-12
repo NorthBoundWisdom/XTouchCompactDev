@@ -20,6 +20,7 @@
                 VStack(alignment: .leading, spacing: 12) {
                     if let selection {
                         identity(selection)
+                        organization(selection)
                         state(selection)
                         if let addressing = intents.addressing?(selection, snapshot.layer) {
                             addresses(addressing)
@@ -48,6 +49,40 @@
                     .foregroundStyle(.secondary)
             }
             .panelStyle()
+        }
+
+        // MARK: Organization
+
+        private func organizationTarget(_ control: CompactControl) -> (id: String?, name: String?, color: ParameterColor?, group: String?)? {
+            switch control {
+            case let .fader(index), let .faderTouch(index):
+                guard let fader = snapshot.fader(index) else { return nil }
+                return (fader.parameterID, fader.label, fader.color, fader.group)
+            case let .encoder(index), let .encoderPush(index):
+                guard let encoder = snapshot.encoder(index) else { return nil }
+                return (encoder.parameterID, encoder.label, encoder.color, encoder.group)
+            default:
+                return nil
+            }
+        }
+
+        /// Faders and encoders only: buttons carry actions, not a nameable continuous value.
+        @ViewBuilder
+        private func organization(_ control: CompactControl) -> some View {
+            if snapshot.hardwareObservation == nil, let target = organizationTarget(control) {
+                let named: CompactControl = switch control {
+                case let .faderTouch(index): .fader(index)
+                case let .encoderPush(index): .encoder(index)
+                default: control
+                }
+                OrganizationEditor(control: named, parameterID: target.id, name: target.name ?? "", color: target.color,
+                                   group: target.group ?? "", groups: groupNames, intents: intents)
+                    .id("\(named)-\(target.id ?? "-")")
+            }
+        }
+
+        private var groupNames: [String] {
+            Array(Set(snapshot.configuration.parameters.map(\.group))).sorted()
         }
 
         @ViewBuilder
@@ -219,6 +254,76 @@
             case .on: l.text("点亮")
             case .blink: l.text("闪烁")
             }
+        }
+    }
+
+    /// Rename, color tag and group for the parameter behind one fader or encoder.
+    private struct OrganizationEditor: View {
+        @EnvironmentObject private var language: LanguageSettings
+        private var l: Localizer {
+            language.localizer
+        }
+
+        let control: CompactControl
+        let parameterID: String?
+        let color: ParameterColor?
+        let groups: [String]
+        let intents: PanelIntents
+        @State private var name: String
+        @State private var group: String
+
+        init(control: CompactControl, parameterID: String?, name: String, color: ParameterColor?, group: String,
+             groups: [String], intents: PanelIntents)
+        {
+            self.control = control; self.parameterID = parameterID; self.color = color
+            self.groups = groups; self.intents = intents
+            _name = State(initialValue: name); _group = State(initialValue: group)
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionTitle(l.text("Name and organize"), icon: "tag")
+                HStack {
+                    TextField(l.text("Name"), text: $name)
+                        .onSubmit { intents.renameControl?(control, name) }
+                    Button(l.text("Rename")) { intents.renameControl?(control, name) }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                if parameterID == nil {
+                    Text(l.text("No parameter is bound. Renaming creates one on this layer at the current value; nothing moves."))
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 6) {
+                        Text(l.text("Color")).font(.caption).foregroundStyle(.secondary)
+                        Button { intents.setControlColor?(control, nil) } label: {
+                            Image(systemName: color == nil ? "circle.slash.fill" : "circle.slash")
+                        }
+                        .buttonStyle(.plain).help(l.text("No color"))
+                        ForEach(ParameterColor.allCases, id: \.self) { option in
+                            Button { intents.setControlColor?(control, option) } label: {
+                                Circle().fill(Theme.tag(option)).frame(width: 14, height: 14)
+                                    .overlay { Circle().stroke(Color.white, lineWidth: color == option ? 2 : 0) }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(option.rawValue)
+                            .accessibilityAddTraits(color == option ? .isSelected : [])
+                        }
+                    }
+                    HStack {
+                        TextField(l.text("Group"), text: $group)
+                            .onSubmit { intents.setControlGroup?(control, group) }
+                        Menu(l.text("Existing")) {
+                            ForEach(groups, id: \.self) { existing in
+                                Button(existing) { group = existing; intents.setControlGroup?(control, existing) }
+                            }
+                        }
+                        .fixedSize()
+                        Button(l.text("Set")) { intents.setControlGroup?(control, group) }
+                            .disabled(group.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+            .panelStyle()
         }
     }
 #endif

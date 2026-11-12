@@ -82,6 +82,8 @@
         @Published var mcpSimulationControlAllowed = false
         /// Session-only, default off: Agent parameter writes may move motors only when granted.
         @Published var mcpMotorWritesAllowed = false
+        /// Session-only panel highlight; never persisted or sent to the device.
+        @Published var highlightedGroup: String?
         private var surfaceWriteBudget = SurfaceWriteBudget()
         @Published var oscHost = "127.0.0.1"
         @Published var oscPort: UInt16 = 9000
@@ -731,7 +733,7 @@
             } catch { self.error = error }
         }
 
-        private func apply(_ operation: (inout CompactSession) throws -> [MIDIMessage]) {
+        func apply(_ operation: (inout CompactSession) throws -> [MIDIMessage]) {
             do {
                 try send(operation(&session))
                 updateBank()
@@ -813,6 +815,122 @@
                                      hostLayer: layer, ignored: false, text: LocalizedMessage("Agent call: %@", name)))
         }
 
+        // MARK: - Organization: naming, color tags, groups, links, scenes, undo
+
+        // Metadata edits never move a motor. Scene recall changes host intent only.
+
+        /// Parameter bound to a control on the current layer, if any.
+        func boundParameter(_ control: CompactControl) -> String? {
+            guard case let .parameter(id) = session.parameters.assignment(control, layer: layer) else { return nil }
+            return id
+        }
+
+        /// Rename the control's parameter. An unbound fader or encoder gets a new continuous
+        /// parameter on the current layer, initialized from the control's current bank value.
+        func renameControl(_ control: CompactControl, name: String) {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            var configuration = session.parameters.configuration
+            if let id = boundParameter(control),
+               let index = configuration.parameters.firstIndex(where: { $0.id == id })
+            {
+                configuration.parameters[index].name = trimmed
+                commitMetadata(configuration)
+                return
+            }
+            let raw: UInt8
+            switch control {
+            case let .fader(index): raw = bank.faders[index - 1]
+            case let .encoder(index): raw = bank.encoders[index - 1]
+            default: return // Buttons and pushes carry actions, not a single continuous value.
+            }
+            let id = "\(layer.rawValue).\(control.shortName).\(UUID().uuidString.prefix(8))"
+            configuration.parameters.append(XTouchCompactCore.ParameterDefinition(id: id, name: trimmed, group: "Layer \(layer.rawValue.uppercased())",
+                                                                                  defaultValue: Double(raw)))
+            configuration.assignments.removeAll { $0.control == control && $0.layer == layer }
+            configuration.assignments.append(ControlAssignment(control: control, layer: layer, action: .parameter(id)))
+            commitMetadata(configuration)
+            // The new parameter starts at the bank value already shown: no visible jump, no motor.
+            do { _ = try session.restoreParameterValues([id: Double(raw)]) } catch { self.error = error }
+            refreshAfterMetadata()
+        }
+
+        func setControlColor(_ control: CompactControl, color: ParameterColor?) {
+            editBoundDefinition(control) { $0.color = color }
+        }
+
+        func setControlGroup(_ control: CompactControl, group: String) {
+            let trimmed = group.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            editBoundDefinition(control) { $0.group = trimmed }
+        }
+
+        func saveLink(_ link: ParameterLink) {
+            var configuration = session.parameters.configuration
+            var links = configuration.links ?? []
+            if let index = links.firstIndex(where: { $0.id == link.id }) {
+                links[index] = link
+            } else {
+                links.append(link)
+            }
+            configuration.links = links
+            commitMetadata(configuration)
+        }
+
+        func deleteLink(_ id: String) {
+            var configuration = session.parameters.configuration
+            configuration.links = (configuration.links ?? []).filter { $0.id != id }
+            commitMetadata(configuration)
+        }
+
+        func captureScene(name: String) {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let existing = session.parameters.configuration.scenes?.first { $0.name == trimmed }
+            do {
+                try session.captureScene(id: existing?.id ?? UUID().uuidString, name: trimmed)
+                saveWorkspace()
+            } catch { self.error = error }
+        }
+
+        func recallScene(_ id: String) {
+            apply { try $0.recallScene(id: id) }
+            log(LocalizedMessage("Scene recalled; faders move only with the explicit motor recall."))
+        }
+
+        func deleteScene(_ id: String) {
+            do { try session.deleteScene(id: id); saveWorkspace() } catch { self.error = error }
+        }
+
+        func undo() {
+            apply { try $0.undo() }
+        }
+
+        func redo() {
+            apply { try $0.redo() }
+        }
+
+        private func editBoundDefinition(_ control: CompactControl, _ change: (inout XTouchCompactCore.ParameterDefinition) -> Void) {
+            guard let id = boundParameter(control) else { return }
+            var configuration = session.parameters.configuration
+            guard let index = configuration.parameters.firstIndex(where: { $0.id == id }) else { return }
+            change(&configuration.parameters[index])
+            commitMetadata(configuration)
+        }
+
+        /// Validate and apply a metadata-only edit, then persist it. Values and motors stay put.
+        private func commitMetadata(_ configuration: SurfaceConfiguration) {
+            do {
+                try configuration.validate()
+                try session.replaceConfigurationKeepingValues(configuration)
+                refreshAfterMetadata()
+                saveWorkspace()
+            } catch { self.error = error }
+        }
+
+        private func refreshAfterMetadata() {
+            objectWillChange.send()
+        }
+
         private enum ConsoleError: Error { case noConnection }
 
         func errorText(using l: Localizer) -> String {
@@ -857,6 +975,8 @@
                 case .invalidAssignment: return l.text("Invalid control assignment. Check control numbers and Agent slots.")
                 case let .unknownParameter(id): return l.text("Unknown parameter: %@", id)
                 case let .agentDenied(id): return l.text("Agent write denied: %@", id)
+                case let .invalidLink(id): return l.text("Invalid fader link: %@. Leader and members must exist, differ, and not chain.", id)
+                case let .invalidScene(id): return l.text("Invalid scene: %@. A scene needs a name.", id)
                 }
             case let failure as StoreError:
                 switch failure {
@@ -892,7 +1012,7 @@
             do {
                 let data = try Data(contentsOf: url)
                 guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      header["device"] as? String == "X-TOUCH COMPACT", header["version"] as? Int == 1
+                      header["device"] as? String == "X-TOUCH COMPACT", [1, 2].contains(header["version"] as? Int)
                 else {
                     throw ParameterError.wrongDeviceOrVersion
                 }
@@ -916,7 +1036,7 @@
             saveWorkspace()
         }
 
-        private func saveWorkspace() {
+        func saveWorkspace() {
             guard let store else { return }
             var profile = DeviceProfile()
             profile.transmitChannel = Int(session.state.map.transmitChannel) + 1
@@ -1084,7 +1204,7 @@
             }
         }
 
-        private func log(_ entry: LocalizedMessage) {
+        func log(_ entry: LocalizedMessage) {
             appendEvent(MonitorEvent(timestamp: now(), direction: nil, source: .application, message: nil,
                                      control: nil, hostLayer: layer, ignored: false, text: entry))
         }

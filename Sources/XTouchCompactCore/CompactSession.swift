@@ -30,6 +30,12 @@ public struct CompactSession: Sendable {
     private var indicators: [IndicatorID: IndicatorState] = [:]
     private let indicatorBindings: [Int: IndicatorID]
     private var banks: [CompactLayer: CompactParameterBank] = [.a: .init(), .b: .init()]
+    /// Value history for explicit undo. Each entry is the complete value map before one
+    /// user-visible change; physical input coalesces per control so a drag is one step.
+    private var undoStack: [[String: Double]] = []
+    private var redoStack: [[String: Double]] = []
+    private var undoCoalescingKey: String?
+    public static let undoLimit = 50
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol, indicatorBindings: [Int: IndicatorID] = PluginConfigurationAdapter.agentIndicators) {
         self.indicatorBindings = indicatorBindings
@@ -100,14 +106,127 @@ public struct CompactSession: Sendable {
 
     /// `drivesMotors: false` updates the value, bank, rings and LEDs but never commands or
     /// queues a motor for this parameter (used when a remote caller lacks motor permission).
-    public mutating func setParameter(_ id: String, value: Double, fromAgent: Bool = false, drivesMotors: Bool = true) throws -> [MIDIMessage] {
+    /// Linked members follow the leader under the same motor permission and touch rules.
+    public mutating func setParameter(_ id: String, value: Double, fromAgent: Bool = false, drivesMotors: Bool = true,
+                                      undoKey: String? = nil) throws -> [MIDIMessage]
+    {
+        let snapshot = parameters.values
+        let before = parameters.normalizedPosition(id)
         try parameters.set(id, value: value, fromAgent: fromAgent)
+        let delta = parameters.normalizedPosition(id).flatMap { after in before.map { after - $0 } } ?? 0
+        let ids = Set([id]).union(parameters.propagateLink(from: id, delta: delta, fromAgent: fromAgent))
+        recordUndo(snapshot, key: undoKey ?? (fromAgent ? "agent:\(id)" : nil))
         if !drivesMotors {
+            for member in ids {
+                for index in motorFaders(boundTo: member) {
+                    state.discardMotorIntent(index)
+                }
+            }
+        }
+        return try synchronizeParameters(includeMotors: drivesMotors, ids: ids)
+    }
+
+    // MARK: Undo / redo and scenes
+
+    public var canUndo: Bool {
+        !undoStack.isEmpty
+    }
+
+    public var canRedo: Bool {
+        !redoStack.isEmpty
+    }
+
+    /// Close the current coalescing group, e.g. when a drag ends.
+    public mutating func endUndoGroup() {
+        undoCoalescingKey = nil
+    }
+
+    private mutating func recordUndo(_ snapshot: [String: Double], key: String?) {
+        guard snapshot != parameters.values else { return }
+        redoStack.removeAll()
+        if let key, key == undoCoalescingKey, !undoStack.isEmpty {
+            return
+        }
+        undoCoalescingKey = key
+        undoStack.append(snapshot)
+        if undoStack.count > Self.undoLimit {
+            undoStack.removeFirst(undoStack.count - Self.undoLimit)
+        }
+    }
+
+    /// Restore the previous value map. Like any software write, faders on the active layer
+    /// follow (touched faders defer until release); nothing else is implied.
+    public mutating func undo() throws -> [MIDIMessage] {
+        guard let previous = undoStack.popLast() else { return [] }
+        redoStack.append(parameters.values)
+        undoCoalescingKey = nil
+        return try replaceValues(previous)
+    }
+
+    public mutating func redo() throws -> [MIDIMessage] {
+        guard let next = redoStack.popLast() else { return [] }
+        undoStack.append(parameters.values)
+        undoCoalescingKey = nil
+        return try replaceValues(next)
+    }
+
+    private mutating func replaceValues(_ values: [String: Double]) throws -> [MIDIMessage] {
+        let before = parameters.values
+        for (id, value) in values where parameters.definition(id) != nil {
+            try parameters.set(id, value: value)
+        }
+        let changed = Set(parameters.values.keys.filter { before[$0] != parameters.values[$0] })
+        return try synchronizeParameters(ids: changed)
+    }
+
+    /// Store the current values as a scene, replacing one with the same ID.
+    public mutating func captureScene(id: String, name: String) throws {
+        var configuration = parameters.configuration
+        let scene = ParameterScene(id: id, name: name, values: parameters.values)
+        var scenes = configuration.scenes ?? []
+        if let index = scenes.firstIndex(where: { $0.id == id }) {
+            scenes[index] = scene
+        } else {
+            scenes.append(scene)
+        }
+        configuration.scenes = scenes
+        try replaceConfigurationKeepingValues(configuration)
+    }
+
+    public mutating func deleteScene(id: String) throws {
+        var configuration = parameters.configuration
+        configuration.scenes = (configuration.scenes ?? []).filter { $0.id != id }
+        try replaceConfigurationKeepingValues(configuration)
+    }
+
+    /// Recall host intent from a scene as one undoable step. Motors on the active layer are
+    /// not driven: physical recall stays the explicit `recallFaders()` action.
+    public mutating func recallScene(id: String) throws -> [MIDIMessage] {
+        guard let scene = parameters.configuration.scenes?.first(where: { $0.id == id }) else {
+            throw ParameterError.invalidScene(id)
+        }
+        let snapshot = parameters.values
+        for (key, value) in scene.values where parameters.definition(key) != nil {
+            try parameters.set(key, value: value)
+        }
+        recordUndo(snapshot, key: nil)
+        undoCoalescingKey = nil
+        let changed = Set(parameters.values.keys.filter { snapshot[$0] != parameters.values[$0] })
+        for id in changed {
             for index in motorFaders(boundTo: id) {
                 state.discardMotorIntent(index)
             }
         }
-        return try synchronizeParameters(includeMotors: drivesMotors, ids: [id])
+        return try synchronizeParameters(includeMotors: false, ids: changed)
+    }
+
+    /// Metadata edits (names, colors, links, scenes) without touching values or motors.
+    public mutating func replaceConfigurationKeepingValues(_ configuration: SurfaceConfiguration) throws {
+        var next = try ParameterEngine(configuration: configuration)
+        for (id, value) in parameters.values where next.definition(id) != nil {
+            try next.set(id, value: value)
+        }
+        parameters = next
     }
 
     /// Faders on the active layer whose motor follows this parameter.
@@ -150,6 +269,8 @@ public struct CompactSession: Sendable {
         parameters = next
         if resetValues {
             banks = [.a: .init(), .b: .init()]
+            // Defaults are a new baseline; older value maps may not fit the new definitions.
+            undoStack.removeAll(); redoStack.removeAll(); undoCoalescingKey = nil
         }
         // Loading a preset is not permission to move motors.
         state = state.reconfigured(map: state.map, lightProtocol: state.lightProtocol)
@@ -200,7 +321,8 @@ public struct CompactSession: Sendable {
         if case let .parameter(id) = parameters.assignment(.fader(index), layer: target),
            let definition = parameters.definition(id)
         {
-            return try setParameter(id, value: definition.minimum + Double(value) / 127 * (definition.maximum - definition.minimum))
+            return try setParameter(id, value: definition.minimum + Double(value) / 127 * (definition.maximum - definition.minimum),
+                                    undoKey: "fader:\(target.rawValue):\(index)")
         }
         banks[target, default: .init()].faders[index - 1] = value
         return target == state.layer ? try state.setFader(index, value: value) : []
@@ -212,7 +334,8 @@ public struct CompactSession: Sendable {
         if case let .parameter(id) = parameters.assignment(.encoder(index), layer: target),
            let definition = parameters.definition(id)
         {
-            return try setParameter(id, value: definition.minimum + Double(value) / 127 * (definition.maximum - definition.minimum))
+            return try setParameter(id, value: definition.minimum + Double(value) / 127 * (definition.maximum - definition.minimum),
+                                    undoKey: "encoder:\(target.rawValue):\(index)")
         }
         banks[target, default: .init()].encoders[index - 1] = value
         guard target == state.layer else { return [] }
@@ -247,14 +370,27 @@ public struct CompactSession: Sendable {
                 if case let .parameter(id) = parameters.assignment(.fader(index), layer: event.layer),
                    let definition = parameters.definition(id)
                 {
+                    let snapshot = parameters.values
+                    let before = parameters.normalizedPosition(id)
                     try parameters.set(id, value: definition.minimum + Double(event.value) / 127 * (definition.maximum - definition.minimum))
                     // Without touch evidence this may be motor-progress feedback. Never let it
-                    // drive another motor and bounce back through a shared binding.
-                    result.feedback += try synchronizeParameters(includeMotors: state.isTouched(index), ids: [id], excludingFader: index)
+                    // drive another motor and bounce back through a shared binding, and never
+                    // propagate it to linked members: only a touched (hand-held) leader leads.
+                    let touched = state.isTouched(index)
+                    var ids: Set<String> = [id]
+                    if touched {
+                        let delta = parameters.normalizedPosition(id).flatMap { after in before.map { after - $0 } } ?? 0
+                        ids.formUnion(parameters.propagateLink(from: id, delta: delta, fromAgent: false))
+                        recordUndo(snapshot, key: "fader:\(index)")
+                    }
+                    result.feedback += try synchronizeParameters(includeMotors: touched, ids: ids, excludingFader: index)
                 } else {
                     banks[event.layer, default: .init()].faders[index - 1] = event.value
                 }
             case let .faderTouch(index):
+                if event.isPressed == false {
+                    endUndoGroup()
+                }
                 let previous = parameters.values
                 if let slot = try parameters.receive(event) {
                     result.actionIntents.append(slot)

@@ -87,6 +87,16 @@
                     SettingsLink { Text(language.localizer.text("Settings") + "…") }
                         .keyboardShortcut(",", modifiers: .command)
                 }
+                // Parameter value history, beside (not replacing) the system Undo so text fields
+                // keep ⌘Z while editing.
+                CommandGroup(after: .undoRedo) {
+                    Button(language.localizer.text("Undo value change")) { model.undo() }
+                        .keyboardShortcut("z", modifiers: [.command, .option])
+                        .disabled(!model.session.canUndo)
+                    Button(language.localizer.text("Redo value change")) { model.redo() }
+                        .keyboardShortcut("z", modifiers: [.command, .option, .shift])
+                        .disabled(!model.session.canRedo)
+                }
             }
             Settings {
                 LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents)

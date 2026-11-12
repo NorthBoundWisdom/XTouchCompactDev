@@ -1,5 +1,6 @@
 #if os(macOS)
     import SwiftUI
+    import XTouchCompactCore
 
     enum Theme {
         static let background = Color(red: 0.055, green: 0.06, blue: 0.072)
@@ -17,6 +18,20 @@
         static let touch = Color(red: 0.98, green: 0.82, blue: 0.3)
         static let observed = Color(red: 0.62, green: 0.72, blue: 1.0)
         static let selection = Color(red: 0.42, green: 0.62, blue: 1.0)
+
+        /// Parameter color tags; saturated enough to read as a thin strip on the dark chassis.
+        static func tag(_ color: ParameterColor) -> Color {
+            switch color {
+            case .red: Color(red: 0.94, green: 0.33, blue: 0.31)
+            case .orange: Color(red: 0.98, green: 0.58, blue: 0.22)
+            case .yellow: Color(red: 0.95, green: 0.83, blue: 0.27)
+            case .green: Color(red: 0.36, green: 0.8, blue: 0.42)
+            case .teal: Color(red: 0.24, green: 0.78, blue: 0.76)
+            case .blue: Color(red: 0.36, green: 0.58, blue: 0.98)
+            case .purple: Color(red: 0.66, green: 0.47, blue: 0.95)
+            case .pink: Color(red: 0.95, green: 0.45, blue: 0.7)
+            }
+        }
     }
 
     struct PanelStyle: ViewModifier {

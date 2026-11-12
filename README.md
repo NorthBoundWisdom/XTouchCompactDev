@@ -16,6 +16,8 @@ from the hardware, from the on-screen panel, or from a local AI agent over MCP.
   with LED rings, 39 illuminated buttons, and both A/B layers.
 - **Parameters** with names, groups, units, ranges and steps. Assign them to faders and encoders, and
   assign toggle, step, set, cycle and group-reset actions to buttons. Each layer has its own assignments.
+- **Organization.** Rename faders and encoders in place, color-tag and group them, link faders
+  (VCA style), save and recall named scenes, and undo value changes. None of these moves a motor by itself.
 - **Touch-aware motor policy.** Reported touch ownership blocks motor commands to that fader.
   Connecting, reconnecting and switching layers never recall fader positions.
 - **Mock mode** that models the documented Standard MIDI input and feedback paths without hardware.

@@ -4,7 +4,7 @@
     import XTouchCompactLocalization
 
     enum WorkspaceTab: String, CaseIterable, Identifiable {
-        case values, parameters, agents, monitor, connection
+        case values, parameters, organize, agents, monitor, connection
 
         var id: String {
             rawValue
@@ -14,6 +14,7 @@
             switch self {
             case .values: "数值"
             case .parameters: "Parameters"
+            case .organize: "Organize"
             case .agents: "Agents"
             case .monitor: "MIDI 监视"
             case .connection: "连接"
@@ -24,6 +25,7 @@
             switch self {
             case .values: "slider.horizontal.3"
             case .parameters: "list.bullet.rectangle"
+            case .organize: "square.stack.3d.up"
             case .agents: "person.3"
             case .monitor: "waveform.path"
             case .connection: "cable.connector.horizontal"
@@ -40,7 +42,12 @@
         let snapshot: PanelSnapshot
         let intents: PanelIntents
         @Binding var selection: CompactControl?
-        @State private var tab: WorkspaceTab = .values
+        @State private var tab: WorkspaceTab
+
+        init(snapshot: PanelSnapshot, intents: PanelIntents, selection: Binding<CompactControl?>, initialTab: WorkspaceTab = .values) {
+            self.snapshot = snapshot; self.intents = intents
+            _selection = selection; _tab = State(initialValue: initialTab)
+        }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
@@ -49,7 +56,7 @@
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(maxWidth: 420)
+                .frame(maxWidth: 480)
 
                 switch tab {
                 case .agents:
@@ -76,6 +83,7 @@
                         }
                     }
                 case .parameters: ParameterWorkspace(snapshot: snapshot, intents: intents)
+                case .organize: ScrollView { OrganizeWorkspace(snapshot: snapshot, intents: intents) }
                 case .values: ValueListView(snapshot: snapshot, intents: intents, selection: $selection)
                 case .monitor: MIDIMonitorView(snapshot: snapshot, intents: intents)
                 case .connection: ConnectionSettingsView(snapshot: snapshot, intents: intents)
