@@ -45,12 +45,14 @@ Like the BCR Provider, an explicit instance ID must be 1–128 bytes of visible 
 The process has no persistent state directory and does not access user stores.
 Read-only is the default. Each mutation category has a separate explicit flag.
 The token has the same shape as the BCR Provider's: exactly 64 lowercase hexadecimal
-characters. Generate a private token and send it on stdin:
+characters. Generate a private token and pass it through a dedicated pipe; like the
+BCR Provider, `--token-stdin` refuses a stdin that is not a pipe (a redirected file or a
+terminal), because a redirected file would bypass the private-file checks below:
 
 ```sh
 umask 077
 python3 -c 'import secrets; print(secrets.token_hex(32))' > build/simulator-token
-.build/debug/XTouchSurfaceSimulator < build/simulator-token \
+cat build/simulator-token | .build/debug/XTouchSurfaceSimulator \
   --token-stdin --surface-instance-id car.a --port 0 \
   --ready-file build/simulator-a.ready.json \
   --allow-surface-input --allow-surface-feedback --allow-surface-reset

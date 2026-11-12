@@ -10,7 +10,7 @@ import XTouchCompactCore
     import Glibc
 #endif
 
-private enum StartupError: Error { case invalidArguments, invalidInstanceID, tokenRequired, tokenFileNotPrivate, readyFileExists, readyFile }
+private enum StartupError: Error { case invalidArguments, invalidInstanceID, tokenRequired, tokenStdinNotPipe, tokenFileNotPrivate, readyFileExists, readyFile }
 
 /// JSON-RPC 2.0 failures. Tool failures remain MCP results with `isError: true`.
 private struct RPCError: Error {
@@ -135,6 +135,10 @@ private func removeOwnedReadyFile() {
         if let tokenPath {
             token = try readPrivateToken(tokenPath)
         } else if tokenStdin {
+            // Same rule as the BCR Provider: stdin must be a dedicated pipe. A redirected file
+            // would bypass the private-file checks of --token-file; a terminal would echo it.
+            var info = stat()
+            guard fstat(STDIN_FILENO, &info) == 0, info.st_mode & S_IFMT == S_IFIFO else { throw StartupError.tokenStdinNotPipe }
             token = readLine() ?? ""
         } else {
             throw StartupError.tokenRequired

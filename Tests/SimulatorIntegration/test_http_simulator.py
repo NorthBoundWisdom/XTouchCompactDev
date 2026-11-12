@@ -450,6 +450,15 @@ class SurfaceSimulatorStartupTests(unittest.TestCase):
         finally:
             running.close()
 
+    def test_token_stdin_must_be_a_dedicated_pipe(self):
+        # Same rule as the BCR Provider: a redirected file would bypass the --token-file checks.
+        redirected = self.private_token_file("redirected", 0o644)
+        with open(redirected, encoding="utf-8") as stream:
+            completed = subprocess.run([str(copy_binary(self.directory)), "--token-stdin"], stdin=stream,
+                capture_output=True, text=True, cwd=self.directory, timeout=10)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(completed.stdout, "")
+
     def test_token_must_be_64_lowercase_hex(self):
         for token in ("isolated-simulation-test-token", TOKEN.upper(), TOKEN[:-1], TOKEN + "0", "g" * 64, ""):
             with self.subTest(token=token):
