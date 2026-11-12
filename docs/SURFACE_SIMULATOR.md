@@ -328,3 +328,50 @@ the SDK from `build/dependencies/SurfacePlugins/clients/python` without writing 
 The 1.2 tests also run two real HTTP writers concurrently: all unsequenced feedback is
 accepted, and a stale input is proven unexecuted before an explicit SDK refresh and new input.
 No test here starts a production Pipe service or connects physical hardware.
+
+## Chassis mapping example
+
+The default demonstration configuration can supply the seven controls selected by Pipe's
+`surface_sim_chassis_roles.example.json`. Start the isolated binary with
+`--allow-surface-input --allow-surface-feedback` (and `--allow-surface-reset` when the
+consumer owns reset), using the token and readiness procedure above. Layer A is active at
+startup; select `global.layer.a` before using these layer-A roles after a layer switch.
+
+| Pipe role | Control ID | accepts_input | Input kind / encoding | Feedback kinds | Hold |
+| --- | --- | --- | --- | --- | --- |
+| enable | `a.touch.1` | true | button / boolean | none | rest=false, max=10s |
+| linear | `a.fader.1` | true | absolute / scalar 0…127 | value | none |
+| steer | `a.encoder.9` | true | absolute / scalar 0…127 | value | none |
+| stop | `a.button.3` | true | button / boolean | indicator | none |
+| speed feedback | `a.encoder.10` | true | absolute / scalar 0…127 | value | none |
+| steer feedback | `a.encoder.11` | true | absolute / scalar 0…127 | value | none |
+| stopped feedback | `a.button.4` | true | button / boolean | indicator | none |
+
+The default profile is `xtouch.compact.standard.simulation` version `1.2`, with
+`mapping_revision: 2fc51394e3593d7c`. Discover the running instance and pin its actual identity;
+copying a profile pin from documentation never authorizes an instance.
+
+All seven are unassigned in the host demonstration configuration: the consumer owns their
+business meaning. A feedback role's `accepts_input: true` also allows simulated hand input;
+feedback remains display intent and does not create input. Pipe's example chooses a 1s enable
+lease, within the descriptor's 10s maximum.
+
+Run the read-only compatibility probe from this checkout:
+
+```sh
+python3 -B Tests/SimulatorIntegration/check_pipe_chassis_roles.py \
+  --binary .build/debug/XTouchSurfaceSimulator \
+  --report build/pipe-chassis-roles-proof.json
+```
+
+It passes the binary's actual `--describe` discovery to Pipe's unmodified
+`resolve_chassis_roles`, importing Pipe with bytecode disabled, and updates only the example's
+profile version and mapping pin in memory. A missing Pipe checkout is reported as skipped.
+The existing contract-1.1 binary and example assemble successfully. The Pipe consumer checked
+for this delivery accepts only contract 1.1 and its registered vocabulary lacks
+`feedback.unsequenced` and `controls.input_declared`. Its original example therefore refuses
+1.2 with `unsupported_contract`; explicitly adding 1.2 to the in-memory config is refused
+by its version allowlist. Pipe needs its contract allowlist, capability vocabulary, and reviewed
+example profile version/mapping pin updated before this 1.2 delivery can assemble there. The
+probe reports that refusal separately from the supplier's descriptor checks; it does not patch
+the consumer or claim an accepted 1.2 assembly.
