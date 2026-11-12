@@ -218,6 +218,79 @@ public struct ButtonLightCommand: Equatable, Sendable {
     }
 }
 
+/// Nonmotor feedback for the hardware bring-up checks, one message per invocation:
+///
+///     ring-display --encoder 1-16 --value 0-28 --channel C   (CC 26…41)
+///     ring-style   --encoder 1-16 --style 0-4  --channel C   (CC 10…25)
+///     select-layer --layer a|b                 --channel C   (Program Change 0 / 1)
+///
+/// By construction it cannot produce CC 1…9 (motors) or CC 127 (mode switch), and the
+/// channel is always explicit.
+public enum NonMotorFeedbackCommand: Equatable, Sendable {
+    case ringDisplay(encoder: Int, value: Int, channel: Int)
+    case ringStyle(encoder: Int, style: Int, channel: Int)
+    case selectLayer(b: Bool, channel: Int)
+
+    public static let names = ["ring-display", "ring-style", "select-layer"]
+
+    public static func parse(_ name: String, _ arguments: [String]) throws -> Self {
+        var reader = ArgumentReader(iterator: arguments.makeIterator())
+        var values: [String: String] = [:]
+        while let argument = reader.next() {
+            guard ["--encoder", "--value", "--style", "--layer", "--channel"].contains(argument) else {
+                throw RemoteMIDIError.unknownArgument(argument)
+            }
+            values[argument] = try reader.value(for: argument)
+        }
+        func integer(_ flag: String, _ range: ClosedRange<Int>) throws -> Int {
+            guard let text = values[flag], let value = Int(text), range.contains(value) else {
+                throw RemoteMIDIError.missingValue(flag)
+            }
+            return value
+        }
+        func only(_ allowed: Set<String>) throws {
+            if let extra = values.keys.sorted().first(where: { !allowed.contains($0) }) {
+                throw RemoteMIDIError.unknownArgument(extra)
+            }
+        }
+        let channel = try integer("--channel", 1 ... 16)
+        switch name {
+        case "ring-display":
+            try only(["--encoder", "--value", "--channel"])
+            return try .ringDisplay(encoder: integer("--encoder", 1 ... 16), value: integer("--value", 0 ... 28), channel: channel)
+        case "ring-style":
+            try only(["--encoder", "--style", "--channel"])
+            return try .ringStyle(encoder: integer("--encoder", 1 ... 16), style: integer("--style", 0 ... 4), channel: channel)
+        case "select-layer":
+            try only(["--layer", "--channel"])
+            guard let layer = values["--layer"], ["a", "b"].contains(layer) else { throw RemoteMIDIError.missingValue("--layer") }
+            return .selectLayer(b: layer == "b", channel: channel)
+        default:
+            throw RemoteMIDIError.unknownArgument(name)
+        }
+    }
+
+    /// MIDI 1.0 channel-voice UMP word.
+    public var word: UInt32 {
+        func controlChange(_ number: Int, _ value: Int, _ channel: Int) -> UInt32 {
+            0x2000_0000 | UInt32(0xB0 | (channel - 1)) << 16 | UInt32(number) << 8 | UInt32(value)
+        }
+        switch self {
+        case let .ringDisplay(encoder, value, channel): return controlChange(25 + encoder, value, channel)
+        case let .ringStyle(encoder, style, channel): return controlChange(9 + encoder, style, channel)
+        case let .selectLayer(b, channel): return 0x2000_0000 | UInt32(0xC0 | (channel - 1)) << 16 | UInt32(b ? 1 : 0) << 8
+        }
+    }
+
+    public var summary: [String: Any] {
+        switch self {
+        case let .ringDisplay(encoder, value, channel): ["command": "ring-display", "encoder": encoder, "value": value, "channel": channel]
+        case let .ringStyle(encoder, style, channel): ["command": "ring-style", "encoder": encoder, "style": style, "channel": channel]
+        case let .selectLayer(b, channel): ["command": "select-layer", "layer": b ? "b" : "a", "channel": channel]
+        }
+    }
+}
+
 // MARK: - Wire protocol
 
 /// Frames on the SSH stdio stream are `[kind u8][length u16 big-endian][payload]`. MIDI payloads are one CoreMIDI

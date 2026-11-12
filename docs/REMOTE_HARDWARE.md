@@ -53,9 +53,11 @@ automatically and immediately sends its layer assertion and LED sync.
 cannot send MIDI. See [the startup readback procedure](STARTUP_READBACK_INVESTIGATION.md).
 
 `XTouchRemoteMIDI button-light --button 1-39 --velocity 0-3 --channel 1-16` is the tool's
-only sender, added for the LED-encoding check. It sends one button-LED Note On and prints
-what it sent; it cannot express a Control Change, so it cannot address a motor or ring. The
-channel is always explicit.
+first sender, added for the LED-encoding check: one button-LED Note On per call.
+`ring-display --encoder 1-16 --value 0-28`, `ring-style --encoder 1-16 --style 0-4` and
+`select-layer --layer a|b` (each with `--channel 1-16`) send one ring or Program Change
+message. Every command prints what it sent. None can express CC 1–9 (motors) or CC 127
+(mode switch), and the channel is always explicit.
 
 `summarize FILE` decodes a `listen` capture offline (control, layer, count, value range).
 

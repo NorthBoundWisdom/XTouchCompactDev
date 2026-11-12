@@ -1,11 +1,12 @@
-# Hardware session 2026-11-12 — input checks and button-LED output
+# Hardware session 2026-11-12 — input checks and nonmotor output
 
 Controller attached by USB to the development Mac (VID/PID `0x1397 / 0x00B2`,
 `bcdDevice 0x0200`; the descriptor serial string `1.0.1` is not a verified firmware
 version). The input sections used `XTouchRemoteMIDI listen`, which has no output port, so
-nothing was sent during them. The button-LED section sent 26 button-LED Note On messages
-with operator consent and nothing else: no Control Change, so no motor, ring, layer or
-mode command. Raw captures are in `captures/private/` (not committed).
+nothing was sent during them. With operator consent, the output sections sent button-LED
+Note On, ring display (CC 26–41), ring style (CC 10–25) and Program Change messages only.
+**No motor command (CC 1–9) and no mode switch (CC 127) was sent**; the sender cannot
+express them. Raw captures are in `captures/private/` (not committed).
 
 ## What the operator did
 
@@ -82,12 +83,54 @@ The profile is not rewritten automatically. Set *Global 接收通道* to 2 and e
 A second XTouchCompactApp process was running during these sends. With its receive
 channel at 1 it could not have altered LEDs on channel 2, but the run was not isolated.
 
+## Rings and layer selection (output log `feedback-2026-11-12.jsonl`, 39 messages)
+
+Sent with `XTouchRemoteMIDI ring-display`, `ring-style` and `select-layer` on channel 2;
+the operator reported the rings after each batch. An XTouchCompactApp process was running
+throughout, so the run was not isolated; the operator did not touch the unit between a
+batch and its report except where noted.
+
+**Ring display (CC 26–41), default style.** All matched the RX table:
+
+| Value | Seen |
+| --- | --- |
+| 0 | ring off |
+| 1, 4, 7, 10, 13 | that single LED lit; 1 is bottom left, 7 top center, 13 bottom right |
+| 20 | LED 7 blinking (14–26 = LED *n* − 13 blinking) |
+| 27 | all 13 lit |
+| 28 | all 13 blinking |
+
+Rings listen on channel 2, like button LEDs.
+
+**Ring style (CC 10–25).** Styles 0–4 on E1–E5:
+
+- Style first, then display value 4: all five rings showed LED 4 alone.
+- Style sent again afterwards, with no display message: the ring was redrawn at once with a
+  pattern of its own, and the earlier position was not kept. Style 1 → LED 1; style 2 →
+  ring off; style 3 → LED 7; style 4 → LEDs 1–7. (E1, style 0, was not resent and kept
+  LED 4.)
+- Display value 10 sent after that: all of E1–E6 showed LED 10 alone, including E6, which
+  never received a style.
+
+So a host display value always draws **one LED**, whatever the style, and a style message
+redraws the ring immediately, discarding the host's position. The style evidently governs
+how the device draws the ring for local knob movement; that was not tested here. Each
+style pattern was seen once, so no rule is derived from them. The core's "replay the
+host position after a style change" matches this. The app sends no style today.
+
+**Layer selection (Program Change).** `select-layer b` lit the B layer key, and the
+operator's F1 touches then arrived on CC 111 (8 messages, all layer B).
+`select-layer a` followed, and touches arrived on CC 101 (12 messages, all layer A).
+Bring-up assumption 2 holds on this unit: Program Change 0 / 1 on the Global RX channel
+really selects the layer, in both directions.
+
 ## Not established by this session
 
 - Only control 1 of each kind was exercised: this is not HW-2/HW-3 coverage and not C2.
-- Firmware version, ring styles and displays over RX, Program Change layer selection and
-  all motor behavior (HW-1 remainder, HW-4, the layer half of HW-5, HW-6): none of these was
-  sent. Whether rings and motors also listen on channel 2 is expected but not observed.
+- Firmware version, and all motor behavior (HW-1 remainder, HW-6): no motor command was
+  sent. Motors are expected to listen on channel 2 like LEDs and rings, but this is not observed.
+- Ring behavior under local knob movement per style, ring LED colors, blink periods, and
+  rings E7–E16 beyond the display values listed (E7, E8 were used for 27 and 28).
 - Pedals were not connected.
 
 ## Startup readback

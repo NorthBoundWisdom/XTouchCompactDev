@@ -135,3 +135,39 @@ import Testing
         #expect(throws: RemoteMIDIError.self) { _ = try ButtonLightCommand.parse(arguments) }
     }
 }
+
+@Test func nonMotorFeedbackCommandsNeverAddressAMotorOrTheModeSwitch() throws {
+    #expect(try NonMotorFeedbackCommand.parse("ring-display", ["--encoder", "1", "--value", "27", "--channel", "2"]).word == 0x20B1_1A1B)
+    #expect(try NonMotorFeedbackCommand.parse("ring-style", ["--encoder", "16", "--style", "4", "--channel", "2"]).word == 0x20B1_1904)
+    #expect(try NonMotorFeedbackCommand.parse("select-layer", ["--layer", "b", "--channel", "2"]).word == 0x20C1_0100)
+    #expect(try NonMotorFeedbackCommand.parse("select-layer", ["--channel", "1", "--layer", "a"]).word == 0x20C0_0000)
+    // Enumerate everything expressible: Control Change numbers stay within 10…41.
+    for channel in [1, 2, 16] {
+        for encoder in 1 ... 16 {
+            for value in 0 ... 28 {
+                let word = NonMotorFeedbackCommand.ringDisplay(encoder: encoder, value: value, channel: channel).word
+                #expect((word >> 20) & 0xF == 0xB && (26 ... 41).contains(Int((word >> 8) & 0x7F)))
+            }
+            for style in 0 ... 4 {
+                let word = NonMotorFeedbackCommand.ringStyle(encoder: encoder, style: style, channel: channel).word
+                #expect((word >> 20) & 0xF == 0xB && (10 ... 25).contains(Int((word >> 8) & 0x7F)))
+            }
+        }
+    }
+    let invalid: [(String, [String])] = [
+        ("ring-display", ["--encoder", "1", "--value", "29", "--channel", "2"]),
+        ("ring-display", ["--encoder", "0", "--value", "1", "--channel", "2"]),
+        ("ring-display", ["--encoder", "17", "--value", "1", "--channel", "2"]),
+        ("ring-display", ["--encoder", "1", "--value", "1"]),
+        ("ring-display", ["--encoder", "1", "--style", "1", "--channel", "2"]),
+        ("ring-style", ["--encoder", "1", "--style", "5", "--channel", "2"]),
+        ("select-layer", ["--layer", "c", "--channel", "2"]),
+        ("select-layer", ["--layer", "a", "--channel", "0"]),
+        ("select-layer", ["--layer", "a", "--encoder", "1", "--channel", "2"]),
+        ("motor", ["--channel", "2"]),
+        ("ring-display", ["--cc", "1", "--channel", "2"]),
+    ]
+    for (name, arguments) in invalid {
+        #expect(throws: RemoteMIDIError.self) { _ = try NonMotorFeedbackCommand.parse(name, arguments) }
+    }
+}

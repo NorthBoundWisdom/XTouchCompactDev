@@ -35,7 +35,7 @@ Inputs encoded as Note On velocity 127 for press and Note Off velocity 0 for rel
 |---|---|---|
 | Motor move fader 1...9 | CC 1...9, value 0...127 | Same RX address in both layers |
 | Encoder ring mode 1...16 | CC 10...25 | 0 Single, 1 Pan, 2 Fan, 3 Spread, 4 Trim |
-| Encoder ring display 1...16 | CC 26...41 | 0 off; 1...13 one LED; 14...26 blink LED; 27 all on; 28 all blink |
+| Encoder ring display 1...16 | CC 26...41 | 0 off; 1...13 one LED; 14...26 blink LED; 27 all on; 28 all blink. Observed on the project's unit (2026-11-12): as listed, and always a single LED whatever the ring style |
 | Buttons 1...39 LED | Note 0...38 | Addresses differ from TX button notes |
 | Select Layer A/B | Program Change 0 / 1 | Standard mode only; host command, not physical-layer readback; suppressed while listening |
 | Mode (Standard / MC) | CC 127 = 0 / 1 | Do not send automatically during P0 |

@@ -532,16 +532,17 @@ import Foundation
         }
     }
 
-    // MARK: - Single button-light command (bring-up LED encoding check)
+    // MARK: - Single nonmotor feedback message (bring-up checks)
 
-    /// Sends exactly one button-LED Note On and prints what was sent as a JSON line.
-    func sendButtonLight(_ command: ButtonLightCommand) throws {
+    /// Sends exactly one UMP word to the controller and prints what was sent as a JSON line.
+    /// Callers pass words built by `ButtonLightCommand` or `NonMotorFeedbackCommand` only.
+    func sendOne(word: UInt32, deviceName: String, record: [String: Any]) throws {
         var client: MIDIClientRef = 0
         var port: MIDIPortRef = 0
-        try check(MIDIClientCreateWithBlock("XTouchRemoteMIDI button-light" as CFString, &client) { _ in }, "Create MIDI client")
+        try check(MIDIClientCreateWithBlock("XTouchRemoteMIDI send" as CFString, &client) { _ in }, "Create MIDI client")
         defer { MIDIClientDispose(client) }
-        try check(MIDIOutputPortCreate(client, "Button Light Out" as CFString, &port), "Create MIDI output")
-        let matcher = RemoteBridgeOptions(deviceName: command.deviceName)
+        try check(MIDIOutputPortCreate(client, "Feedback Out" as CFString, &port), "Create MIDI output")
+        let matcher = RemoteBridgeOptions(deviceName: deviceName)
         var destination: MIDIEndpointRef = 0
         var name = ""
         for index in 0 ..< MIDIGetNumberOfDestinations() {
@@ -554,17 +555,22 @@ import Foundation
             throw NSError(domain: "XTouchRemoteMIDI", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Controller output not found; nothing was sent"])
         }
-        let word = command.word
         guard withEventList([word], { MIDISendEventList(port, destination, $0) }) else {
             throw NSError(domain: "XTouchRemoteMIDI", code: 2, userInfo: [NSLocalizedDescriptionKey: "MIDI send failed"])
         }
         Thread.sleep(forTimeInterval: 0.2) // Let CoreMIDI deliver before the client goes away.
-        let record: [String: Any] = ["event": "sent-button-light", "destination": name, "button": command.button,
-                                     "velocity": command.velocity, "channel": command.channel,
-                                     "word": String(format: "%08X", word),
-                                     "wallClock": ISO8601DateFormatter().string(from: Date())]
-        let data = try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys])
+        var line = record
+        line["destination"] = name
+        line["word"] = String(format: "%08X", word)
+        line["wallClock"] = ISO8601DateFormatter().string(from: Date())
+        let data = try JSONSerialization.data(withJSONObject: line, options: [.sortedKeys])
         print(String(decoding: data, as: UTF8.self))
+    }
+
+    func sendButtonLight(_ command: ButtonLightCommand) throws {
+        try sendOne(word: command.word, deviceName: command.deviceName,
+                    record: ["event": "sent-button-light", "button": command.button, "velocity": command.velocity,
+                             "channel": command.channel])
     }
 
     // MARK: - Entry
@@ -610,6 +616,11 @@ import Foundation
             try listDevices()
         case "button-light":
             try sendButtonLight(ButtonLightCommand.parse(Array(arguments.dropFirst())))
+        case let name? where NonMotorFeedbackCommand.names.contains(name):
+            let command = try NonMotorFeedbackCommand.parse(name, Array(arguments.dropFirst()))
+            var record = command.summary
+            record["event"] = "sent-feedback"
+            try sendOne(word: command.word, deviceName: RemoteMIDIDefaults.deviceName, record: record)
         case "listen":
             try Listener(options: RemoteBridgeOptions.parse(Array(arguments.dropFirst()))).run()
         default:
@@ -617,7 +628,10 @@ import Foundation
                 + "       XTouchRemoteMIDI bridge [--listen-only] [--device NAME] [--status PATH]\n"
                 + "       XTouchRemoteMIDI devices\n"
                 + "       XTouchRemoteMIDI listen [--device NAME]\n"
-                + "       XTouchRemoteMIDI button-light --button 1-39 --velocity 0-3 --channel 1-16")
+                + "       XTouchRemoteMIDI button-light --button 1-39 --velocity 0-3 --channel 1-16\n"
+                + "       XTouchRemoteMIDI ring-display --encoder 1-16 --value 0-28 --channel 1-16\n"
+                + "       XTouchRemoteMIDI ring-style --encoder 1-16 --style 0-4 --channel 1-16\n"
+                + "       XTouchRemoteMIDI select-layer --layer a|b --channel 1-16")
             exit(64)
         }
     } catch {

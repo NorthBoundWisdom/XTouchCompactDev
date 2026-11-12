@@ -164,9 +164,11 @@ Global RX channel 2, velocity 0 = off, 1 = off, 2 = steady on, 3 = blink. Select
 encoding: **observed 1.14 (0/2/3)**; the manual's 0/1/2 is rejected for this unit. Firmware
 unread; blink period not timed. Sent with the single-purpose `button-light` command, not
 through the app's Nonmotor tests page.
-Assumption 2 established or rejected: not tested (no Program Change was sent).
-Capture filename(s): `button-light-2026-11-12.jsonl` (private)
-Conclusion / corrections: use `observed114`; layer assertion still to be characterized.
+Assumption 2 established or rejected: **established** (2026-11-12). Program Change 1 then 0 on
+Global RX channel 2 lit the B then A layer key, and F1 touches arrived on CC 111 then CC 101.
+Capture filename(s): `button-light-2026-11-12.jsonl`, `feedback-2026-11-12.jsonl`,
+`layer-b-2026-11-12.jsonl`, `layer-a-2026-11-12.jsonl` (private)
+Conclusion / corrections: use `observed114`; Program Change selects the layer in both directions.
 
 ## HW-4 — ring styles and colors (Stage 2)
 
@@ -179,9 +181,15 @@ Expected: compare raw RX addresses with MIDI_PROTOCOL.md. UI non-single styles
 are approximate until this test; capture photographs of actual segment patterns,
 LED colors and timing. No motor command should appear.
 
-Actual patterns/colors / photo names: __________
-Capture filename(s): __________
-Conclusion / frontend corrections (F7): __________
+Actual (2026-11-12, partial): display values 0, 1–13, 14–26, 27 and 28 behave as in the RX
+table on channel 2 (single LED, blinking LED, all on, all blinking). A host display value
+draws one LED under every style. A style message redraws the ring at once with its own
+pattern and discards the host position (style 1 → LED 1, 2 → off, 3 → LED 7, 4 → LEDs 1–7,
+each seen once). Colors, blink period and local-rotation behavior per style not recorded.
+Capture filename(s): `feedback-2026-11-12.jsonl` (private)
+Conclusion / corrections: see [the session record](HARDWARE_SESSION_2026-11-12.md). The
+panel's pan / fan / spread drawings of a host position do not match the device, which shows
+a single LED; local-rotation appearance still needs its own check.
 
 ## HW-6 — one motor, touch and feedback (Stage 3)
 
