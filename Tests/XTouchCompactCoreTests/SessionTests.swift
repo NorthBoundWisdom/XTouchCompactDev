@@ -150,3 +150,23 @@ import Testing
     #expect(session.bank(.a).faders[0] == 99) // Target survives, old motor intent does not.
     #expect(try session.setFader(1, value: 99) == [.controlChange(channel: 1, number: 1, value: 99)])
 }
+
+@Test func hostOnlyLayerSelectionRetainsEvidenceUntilTransportAcceptance() throws {
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = try session.receive([.controlChange(channel: 0, number: 37, value: 42)])
+    for layer in [CompactLayer.a, .b, .a] {
+        let lights = try session.selectHostLayer(layer)
+        #expect(lights.count == 55)
+        #expect(!lights.contains {
+            if case .programChange = $0 {
+                return true
+            }; return false
+        })
+        #expect(session.state.observedLayer == .b)
+        #expect(session.state.layerMismatch == (layer == .a))
+    }
+    #expect(try session.setFader(1, value: 99).isEmpty)
+    session.didTransmitLayerAssertion()
+    #expect(session.state.observedLayer == nil)
+    #expect(try session.setFader(1, value: 99) == [.controlChange(channel: 0, number: 1, value: 99)])
+}

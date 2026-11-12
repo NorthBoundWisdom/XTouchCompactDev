@@ -70,6 +70,18 @@ public struct CompactSession: Sendable {
         return try [command] + syncVisibleNonMotorFeedback()
     }
 
+    /// Select the software bank while retaining actual input-layer evidence. The host
+    /// may prepend Program Change, then call didTransmitLayerAssertion on acceptance.
+    public mutating func selectHostLayer(_ layer: CompactLayer) throws -> [MIDIMessage] {
+        state.selectHostLayer(layer)
+        state.invalidateNonMotorFeedback()
+        return try syncVisibleNonMotorFeedback()
+    }
+
+    public mutating func didTransmitLayerAssertion() {
+        state.didTransmitLayerAssertion()
+    }
+
     /// Explicitly opt in to motor recall after connection or a layer change.
     /// The state model still prevents commands while a fader is touched.
     public mutating func recallFaders() throws -> [MIDIMessage] {

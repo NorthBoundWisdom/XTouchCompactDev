@@ -263,7 +263,10 @@ behavior; software tests do not extend the physical sign-off.
 ## Explicit layer realignment and disconnected touches
 
 Use **Connection → Realign current layer**, or click the current A/B layer button,
-to reassert Program Change even without changing banks. This discards old layer
+to reassert Program Change even without changing banks. In hardware listening,
+this only selects the host bank and retains actual input-layer evidence. A first
+transport failure also retains known mismatch and keeps motors blocked. Only an
+accepted Program Change invalidates that evidence (U8; 未在实机复核). This discards old layer
 mismatch evidence and cancels deferred motor intents, but does not claim a physical
 acknowledgement, clear touch ownership or recall motors. New other-layer input
 will report a mismatch again. **Program Change itself cycles all nine motors on

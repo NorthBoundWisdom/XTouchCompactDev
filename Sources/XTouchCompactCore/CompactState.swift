@@ -96,16 +96,25 @@ public struct CompactState: Sendable {
         return result
     }
 
-    @discardableResult
-    public mutating func selectLayer(_ layer: CompactLayer) -> MIDIMessage {
-        // An explicit assertion, including re-aligning the current layer, invalidates old
-        // layer evidence. This is not a physical acknowledgement and never recalls motors.
+    /// Change host intent without claiming that a layer command reached the device.
+    /// Used during listening and before the transport accepts an explicit assertion.
+    public mutating func selectHostLayer(_ layer: CompactLayer) {
         pendingMotor.removeAll()
         desiredFader.removeAll()
         invalidateMotorCommandHistory()
-        observedLayer = nil
         self.layer = layer
-        // Never suppress layer assertions because physical button presses may change it invisibly.
+    }
+
+    /// Delivery invalidates prior layer evidence; it never acknowledges a physical layer.
+    public mutating func didTransmitLayerAssertion() {
+        observedLayer = nil
+    }
+
+    @discardableResult
+    public mutating func selectLayer(_ layer: CompactLayer) -> MIDIMessage {
+        selectHostLayer(layer)
+        didTransmitLayerAssertion()
+        // Deterministic simulation assumes the returned assertion is delivered.
         return map.selectLayer(layer)
     }
 

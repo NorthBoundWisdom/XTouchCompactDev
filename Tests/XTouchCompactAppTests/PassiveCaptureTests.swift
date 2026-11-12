@@ -56,6 +56,48 @@
         #expect(midi.sent.contains(.programChange(channel: 0, number: 0)))
     }
 
+    @Test @MainActor func failedLayerAssertionPreservesMismatchAndBlocksFreshMotors() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareSend)
+        midi.onMessages?([.controlChange(channel: 0, number: 37, value: 41)])
+        midi.fails = true
+        model.realignCurrentLayer()
+        #expect(model.session.state.observedLayer == .b)
+        #expect(model.session.state.layerMismatch)
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == true)
+        midi.fails = false
+        model.faderChanged(1, value: 99)
+        #expect(midi.sent.isEmpty)
+        model.realignCurrentLayer()
+        #expect(model.session.state.observedLayer == nil)
+        #expect(model.panelSnapshot.hardwareFeedbackNeedsSync == false)
+        midi.sent.removeAll()
+        model.faderChanged(1, value: 99)
+        #expect(midi.sent == [.controlChange(channel: 0, number: 1, value: 99)])
+    }
+
+    @Test @MainActor func passiveLayerSelectionCannotEraseMismatchBeforeWriteback() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareListen)
+        midi.onMessages?([.controlChange(channel: 0, number: 37, value: 41)])
+        #expect(model.session.state.observedLayer == .b)
+        model.realignCurrentLayer() // Listening: no physical layer assertion was sent.
+        #expect(midi.sent.isEmpty)
+        #expect(model.session.state.observedLayer == .b)
+        #expect(model.session.state.layerMismatch)
+        model.setConsoleMode(.hardwareSend)
+        model.faderChanged(1, value: 99)
+        #expect(midi.sent.isEmpty)
+        model.realignCurrentLayer() // Explicit assertion after enabling writes.
+        #expect(midi.sent.first == .programChange(channel: 0, number: 0))
+        #expect(model.session.state.observedLayer == nil)
+        midi.sent.removeAll()
+        model.faderChanged(1, value: 99)
+        #expect(midi.sent == [.controlChange(channel: 0, number: 1, value: 99)])
+    }
+
     @Test @MainActor func captureRetainsAllInputsBeyondMonitorLimitWithRawBytesAndLayerEvidence() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

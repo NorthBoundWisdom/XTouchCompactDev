@@ -627,7 +627,14 @@
 
         func setLayer(_ next: CompactLayer) {
             lockNonMotorTests()
-            apply { try $0.selectLayer(next) }
+            apply { session in
+                guard hardwareMode else { return try session.selectLayer(next) }
+                var messages = try session.selectHostLayer(next)
+                if !listenOnly {
+                    messages.insert(session.state.map.selectLayer(next), at: 0)
+                }
+                return messages
+            }
             layer = session.state.layer
             updateBank()
         }
@@ -849,6 +856,9 @@
                         try midi.sendPinned(message, inputID: authorizedTest.approval.inputID, outputID: authorizedTest.approval.outputID, generation: authorizedTest.approval.generation)
                     } else {
                         try midi.send(message)
+                    }
+                    if case .programChange = message {
+                        session.didTransmitLayerAssertion()
                     }
                     record(message, direction: .output, source: source, delivery: .sent,
                            nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control)
