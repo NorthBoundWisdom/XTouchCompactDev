@@ -4,6 +4,27 @@
     @testable import XTouchCompactApp
     import XTouchCompactCore
 
+    @Test @MainActor func layerSwitchCaptureUsesCommittedHostLayerForTheWholeBatch() throws {
+        for hardware in [false, true] {
+            let midi = FakeMIDIService()
+            let writer = ControlledEvidenceWriter()
+            let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true,
+                                     evidenceWriterFactory: { _ in writer })
+            midi.connect()
+            if hardware {
+                model.setConsoleMode(.hardwareSend)
+            }
+            model.startCapture(FileManager.default.temporaryDirectory.appendingPathComponent("synthetic-layer.jsonl"))
+            model.clearMonitor()
+            model.setLayer(.b)
+            model.stopCapture()
+            let rows = try writer.rows.filter { $0["direction"] as? String == "OUT" }
+            #expect(rows.count == 56)
+            #expect(rows.allSatisfy { $0["hostLayer"] as? String == "b" })
+            #expect(model.events.filter { $0.direction == .output }.allSatisfy { $0.hostLayer == .b })
+        }
+    }
+
     final class ControlledEvidenceWriter: EvidenceWriting {
         var bytes = Data()
         var writes = 0

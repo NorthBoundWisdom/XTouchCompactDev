@@ -407,12 +407,18 @@
 
                 let variant: ButtonLightProtocol = observedLEDVariant ? .observed114 : .manual
                 let inputChannelChanged = session.state.map.transmitChannel != map.transmitChannel
+                var candidate = session
+                let messages = try candidate.reconfigure(map: map, lightProtocol: variant)
+                try validateHardwareLayerAssertion(messages)
+                // Commit both protocol peers and their reading scope only after validation.
+                session = candidate
+                mock = mock.reconfigured(map: map, lightProtocol: variant)
                 if inputChannelChanged {
                     liveHardwareValues = nil
                     reportedHardwarePresses = [:]
                 }
-                mock = mock.reconfigured(map: map, lightProtocol: variant)
-                apply { try $0.reconfigure(map: map, lightProtocol: variant) }
+                send(messages)
+                updateBank()
                 if isObservingHardware, inputChannelChanged {
                     resetHardwareObservation()
                 }
@@ -1217,7 +1223,7 @@
             let key = direction == .input ? (source == .mock ? "IN %@ [MOCK]" : "IN %@")
                 : (!hardwareMode ? "OUT %@ [MOCK]" : "OUT %@")
             appendEvent(MonitorEvent(timestamp: now(), direction: direction, source: source, message: message,
-                                     control: control, hostLayer: layer,
+                                     control: control, hostLayer: session.state.layer,
                                      deviceLayer: direction == .input ? session.state.map.decode(message)?.layer : nil,
                                      delivery: delivery ?? (direction == .input ? .received : nil),
                                      ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest))

@@ -96,6 +96,41 @@
         })
     }
 
+    @Test @MainActor func refusedProfileApplicationDoesNotChangeMockReadingsOrSavedProfile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, storageRoot: root, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareSend)
+        midi.onMessages?([.controlChange(channel: 0, number: 1, value: 23),
+                          .controlChange(channel: 0, number: 101, value: 127)])
+        model.saveWorkspace()
+        let saved = try Data(contentsOf: ProtectedWorkspaceStore(directory: root).url)
+        let readings = model.liveHardwareValues
+        let map = model.session.state.map
+        model.clearMonitor()
+        model.transmitChannel = 4; model.feedbackChannel = 2; model.observedLEDVariant = true
+        model.configure()
+        #expect(model.error as? CompactError == .fadersTouched)
+        #expect(model.session.state.map.transmitChannel == map.transmitChannel)
+        #expect(model.session.state.map.globalReceiveChannel == map.globalReceiveChannel)
+        #expect(model.mock.map.transmitChannel == map.transmitChannel)
+        #expect(model.mock.map.globalReceiveChannel == map.globalReceiveChannel)
+        #expect(model.mock.lightProtocol == .manual)
+        #expect(model.liveHardwareValues == readings)
+        #expect(try Data(contentsOf: ProtectedWorkspaceStore(directory: root).url) == saved)
+        #expect(!model.logs.contains { $0.key == "Profile applied; parameter values preserved" })
+        #expect(midi.sent.isEmpty)
+        midi.onMessages?([.controlChange(channel: 0, number: 101, value: 0)])
+        model.configure()
+        #expect(model.session.state.map.transmitChannel == 3)
+        #expect(model.mock.map.transmitChannel == 3 && model.mock.map.globalReceiveChannel == 1)
+        #expect(model.mock.lightProtocol == .observed114)
+        #expect(model.liveHardwareValues == nil)
+        #expect(midi.sent.first == .programChange(channel: 1, number: 0))
+        #expect(try ProtectedWorkspaceStore(directory: root).load()?.profile.transmitChannel == 4)
+    }
+
     @Test @MainActor func profileChangePreservesBanksAndTouchWithoutMotorRecall() {
         let model = ConsoleModel(startsMIDI: false)
         model.faderChanged(1, value: 40)

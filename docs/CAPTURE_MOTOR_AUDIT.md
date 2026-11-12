@@ -43,3 +43,8 @@ SHA-256 respectively:
 
 The private files are neither modified nor committed. Tests use synthetic data
 only and run with the existing BuildWorkflowTests suite on macOS and Linux.
+
+Layer-switch output batches now record the newly committed software bank for every
+event (U9; 未在实机复核). Older captures can tag that batch with the previous host
+bank, so review the raw Program Change and session record together; do not rewrite
+private originals or treat that tag as physical layer acknowledgement.
