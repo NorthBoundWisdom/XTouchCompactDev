@@ -40,7 +40,7 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 | `control-tools.json` | `docs/surface-control-tools.json` |
 | `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
 | `surface-control-software-v1.json`, `surface-control-software-v1.1.json` | `fixtures/` |
-| `surface-control.md`, `surface-control-scenarios.md` | `docs/` |
+| `surface-control.md`, `surface-control-scenarios.md`, `surface-control-delivery.md` | `docs/` |
 
 The shared SDK tests and the Pipe integration example (`integrations/pipe/`) are not part
 of this generic delivery. The manifest's common fields have the same names and meanings as

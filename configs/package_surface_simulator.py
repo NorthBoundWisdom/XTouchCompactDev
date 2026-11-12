@@ -37,6 +37,7 @@ SHARED_FILES = {
     "surface-control-software-v1.1.json": "fixtures/surface-control-software-v1.1.json",
     "surface-control.md": "docs/surface-control.md",
     "surface-control-scenarios.md": "docs/surface-control-scenarios.md",
+    "surface-control-delivery.md": "docs/surface-control-delivery.md",
 }
 SDK_SOURCE = "clients/python/surface_control/__init__.py"
 # Common manifest fields follow SurfacePlugins docs/surface-control-delivery.md.

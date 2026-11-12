@@ -127,6 +127,39 @@ class DeliveryContentTests(unittest.TestCase):
         for source, digest in manifest["surface_plugins_files_sha256"].items():
             self.assertEqual(hashlib.sha256((shared / source).read_bytes()).hexdigest(), digest)
 
+    def test_manifest_follows_the_shared_delivery_convention(self):
+        """Field names and rules of SurfacePlugins docs/surface-control-delivery.md at the locked revision."""
+        shared = package_surface_simulator.SHARED
+        convention = (shared / "docs/surface-control-delivery.md").read_text()
+        table = [line.split("|")[1].strip().strip("`") for line in convention.splitlines() if line.startswith("| `")]
+        self.assertEqual(len(table), 13)
+        manifest = self.manifest
+        # Every documented common field is present; the rest are documented private fields.
+        self.assertLessEqual(set(table), set(manifest))
+        self.assertEqual(
+            set(manifest) - set(table),
+            {"product", "platform", "architecture", "configuration", "start_protocol", "stop_protocol"},
+        )
+        self.assertIs(type(manifest["schema_version"]), int)
+        self.assertIs(manifest["source_dirty"], False)
+        self.assertRegex(manifest["source_commit"], r"^[0-9a-f]{40}$")
+        self.assertRegex(manifest["surface_plugins_revision"], r"^[0-9a-f]{40}$")
+        self.assertRegex(manifest["mapping_revision"], r"^[0-9a-f]{16}$")
+        files = manifest["files_sha256"]
+        self.assertIn("surface-control-sdk-" + manifest["surface_control_sdk"] + ".zip", files)
+        self.assertIn("control-contract.json", files)
+        self.assertNotIn("manifest.json", files)
+        for name in files:
+            self.assertFalse(name.startswith("/") or "\\" in name or ".." in Path(name).parts, name)
+        # Every copied shared file is covered, by its path inside the shared package, and identical.
+        copied = set(package_surface_simulator.SHARED_FILES.values()) | {package_surface_simulator.SDK_SOURCE}
+        self.assertEqual(set(manifest["surface_plugins_files_sha256"]), copied)
+        for name, source in package_surface_simulator.SHARED_FILES.items():
+            self.assertEqual(files[name], manifest["surface_plugins_files_sha256"][source])
+        with zipfile.ZipFile(self.stage / "surface-control-sdk-1.1.0.zip") as sdk:
+            member = hashlib.sha256(sdk.read("surface_control/__init__.py")).hexdigest()
+        self.assertEqual(member, manifest["surface_plugins_files_sha256"][package_surface_simulator.SDK_SOURCE])
+
     def test_manifest_refuses_a_binary_serving_another_contract_version(self):
         contract = self.stage / "control-contract.json"
         document = json.loads(contract.read_text())
