@@ -18,8 +18,11 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[2]
 # The single SDK source is the shared package, materialized at the locked revision (D19-6).
 SHARED = ROOT / "build/dependencies/SurfacePlugins"
+# The managed cache must stay clean (the dependency manager rejects any extra file there),
+# so importing the SDK from it must not write __pycache__.
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(SHARED / "clients/python"))
-from surface_control import Client, CommandCursor, SurfaceError, mapping_revision
+from surface_control import Client, CommandCursor, SurfaceError, mapping_revision  # noqa: E402
 
 BINARY = Path(os.environ.get("XTOUCH_SIMULATOR_BINARY", ROOT / ".build/debug/XTouchSurfaceSimulator")).resolve()
 # Same credential shape as the BCR Provider: 64 lowercase hexadecimal characters.

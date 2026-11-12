@@ -12,8 +12,9 @@ shared SurfacePlugins package at the revision pinned in
 
 In a checkout, the managed dependency is materialized at `build/dependencies/SurfacePlugins`
 (`python3 configs/surface_plugins_dependency.py ensure`). Use it with
-`PYTHONPATH=build/dependencies/SurfacePlugins/clients/python`, as
-`Tests/SimulatorIntegration` does. A simulator delivery contains the same SDK as
+`PYTHONPATH=build/dependencies/SurfacePlugins/clients/python` and
+`PYTHONDONTWRITEBYTECODE=1`, as `Tests/SimulatorIntegration` does: the dependency manager
+treats any extra file in the managed cache (including `__pycache__`) as a dirty cache. A simulator delivery contains the same SDK as
 `surface-control-sdk-1.1.0.zip`, with every file hash in `manifest.json`.
 
 [`examples/surface_roundtrip.py`](examples/surface_roundtrip.py) is a generic consumer that
