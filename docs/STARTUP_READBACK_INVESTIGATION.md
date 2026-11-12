@@ -104,10 +104,14 @@ listed raw. It is a reading aid that assumes the factory preset, not a sign-off.
 | 2026-11-12 | C client attach | local USB | `source-connected` at 0.020 s, then no message for 15 s. |
 | 2026-11-12 | idle | local USB | A 240 s capture with nobody operating the unit: no message at all, so the idle device sends no periodic or keep-alive traffic that the listener can see. |
 
-Three attach captures (one remote, two local) agree: attaching a client to an
-already-powered, idle controller triggers no unsolicited position report. **Control case D
-is still missing**, so none of these captures has yet been shown to receive input over
-the same route. Cases A, B and D need someone at the unit.
+| 2026-11-12 | D control | local USB | F1 touch and movement, encoder, push and button on both layers all arrived on the same listener and route ([session record](HARDWARE_SESSION_2026-11-12.md)). |
+
+With the control case working, the two local attach and idle captures are meaningful:
+**attaching a client to an already-powered, idle controller triggers no unsolicited
+position report** on this unit in factory Standard mode. The remote attach capture agrees
+but has no control case of its own. Still open: case A (power-on), case B (USB
+reattach), and whether any request-triggered readback exists. Until those are done the
+overall conclusion stays "unverified", not "unsupported".
 
 ## Current fallback and safety policy
 

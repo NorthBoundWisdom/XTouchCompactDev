@@ -155,6 +155,7 @@ The step-by-step checklist is in [Hardware bring-up](docs/HARDWARE_BRINGUP.md).
 
 | Document | Contents |
 | --- | --- |
+| [Hardware session 2026-11-12](docs/HARDWARE_SESSION_2026-11-12.md) | Passive input checks on the physical unit: addresses on both layers, touch ordering |
 | [Remote hardware](docs/REMOTE_HARDWARE.md) | Develop against a controller plugged into another Mac over SSH (development only) |
 | [Software workflows](docs/SOFTWARE_WORKFLOWS.md) | Parameters, persistence, agents, MCP, OSC, capture and safety policies |
 | [MIDI protocol](docs/MIDI_PROTOCOL.md) | Factory Standard MIDI map, manufacturer documentation versus observed behavior |
