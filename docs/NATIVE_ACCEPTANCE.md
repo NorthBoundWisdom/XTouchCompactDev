@@ -31,6 +31,29 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 
 Do not paste the token into this file or any committed evidence.
 
+### Reference renders
+
+Four rows have an app-rendered reference of the expected state, built with the same model
+calls the UI uses. They show what to look for; they are **not** acceptance results.
+
+```sh
+python3 configs/macos_workflow.py build
+APP=build/app/debug/XTouchCompactApp.app/Contents/MacOS/XTouchCompactApp
+for scene in n5-touch n5-layer n5-osc n5-mcp; do
+  "$APP" --integration-test --snapshot-scene "$scene" --snapshot-output "build/n5/$scene.png"
+done
+```
+
+| Scene | Row | What it shows |
+| --- | --- | --- |
+| `n5-touch` | Touch arbitration | F1 held at 40 with a 110 software target: gold outline, 触摸中 badge, “motor command deferred” note |
+| `n5-layer` | Layer mismatch | Mock physical layer B while host is A: warning banner, Connection tab with Realign current layer |
+| `n5-osc` | OSC stop | Enable refused without trusted actual/heartbeat: visible OSC notice, output still off |
+| `n5-mcp` | MCP switch / Agent motor permission | Settings with Agent writes on and Agent motor moves off |
+
+Preset replacement and value persistence have no reference: the confirmation dialog is a
+separate window that offscreen rendering cannot capture, and persistence needs a real relaunch.
+
 ## Reproduce in an isolated instance
 
 Run setup, then `python3 configs/macos_workflow.py build`. Launch

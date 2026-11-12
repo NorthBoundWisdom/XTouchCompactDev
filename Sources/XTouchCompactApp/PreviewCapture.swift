@@ -105,6 +105,30 @@
             model.moveExpression(72)
             content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents,
                                           selection: .fader(2), initialTab: .organize))
+        // N5 reference renders: the expected state for each mouse acceptance row, built with the
+        // same model calls the UI uses. Compare these with the live app; they are not acceptance.
+        case "n5-touch":
+            width = 1600; height = 1000
+            model.setParameter("a.Fader.1", value: 40)
+            model.touchFader(1, isTouched: true)
+            model.setParameter("a.Fader.1", value: 110) // A software write while held: deferred.
+            content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents, selection: .fader(1)))
+        case "n5-layer":
+            width = 1600; height = 1000
+            // Mock physical layer B while the host stays on A: the mismatch warning and motor gate.
+            model.setMockPhysicalLayerForPreview(.b)
+            model.touchFader(2, isTouched: true)
+            model.touchFader(2, isTouched: false)
+            content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents,
+                                          selection: .fader(2), initialTab: .connection))
+        case "n5-osc":
+            width = 1600; height = 1000
+            model.setOSCEnabled(true) // No trusted actual/heartbeat: refused with a visible notice.
+            content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents))
+        case "n5-mcp":
+            width = 650; height = 1100
+            model.mcpWritesAllowed = true
+            content = AnyView(LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents))
         case "encoder-rings":
             width = 1600; height = 1000
             for (index, value) in [(1, 6), (2, 10), (3, 11), (4, 39), (9, 18), (10, 22), (11, 32), (12, 43), (13, 64), (14, 96), (15, 127), (16, 127)] {

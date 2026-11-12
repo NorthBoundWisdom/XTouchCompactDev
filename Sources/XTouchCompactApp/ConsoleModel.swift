@@ -658,6 +658,13 @@
             performMockGesture { try $0.pushEncoder(index, isDown: isDown) }
         }
 
+        /// Preview fixtures only: press the mock's physical A/B selector (no MIDI is emitted,
+        /// exactly like the device). The host learns the layer from the next input.
+        func setMockPhysicalLayerForPreview(_ layer: CompactLayer) {
+            guard !hardwareMode else { return }
+            mock.selectPhysicalLayer(layer)
+        }
+
         /// Simulated rear-panel accessories. Mock only: a real pedal is physical input.
         func moveExpression(_ value: UInt8) {
             guard !hardwareMode else { return }

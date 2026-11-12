@@ -729,6 +729,7 @@
         var body: some View {
             HStack(spacing: m(6)) {
                 Text("FOOT").font(.system(size: m(8), weight: .bold)).tracking(1).foregroundStyle(.secondary)
+                    .fixedSize()
                 Text("SW")
                     .font(.system(size: m(9), weight: .heavy))
                     .frame(width: m(30), height: m(18))
@@ -746,6 +747,7 @@
                     .accessibilityAction { intents.pressFootswitch?(true); intents.pressFootswitch?(false) }
                     .help(l.text("Hold to press the simulated footswitch"))
                 Text("EXP").font(.system(size: m(8), weight: .bold)).foregroundStyle(.secondary)
+                    .fixedSize()
                 Slider(value: Binding(get: { dragged ?? Double(pedals.expression ?? 0) },
                                       set: { value in
                                           dragged = value
