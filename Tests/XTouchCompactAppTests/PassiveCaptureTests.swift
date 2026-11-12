@@ -47,8 +47,13 @@
         #expect(model.session.state.isTouched(1))
         #expect(midi.sent.isEmpty)
         model.realignCurrentLayer()
-        #expect(midi.sent.contains(.programChange(channel: 0, number: 0)))
+        #expect(midi.sent.isEmpty)
         #expect(model.session.state.isTouched(1))
+        #expect(model.session.state.layerMismatch)
+        midi.onMessages?([.controlChange(channel: 0, number: 111, value: 0)])
+        #expect(midi.sent.isEmpty)
+        model.realignCurrentLayer()
+        #expect(midi.sent.contains(.programChange(channel: 0, number: 0)))
     }
 
     @Test @MainActor func captureRetainsAllInputsBeyondMonitorLimitWithRawBytesAndLayerEvidence() throws {

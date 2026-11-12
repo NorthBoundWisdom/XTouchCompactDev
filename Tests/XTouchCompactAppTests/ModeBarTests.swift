@@ -79,4 +79,60 @@
         try intent(model.panelIntents.setMode)(.hardwareListen)
         #expect(model.panelSnapshot.hardwareObservation == nil && model.panelSnapshot.mode == .hardwareListen)
     }
+
+    @Test @MainActor func touchedHardwareRejectsLayerSelectionRealignmentAndLightSyncWithoutQueueing() throws {
+        for path in 0 ... 2 {
+            let midi = FakeMIDIService()
+            let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+            midi.connect()
+            model.setConsoleMode(.hardwareSend)
+            midi.onMessages?([.controlChange(channel: 0, number: 119, value: 127)])
+            midi.sent.removeAll()
+            if path == 0 {
+                model.setLayer(.b)
+            }
+            if path == 1 {
+                model.realignCurrentLayer()
+            }
+            if path == 2 {
+                try intent(model.panelIntents.realignLayer)()
+            }
+            #expect(midi.sent.isEmpty)
+            #expect(model.layer == .a && model.session.state.layer == .a)
+            #expect(model.session.state.observedLayer == .b)
+            #expect(model.session.state.layerMismatch)
+            #expect(model.error as? CompactError == .fadersTouched)
+            #expect(!model.panelSnapshot.notifications.isEmpty)
+            midi.onMessages?([.controlChange(channel: 0, number: 119, value: 0)])
+            #expect(midi.sent.isEmpty) // Release never executes a refused operation.
+            if path == 0 {
+                model.setLayer(.b)
+            } else {
+                model.realignCurrentLayer()
+            }
+            #expect(midi.sent.count == 56)
+            #expect(model.layer == (path == 0 ? .b : .a))
+        }
+    }
+
+    @Test @MainActor func hardwareSafetyLatchBlocksLayerAfterMockTransitionButMockLayerIsUnchanged() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect()
+        // While mocking, physical touches are safety-only, independent of mock input touches.
+        midi.onMessages?([.controlChange(channel: 0, number: 101, value: 127)])
+        model.setLayer(.b)
+        #expect(model.layer == .b && model.mock.layer == .b)
+        model.setConsoleMode(.hardwareSend)
+        midi.sent.removeAll()
+        model.setLayer(.a)
+        #expect(midi.sent.isEmpty)
+        #expect(model.layer == .b)
+        #expect(model.error as? CompactError == .fadersTouched)
+        midi.onMessages?([.controlChange(channel: 0, number: 101, value: 0)])
+        #expect(midi.sent.isEmpty)
+        model.setLayer(.a)
+        #expect(midi.sent.count == 56)
+        #expect(model.layer == .a)
+    }
 #endif

@@ -98,6 +98,7 @@ public enum ButtonLightProtocol: String, Codable, Sendable {
 }
 
 public enum CompactError: Error, Equatable, Sendable {
+    case fadersTouched
     case invalidChannel(UInt8)
     case invalidIndex(String, Int)
     case invalidDisplayPosition(Int)

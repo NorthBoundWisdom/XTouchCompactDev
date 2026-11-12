@@ -625,7 +625,7 @@
         func setLayer(_ next: CompactLayer) {
             lockNonMotorTests()
             apply { try $0.selectLayer(next) }
-            layer = next
+            layer = session.state.layer
             updateBank()
         }
 
@@ -783,9 +783,22 @@
 
         func apply(_ operation: (inout CompactSession) throws -> [MIDIMessage]) {
             do {
-                try send(operation(&session))
+                var next = session
+                let messages = try operation(&next)
+                try validateHardwareLayerAssertion(messages)
+                session = next
+                send(messages)
                 updateBank()
             } catch { self.error = error }
+        }
+
+        private func validateHardwareLayerAssertion(_ messages: [MIDIMessage]) throws {
+            guard hardwareMode, !listenOnly, messages.contains(where: {
+                if case .programChange = $0 {
+                    return true
+                }; return false
+            }) else { return }
+            try session.state.validateLayerAssertion()
         }
 
         // MARK: - Single outgoing MIDI boundary
@@ -811,6 +824,10 @@
                 }
                 return .suppressed
             }
+            // Also covers approved diagnostic layer tests and callers outside apply().
+            // Reject the whole batch; no queued layer operation survives this refusal.
+            do { try validateHardwareLayerAssertion(messages) }
+            catch { self.error = error; return .suppressed }
             for message in messages {
                 guard hardwareMode else {
                     mock.receive(message)
@@ -1046,6 +1063,7 @@
                 }
             case let error as CompactError:
                 switch error {
+                case .fadersTouched: return l.text("Layer change refused while a fader is touched. Release all faders and retry; nothing was queued.")
                 case let .invalidChannel(channel): return l.text("Invalid MIDI channel: %@", String(channel))
                 case let .invalidIndex(control, index): return l.text("Invalid %@ index: %@", control, String(index), localizedArgumentIndices: [0])
                 case let .invalidMIDIValue(value): return l.text("Invalid MIDI value: %@", String(value))

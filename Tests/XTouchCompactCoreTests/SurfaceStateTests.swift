@@ -134,3 +134,18 @@ private func motors(_ messages: [MIDIMessage]) -> [MIDIMessage] {
     let release = try session.receive([.controlChange(channel: 0, number: 101, value: 0)])
     #expect(motors(release.feedback).isEmpty)
 }
+
+@Test func layerAssertionRequiresBothInputAndSafetyTouchesToBeReleased() throws {
+    let map = try FactoryStandardMap()
+    for index in 1 ... 9 {
+        var state = CompactState(map: map, lightProtocol: .manual)
+        try state.validateLayerAssertion()
+        state.setSafetyTouch(index, touched: true)
+        #expect(throws: CompactError.fadersTouched) { try state.validateLayerAssertion() }
+        _ = state.receive(.controlChange(channel: 0, number: UInt8(110 + index), value: 127))
+        state.setSafetyTouch(index, touched: false)
+        #expect(throws: CompactError.fadersTouched) { try state.validateLayerAssertion() }
+        _ = state.receive(.controlChange(channel: 0, number: UInt8(110 + index), value: 0))
+        try state.validateLayerAssertion()
+    }
+}

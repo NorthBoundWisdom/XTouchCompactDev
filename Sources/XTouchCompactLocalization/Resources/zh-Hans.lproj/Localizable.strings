@@ -562,3 +562,5 @@
 "Simulated device. Nothing reaches the real controller." = "模拟设备：所有操作只在软件里，不会碰到真机。";
 "Receiving from the controller. Nothing is sent to it." = "只接收真机的输入，不向真机发送任何东西。";
 "Sending is on. Use Sync lights to push the current layer and lights." = "已允许发送。点“同步灯光到设备”把当前层和灯光发给真机。";
+
+"Layer change refused while a fader is touched. Release all faders and retry; nothing was queued." = "有推子被触摸，已拒绝切层。请松开所有推子后重试；操作未排队。";

@@ -562,3 +562,5 @@
 "Simulated device. Nothing reaches the real controller." = "Simulated device. Nothing reaches the real controller.";
 "Receiving from the controller. Nothing is sent to it." = "Receiving from the controller. Nothing is sent to it.";
 "Sending is on. Use Sync lights to push the current layer and lights." = "Sending is on. Use Sync lights to push the current layer and lights.";
+
+"Layer change refused while a fader is touched. Release all faders and retry; nothing was queued." = "Layer change refused while a fader is touched. Release all faders and retry; nothing was queued.";

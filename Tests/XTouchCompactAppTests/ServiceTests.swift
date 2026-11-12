@@ -201,7 +201,7 @@
         #expect(model.mock.encoders[0] == 53)
     }
 
-    @Test @MainActor func explicitRealignmentReassertsCurrentLayerWithoutMotorOrTouchReset() throws {
+    @Test @MainActor func explicitRealignmentRefusesTouchThenRequiresRetryAfterRelease() throws {
         let midi = FakeMIDIService()
         let model = ConsoleModel(startsMIDI: false, midi: midi)
         midi.connect(); model.setListenOnly(false); model.useHardware(true)
@@ -212,6 +212,12 @@
         midi.sent.removeAll()
         let realign = try #require(model.panelIntents.realignLayer)
         realign()
+        #expect(midi.sent.isEmpty)
+        #expect(model.session.state.layerMismatch)
+        #expect(model.session.state.isTouched(1))
+        midi.onMessages?([.controlChange(channel: 0, number: 111, value: 0)])
+        #expect(midi.sent.isEmpty)
+        realign()
         #expect(midi.sent.contains(.programChange(channel: 0, number: 0)))
         #expect(!midi.sent.contains {
             if case let .controlChange(_, n, _) = $0 {
@@ -220,7 +226,7 @@
         })
         #expect(!model.session.state.layerMismatch)
         #expect(model.session.state.observedLayer == nil) // Assertion is not a position/layer observation.
-        #expect(model.session.state.isTouched(1))
+        #expect(!model.session.state.isTouched(1))
         #expect(!model.notifications.contains { $0.id == "layer" })
         midi.onMessages?([.controlChange(channel: 0, number: 101, value: 0)])
         midi.sent.removeAll()

@@ -22,6 +22,21 @@
         return root
     }
 
+    @Test @MainActor func approvedDiagnosticLayerAssertionStillRefusesAnyTouchedFader() throws {
+        let root = try temporaryEvidenceRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let (model, midi) = recordingModel(root)
+        midi.onMessages?([.controlChange(channel: 0, number: 109, value: 127)])
+        model.armNonMotorTests(operatorFixture())
+        model.previewNonMotorTest(.layer(.b), receiveChannel: 5)
+        model.performNonMotorTest(.layer(.b))
+        #expect(midi.sendAttempts == 0)
+        #expect(model.error as? CompactError == .fadersTouched)
+        #expect(model.nonMotorTests.attempts.last?.delivery == .suppressed)
+        midi.onMessages?([.controlChange(channel: 0, number: 109, value: 0)])
+        #expect(midi.sendAttempts == 0)
+        model.stopCapture()
+    }
+
     @Test @MainActor func nonMotorPreviewAndMissingFactsNeverSendOrInventRX() {
         let midi = FakeMIDIService()
         let model = ConsoleModel(startsMIDI: false, midi: midi)

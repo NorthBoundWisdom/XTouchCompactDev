@@ -44,6 +44,11 @@ public struct CompactState: Sendable {
         touchedFaders.contains(index) || safetyTouches.contains(index)
     }
 
+    /// Layer assertions can drive all nine motors, so either touch source blocks them.
+    public func validateLayerAssertion() throws {
+        guard !(1 ... 9).contains(where: isTouched) else { throw CompactError.fadersTouched }
+    }
+
     public func isMotorPending(_ index: Int) -> Bool {
         pendingMotor.contains(index)
     }
