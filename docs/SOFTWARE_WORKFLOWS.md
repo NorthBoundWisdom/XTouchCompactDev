@@ -19,7 +19,8 @@ configuration's declared defaults, even for matching IDs: there is no proportion
 unit conversion. When the current workspace has non-default values, replacement
 requests one confirmation using the reset dialog; cancellation leaves it unchanged.
 Startup restores saved parameter values (see Persistence) as host intent only:
-banks, rings and LEDs follow, motors do not move. Reset parameter values remains a
+banks, rings and LEDs follow; restoring values sends no motor CC. Firmware travel
+from layer assertions is separate (see safety policies below). Reset parameter values remains a
 separate confirmed action.
 Loading refreshes only
 non-motor feedback and cancels previous deferred motor intents. It does not recall
@@ -246,15 +247,18 @@ cannot drive itself. This also prevents shared bindings from bouncing motor
 reports back to the original fader. A received position is still an observation,
 not acknowledgement of sent output.
 Action buttons never implicitly latch LEDs. Agent LED semantics are cached in the
-session and restored synchronously across layers, reconnects and configuration
+session and restored synchronously across explicit layer and configuration
 changes; user approval does not emit an intermediate LED-off command.
 
 Idle runtime ticks publish no changes. Agent/bank/output publication occurs only
 when the corresponding observable value actually changes. OSC transport and time
 are injected in App tests; tests cover expiration, missing parameters, failure,
-repeated enable and model-owned scheduling without a window. Physical HW-6/HW-7
-characterization is still pending; software tests establish policies, not measured
-firmware behavior.
+repeated enable and model-owned scheduling without a window. HW-6 has a limited operator sign-off on F1 plus the recorded F2–F9/A and F1/B
+motor samples; HW-7 and the remaining H-group cases are open. The
+[2026-11-12/13 session](HARDWARE_SESSION_2026-11-12.md) measured no motor-position
+TX, held-F1 command drop without catch-up, and silent all-nine motor travel on
+layer changes. These observations do not establish every control or firmware
+behavior; software tests do not extend the physical sign-off.
 
 ## Explicit layer realignment and disconnected touches
 
@@ -262,8 +266,17 @@ Use **Connection → Realign current layer**, or click the current A/B layer but
 to reassert Program Change even without changing banks. This discards old layer
 mismatch evidence and cancels deferred motor intents, but does not claim a physical
 acknowledgement, clear touch ownership or recall motors. New other-layer input
-will report a mismatch again. Motor movement still needs a subsequent intentional
-software write or motor recall, and remains blocked while touched.
+will report a mismatch again. **Program Change itself cycles all nine motors on
+this unit**, to the bottom and back, even though no motor CC or bank-target recall
+is sent. Physical A/B keys do the same. In hardware-send mode any input or safety
+touch blocks layer selection, realignment and light sync as a whole: a visible
+refusal leaves the operation unqueued; release all faders and retry explicitly.
+Mock layer selection is unchanged. U2 is software-tested only, **未在实机复核**.
+
+The current hardware-send reconnect still sends Program Change plus lights. U3
+will change this to silent reconnect and explicit user synchronization in a
+separate commit. Startup power-up versus assertion travel remains H5; new U2/U3
+behavior requires H6. No observation is fabricated from the last sent command.
 
 If the controller is unplugged while a fader is touched, the host deliberately
 keeps that safety latch: the release may have happened while disconnected. After
@@ -361,7 +374,10 @@ does not satisfy Stage 1; see the acceptance handoff in HARDWARE_BRINGUP.md.
 
 #### Nonmotor test workbench (C3 software)
 
-The **Nonmotor tests** tab starts locked. Previewing a command sends nothing and
+The **Nonmotor tests** tab starts locked. Its historical name describes the MIDI
+address allowlist, not physical motor neutrality: its Program Change layer test
+cycles all nine motors on the measured unit and is refused under touch.
+ Previewing a command sends nothing and
 requires an explicitly selected test RX. Enabling output requires operator-confirmed
 factory Standard mode, reviewed complete Stage 1 evidence, firmware read from the
 device/editor, independently checked Global RX and its source, both endpoints and
@@ -413,8 +429,9 @@ The observation page's **Enable writeback** action returns to the console and
 disables listening without sending MIDI or replaying old targets. Touch ownership
 and layer mismatch evidence remain intact. The same action is available in the
 console header while listening. An explicit `--hardware-control` launch selects
-physical hardware with writeback enabled; startup/reconnect still never recalls
-motor positions. `--hardware-observe` takes precedence, and isolated test launches
+physical hardware with writeback enabled; startup/reconnect sends no bank-target
+motor recall, but the current automatic layer assertion can cycle the firmware
+motors. U3 will remove that assertion separately. `--hardware-observe` takes precedence, and isolated test launches
 ignore `--hardware-control`. The observation panel no longer shows the recent-input
 debug card; raw input capture and touch safety remain available.
 
@@ -507,3 +524,12 @@ A host clock gap over two seconds faults/revokes simulations and freezes positio
 without main-thread catch-up. Restoring small ticks does not resume motion or
 restore ownership. The default remote instance IDs match the other host, but
 clients should always discover them through surface_capabilities.
+
+## Unattended software work, 2026-11-13
+
+This round used Mock, deterministic tests and existing captures only; **未在实机复核**.
+The mock counts silent firmware cycles without simulating timing or intermediate
+travel. Existing evidence can be checked with the
+[read-only motor safety audit](CAPTURE_MOTOR_AUDIT.md); absence of motor CC cannot
+prove absence of firmware travel. H1–H7, full HW-1…HW-5/HW-7 and N5 are not signed
+off by this work. Begin the next attended review with H1 and H6.

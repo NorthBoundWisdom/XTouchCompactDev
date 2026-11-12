@@ -1,9 +1,10 @@
 # X-TOUCH COMPACT physical bring-up record
 
-**Physical bring-up is in progress:** see [2026-11-11 session](HARDWARE_SESSION_2026-11-11.md).
-USB/CoreMIDI identity, Standard indication, partial Layer A touch input and the
-operator's observation-UI acceptance have been recorded. Full control coverage,
-LED and motor tests remain open. The fields below remain the full
+**Physical bring-up is in progress:** see the [2026-11-12/13 session](HARDWARE_SESSION_2026-11-12.md)
+and earlier [observation-UI acceptance](HARDWARE_SESSION_2026-11-11.md).
+Partial A/B inputs, sampled LEDs/rings, layer selection and limited motor checks
+are recorded; HW-6 is signed off only for the scope below. Full control coverage,
+HW-1…HW-5/HW-7 and N5 remain open. The fields below remain the full
 acceptance template. Factory Standard MIDI mode only; no firmware
 flashing, editor preset modifications or Mackie Control testing.
 
@@ -29,18 +30,17 @@ fresh observation scope. Earlier evidence stays unchanged in its original files.
    selector and incomplete filter to see missing items; also verify physical
    positions and printed legends match the panel. Viewer layer selection sends
    nothing to the hardware.
-2. For cross-layer release, touch F1's metal cap on A and keep touching it;
-   press physical B once, turn E1 a little to establish B input evidence, then
-   release F1. Repeat B → A. Review the three layer fields, including a release
-   that still reports the original layer. Record any missing release or mismatch.
+2. Cross-layer release under a held cap is deferred to H4: physical layer keys
+   cycle all nine motors. Agree an attended safe procedure before attempting it.
+   Review any existing cross-layer release evidence without clearing touch ownership.
 3. Stop capture, then export the review. Keep the JSON, checksum and capture
    snapshot together. Report anything that does not match the physical unit.
 
 This is the point that requires the operator. Stage 2 cannot be finalized from
 synthetic tests: actual cross-layer release semantics and an independently
 confirmed Global RX are prerequisites. No LED/ring/motor output has been enabled
-by these changes. C3 tools have since been prepared in a locked state; C4, full
-HW sign-off and the separate N5 console cases remain open.
+by this document. C3 tools are prepared in a locked state; limited C4/HW-6 results
+exist below, while full HW sign-off and the separate N5 console cases remain open.
 
 ### Stage 2 tools prepared, permission still required
 
@@ -55,7 +55,9 @@ independently; Program Change does not itself prove the layer changed, so turn
 E1 afterward and inspect the received layer. Every route/reconnect change revokes
 permission. Locking or leaving the tab sends nothing. Stop capture before exporting
 the review. These tools are software-tested only; no real Stage 2 result has been
-recorded by this development pass, and no motor test is provided here.
+recorded through this workbench by this development pass. The separate tool session
+has partial Stage 2 results below. Program Change on this page still cycles motors;
+the allowlist excludes motor CC but does not guarantee physical motor neutrality.
 
 ### Full capture procedure
 
@@ -77,7 +79,9 @@ recorded by this development pass, and no motor test is provided here.
 4. Complete Stage 1 records (HW-1, HW-7, HW-2, HW-3) before enabling any output.
    In Stage 2, close/label the passive capture, explicitly turn listening off, then
    Realign current layer. That action asserts Program Change and nonmotor feedback;
-   it does not observe layer/position or recall motors. Turning listening off itself
+   it does not observe layer/position or recall bank targets, but the assertion
+   cycles all nine motors. Any touched fader refuses this operation without queueing
+   in hardware-send mode (U2; 未在实机复核). Turning listening off itself
    sends nothing and cancels withheld motor writes. Start a new capture.
 5. Complete Stage 2 (HW-5, HW-4, Program Change assumption) before Stage 3 (HW-6).
    Stage 3 requires a clear fader path, one fader and small moves. Never command a
@@ -103,17 +107,20 @@ Conclusion / deviations / follow-up: RX ≠ TX on this unit; see
 
 ## HW-7 — physical layers and touch address (Stage 1)
 
-Steps: listening on; move F1 on A, press physical B, move F1 again. Repeat with
-F1 held through A/B switch and then released. Do not press host realignment yet.
+Steps: listening on; hands clear, move F1 on A, press physical B, move F1 again.
+Held-through-switch testing remains H4 and requires an agreed attended procedure.
+Do not press host realignment yet.
 
-Expected / assumption 1 (unverified): physical A/B key itself sends no message;
+Observed portion of assumption 1: physical A/B key itself sends no message;
 subsequent control TX addresses identify the new layer. Record exactly which layer's
 address reports touch release across the switch. Host mismatch warning should appear
 when input layer differs; motors remain blocked. A missing release must not be
 worked around by clearing touch ownership.
 
-Actual: __________
-Assumption 1 established or rejected (including release address): __________
+Actual (partial, 2026-11-12/13): physical layer keys produced no MIDI; control-1
+addresses identified each layer. Keys silently cycle all nine motors. Cross-layer
+release address and full HW-7 remain unverified.
+Assumption 1 established or rejected (including release address): partial only
 Capture filename(s): __________
 Conclusion / required Core correction: __________
 
@@ -155,7 +162,8 @@ actual TX layer. Then test off/on/blink on **one button** with manual encoding;
 repeat separately with observed-1.14 encoding if needed. Record exact commands,
 physical LED response and blink period. Do not rewrite the hardware profile silently.
 
-Expected / assumption 2 (unverified): Program Change really selects requested layer.
+Observed portion of assumption 2: Program Change selects the requested layer on
+Global RX 2 in the recorded F1 tests and cycles all nine motors.
 Host assertion alone is not proof. Manual LED velocities 0/1/2 and observed firmware
 1.14 velocities 0/2/3 remain distinct choices until observed on this unit.
 
@@ -200,11 +208,14 @@ Steps: use a single software F1 write a few MIDI units from its known position.
 Observe whether device TX reports progress. Repeat a write while F1 is touched:
 there must be no outgoing motor command; on release verify the latest explicit
 software target is issued once. Repeat with layer mismatch; no motor may be sent
-until explicit realignment and a fresh write. Check reconnect and layer changes
-never recall motors. Review capture for feedback loops before another move.
+until release, explicit realignment and a fresh write. Verify no bank-target
+recall on reconnect or layer changes, while separately recording firmware travel:
+layer assertions cycle motors. Use the [offline audit](CAPTURE_MOTOR_AUDIT.md)
+for recorded CC safety; it cannot measure silent travel.
 
-Expected / assumption 3 (unverified): any untouched position report may be motor
-progress and must never drive any motor in response. Transmitted RX target is not
+Safety policy for assumption 3: any untouched position report must never drive
+a motor in response. Recorded motor moves produced no position TX; this is a
+measured subset, not proof for every future message or firmware. Transmitted RX target is not
 an observed position. Touch ownership survives layer/mode/reconnect boundaries.
 
 Actual / position feedback / command count / stop behavior: partial, 2026-11-12, with
@@ -212,8 +223,8 @@ the `XTouchRemoteMIDI fader-move` tool rather than the app. F1 on layer A follow
 single CC 1 writes on channel 2 (0, 20, 60); the device transmitted nothing after any of
 them. One write while the operator held F1 still had no effect, and the fader did not move
 after release. See [the session record](HARDWARE_SESSION_2026-11-12.md).
-Assumption 3 established or rejected: no untouched position report followed any of four
-motor moves on F1; not checked on other faders, layer B or longer travel.
+Assumption 3 evidence: no position TX followed the recorded F1 moves, F2–F9 one
+value each on A, or F1 on B; repeatability and remaining values remain open.
 Capture filename(s): `captures/private/fader-move-2026-11-12.jsonl`
 Conclusion / required Core correction: none identified. The firmware does not apply a
 target received during touch once the fader is released, so the Core's reassertion after
@@ -222,9 +233,11 @@ on release, no output under layer mismatch, no motor command on realign, reconne
 layer change) matched once each. F2–F9 each followed one write on layer A; F1 followed
 writes on layer B. New: on every layer change the firmware cycles all nine faders to the
 bottom and back, unreported, and keeps one physical position across layers. **Open:** the
-app's hardware-mode layer highlight follows the last input layer, not the host selection;
-"realign" and layer buttons are described as motor-free but physically move the faders
-(both corrected in software afterwards, not rechecked on the unit).
+app's corrected layer highlight and motor-travel wording need H1 visual review.
+U2 touch-time assertion refusal is software-tested, **未在实机复核** (H6).
+The current hardware-send reconnect still sends Program Change and lights; U3
+will remove that behavior separately. H5 must isolate power-up travel on USB
+replug from assertion-induced travel; H6 will check the changed reconnect.
 **HW-6 signed off by the operator on 2026-11-13** for the scope recorded here. The sign-off
 does not cover: F2–F9 on layer B or at other values, a held fader other than F1, a layer
 change while a fader is held, and the corrected highlight and wording on the unit. Those

@@ -19,7 +19,9 @@ from the hardware, from the on-screen panel, or from a local AI agent over MCP.
 - **Organization.** Rename faders and encoders in place, color-tag and group them, link faders
   (VCA style), save and recall named scenes, and undo value changes. None of these moves a motor by itself.
 - **Touch-aware motor policy.** Reported touch ownership blocks motor commands to that fader.
-  Connecting, reconnecting and switching layers never recall fader positions.
+  No bank-target motor recall happens on connection or layer selection. On the measured unit,
+  physical layer keys and host Program Change nevertheless cycle all nine motors to the bottom
+  and back, without position TX. Hardware layer/sync commands refuse while any fader is touched.
 - **Mock mode** that models the documented Standard MIDI input and feedback paths without hardware.
 - **Agent slots.** Eight demonstration slots that start, wait for approval and complete, with status
   shown on button LEDs. These are simulated; no external agent process is launched.
@@ -83,8 +85,8 @@ Select any control on the panel to open the inspector, which shows its assignmen
 
 Your configuration and device settings are saved to
 `~/Library/Application Support/XTouchCompactConsole/workspace.json`. Parameter values and agent activity
-are not saved; they reset when the app restarts. Configurations made for other controllers, including
-the BCR2000, are rejected on import.
+are handled separately: parameter values are restored as software targets; agent activity resets on restart.
+Configurations made for other controllers, including the BCR2000, are rejected on import.
 
 Full details are in [Software workflows](docs/SOFTWARE_WORKFLOWS.md).
 
@@ -132,8 +134,14 @@ Hardware support is still being verified, so the app is deliberately cautious.
 5. Complete the Stage 1 input review in **Hardware observation** before enabling output tests.
    The nonmotor test page requires the reviewed evidence, firmware information and independently
    checked RX; motor acceptance remains a separate later stage.
-6. Keep all nine faders clear. Motors stay where they are until you write a value or choose
-   **Recall motors…** and confirm.
+6. Keep all nine faders clear before any layer selection, **Sync lights to device** or realignment:
+   each includes Program Change and can cycle all nine motors. A fresh value write or confirmed
+   **Recall motors…** can also move motors. No bank target is recalled automatically.
+
+In the current hardware-send baseline, reconnect sends a layer assertion and lights;
+that can cycle the motors even without motor CC. U3 will remove this automatic
+assertion in a separate behavior-change commit. Power-up travel on USB replug
+has not been separated from Program Change travel (H5/H6).
 
 If you unplug the controller while touching a fader, touch and release that fader once after
 reconnecting so the app sees a fresh release.
@@ -142,11 +150,16 @@ The step-by-step checklist is in [Hardware bring-up](docs/HARDWARE_BRINGUP.md).
 
 ## Current limitations
 
-- **Verified on hardware so far:** USB and CoreMIDI identity, and touch and release input for eight
-  faders on Layer A. See the [session record](docs/HARDWARE_SESSION_2026-11-11.md).
-- **Not yet verified on hardware:** full input coverage and physical layout, button LED encoding,
-  encoder ring styles, behavior across layers, and motor behavior. The panel's button and encoder
-  numbering by position is an assumption until checked.
+- **Observed on this unit, 2026-11-12/13:** TX channel 1 and independently measured Global RX
+  channel 2; button LED 0/2/3 encoding on B1/B2; control-1 TX addresses on both layers;
+  absolute accelerated E1 values; sampled ring feedback and Program Change; F1 touch/drop/release
+  and app safety checks; F2–F9 one motor value on A and F1 on B. Layer changes silently cycle
+  all nine motors with one shared final physical position. See the
+  [session record](docs/HARDWARE_SESSION_2026-11-12.md). The hardware profile is never rewritten automatically.
+- **Still unverified:** firmware version, full input/layout and LED/ring coverage, local ring styles,
+  F2–F9 touch and B-layer/other-value motor checks, touched-layer travel, pedals, startup full-state
+  readback, corrected layer highlight and U2 behavior, and USB replug travel source. The
+  [H group](TODO.md) and N5 remain open. Software changes in this round: **未在实机复核**.
 - **Not supported:** Mackie Control mode, editor-modified presets, firmware replacement, 14-bit fader
   resolution, real external agent processes, incoming OSC, Developer ID signing and notarization.
 - The app runs on macOS only. The protocol core also builds and tests on Linux.
@@ -155,7 +168,7 @@ The step-by-step checklist is in [Hardware bring-up](docs/HARDWARE_BRINGUP.md).
 
 | Document | Contents |
 | --- | --- |
-| [Hardware session 2026-11-12](docs/HARDWARE_SESSION_2026-11-12.md) | Passive input checks on the physical unit: addresses on both layers, touch ordering |
+| [Hardware session 2026-11-12](docs/HARDWARE_SESSION_2026-11-12.md) | Partial input, LED/ring/layer and motor observations; scope and remaining unknowns |
 | [Remote hardware](docs/REMOTE_HARDWARE.md) | Develop against a controller plugged into another Mac over SSH (development only) |
 | [Software workflows](docs/SOFTWARE_WORKFLOWS.md) | Parameters, persistence, agents, MCP, OSC, capture and safety policies |
 | [MIDI protocol](docs/MIDI_PROTOCOL.md) | Factory Standard MIDI map, manufacturer documentation versus observed behavior |

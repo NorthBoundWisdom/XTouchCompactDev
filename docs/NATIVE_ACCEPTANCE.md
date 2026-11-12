@@ -1,6 +1,6 @@
 # Native mouse acceptance (N5)
 
-Status on 2026-11-12: **the seven N5 cases below remain incomplete** (two added for
+Status on 2026-11-13: **the seven N5 cases below remain incomplete** (two added for
 Agent motor permission and value persistence). Code-level
 tests pass, but they do not substitute for these mouse/visual acceptance cases.
 The separate hardware-observation workspace has since been accepted by the
@@ -64,7 +64,7 @@ explicitly enabled. A UDP listener alone cannot arm OSC: trusted actual-state fe
 | Case | Mouse procedure | Expected result | Actual result |
 | --- | --- | --- | --- |
 | Touch arbitration | Hold and drag F1; while held, write F1 through MCP or a second input device using the inspector; release | Cap stays with the hand, pending badge appears; release aligns to latest software target | Pending desktop access |
-| Layer mismatch | Inject a Layer B input while host is A using a fake MIDI service/test fixture; inspect warning and click Realign current layer in Connection | Warning clears, Program Change asserted, no motor recall; touch retained | Pending desktop access |
+| Layer mismatch | Inject a Layer B input while host is A using a fake MIDI service/test fixture; inspect warning and click Realign current layer in Connection | Mock: warning clears and Program Change is modeled without bank-target recall. Hardware-send: touched state refuses; after release and explicit retry, the assertion can cycle all nine motors | Pending desktop access |
 | Preset replacement | Write a non-default parameter, choose Audio example, cancel; repeat and confirm | Cancel preserves configuration/value; confirm uses pending preset defaults once, no motor recall | Pending desktop access |
 | OSC stop | Try enabling without trusted telemetry; separately use a trusted actual/heartbeat fixture and let the heartbeat age reach 0.3 s or invalidate the destination | Output disables, visible stop notification; re-enable is explicit | Pending desktop access |
 | MCP switch/token | Enable MCP in Settings, copy token, use local read-only integration client, disable | Loopback listener answers authenticated reads; disabling closes it; token is not logged | Pending desktop access |
@@ -80,3 +80,19 @@ native acceptance above; never place an access token in committed evidence.
 Record OS, compiler, commit, each actual outcome and app-owned evidence filenames
 here after desktop access is available. Keep this task open until all rows have
 actual visual results.
+
+## Attended hardware follow-up for U2/U3
+
+N5 remains incomplete; the limited HW-6 sign-off does not cover these changes.
+In the 2026-11-12/13 session, Program Change and physical A/B selection cycled all
+nine motors silently. “No motor CC” and “no bank recall” do not mean no movement.
+U2 software behavior: while any fader is touched, A/B selection, Realign and Sync
+lights refuse visibly without sending or queueing; release alone does nothing.
+Mock selection stays unchanged. U3 silent reconnect is a separate pending behavior
+change at this documentation commit. **未在实机复核**.
+
+With an operator present, start with TODO H1 (A/B highlight follows host selection)
+and H6 (U2 refusal and U3 reconnect). H5 must distinguish USB power-up motion from
+host output using listening-only mode. H4 (touch held during physical layer
+change) needs an agreed safe procedure first. Keep all actual-result cells pending
+until observed; isolated/fake-transport tests do not count as mouse acceptance.
