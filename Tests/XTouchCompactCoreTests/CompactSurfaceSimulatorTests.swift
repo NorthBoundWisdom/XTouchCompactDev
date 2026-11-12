@@ -502,3 +502,34 @@ private func feedback(_ simulator: CompactSurfaceSimulator, _ id: String, _ valu
                     budgets.consume(.input, at: 11.3)]
     #expect(accepted == [true, false, false, true, true, false, true, false, true, false, true])
 }
+
+@Test func allBlockedTouchesProduceAValidProfileWithoutHoldCapability() throws {
+    for kind in ["readonly", "protected", "action"] {
+        let parameter = ParameterDefinition(id: "p", name: "p", agentWritable: kind != "readonly",
+                                            externallyProtected: kind == "protected" ? true : nil)
+        let action: ParameterAction = kind == "action" ? .set("p", 1) : .parameter("p")
+        let assignments = CompactLayer.allCases.flatMap { layer in
+            (1 ... 9).map { ControlAssignment(control: .faderTouch($0), layer: layer, action: action) }
+        }
+        let configuration = SurfaceConfiguration(parameters: [parameter], assignments: assignments, version: kind == "protected" ? 2 : 1)
+        try configuration.validate()
+        let profile = CompactSurfaceSimulator.profile(configuration: configuration)
+        let touches = profile.controls.filter { $0.id.contains(".touch.") }
+        #expect(touches.count == 18)
+        #expect(touches.allSatisfy { $0.accepts_input == false && $0.hold == nil })
+        #expect(!profile.capabilities.contains("input.hold"))
+        try profile.validate()
+        var simulator = try CompactSurfaceSimulator(instanceID: "all-blocked", epoch: "test", configuration: configuration)
+        for touch in touches {
+            let before = try simulator.controls.snapshot(at: 1)
+            #expect(throws: ControlContractError("permission_denied")) {
+                try simulator.input(input(simulator, touch.id, .bool(true), encoding: "boolean"), at: 1)
+            }
+            #expect(try simulator.controls.snapshot(at: 1) == before)
+        }
+        #expect(simulator.mock.touchedFaders.isEmpty && simulator.nextHoldDeadline == nil)
+        #expect(simulator.session.parameters.values["p"] == 0)
+        try simulator.reset(epoch: "reset", at: 2)
+        #expect(simulator.controls.profile == profile)
+    }
+}

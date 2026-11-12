@@ -92,8 +92,11 @@ public struct CompactSurfaceSimulator: Sendable {
         for layer in CompactLayer.allCases {
             descriptors.append(.init(id: layerKeyIDs[layer]!, inputKind: .button, encoding: .boolean, acceptsInput: true))
         }
+        // Public programmatic configurations may block every touch control. Advertise hold
+        // only when a real eligible descriptor supports it; retain the default capability order.
+        let declaredCapabilities = descriptors.contains { $0.hold != nil } ? capabilities : capabilities.filter { $0 != "input.hold" }
         return .init(id: profileID, version: profileVersion, controls: descriptors,
-                     capabilities: capabilities + (writeLimits == nil ? [] : ["writes.independent_limits"]))
+                     capabilities: declaredCapabilities + (writeLimits == nil ? [] : ["writes.independent_limits"]))
     }
 
     /// Input eligibility is static mapping content. The shared session rejects `false` before

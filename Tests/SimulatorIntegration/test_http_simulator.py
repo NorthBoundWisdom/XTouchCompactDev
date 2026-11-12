@@ -712,6 +712,10 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
             described = subprocess.run([str(copy_binary(directory)), "--simulation-configuration", str(example), "--describe"],
                 capture_output=True, text=True, cwd=directory, check=True)
             discovery = json.loads(described.stdout)["discovery"]
+            self.assertEqual(discovery["expected"]["mapping_revision"], "49d7fa84456ffc4e")
+            default = subprocess.run([str(copy_binary(directory)), "--describe"], capture_output=True,
+                text=True, cwd=directory, check=True)
+            self.assertEqual(discovery["profile"]["capabilities"], json.loads(default.stdout)["discovery"]["profile"]["capabilities"])
             mappings = {row["mapping"]["id"]: row for row in discovery["profile"]["controls"] if row.get("mapping")}
             self.assertEqual(set(mappings), {"simulation." + role for role in
                 ("enable", "linear", "steer", "stop", "speed_feedback", "steer_feedback", "stopped_feedback")})
