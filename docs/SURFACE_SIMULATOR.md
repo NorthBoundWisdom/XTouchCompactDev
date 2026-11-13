@@ -520,8 +520,10 @@ The frozen delivery SDKs 1.1.0 and 1.2.0 reject discovery of this contract-1.3
 host with `unsupported_contract`: their explicit version allowlists predate 1.3.
 They cannot perform an SDK round trip against this host. Tests import each verified
 zip unchanged in a separate interpreter; they never alter its allowlist or the host's
-reported version. When those historical local delivery zips are absent (including CI),
-these two tests explicitly skip and report why.
+reported version. The exact archives, original hashes, source revisions and MIT
+license are committed under `Tests/Fixtures/FrozenSDKs`. A clean checkout supplies
+them offline; missing or modified archives fail these required tests, including CI.
+They are test inputs only and are excluded from production deliveries.
 
 Protocol compatibility is tested separately on every real-HTTP integration run,
 including Linux CI, without historical SDK files. Contract-1.1 and 1.2 request shapes

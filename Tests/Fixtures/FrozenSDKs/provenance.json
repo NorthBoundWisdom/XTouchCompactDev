@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "remote": "https://github.com/NorthBoundWisdom/SurfacePlugins.git",
+  "sdks": {
+    "1.1.0": {
+      "archive": "surface-control-sdk-1.1.0.zip",
+      "sha256": "1dcc3ce363c7d0b7db4a1c87d0c7827753987164e6c615b3306b00c51bcd7e85",
+      "hostRevision": "4a001149d5adf90c81018ad21aa5417ea68318b2",
+      "surfacePluginsRevision": "e527bd0757d54377a50d46b8943c1a7ae5c73f98"
+    },
+    "1.2.0": {
+      "archive": "surface-control-sdk-1.2.0.zip",
+      "sha256": "75edcfcb26560fd18fa6f91277d6a4d2cd6468f18b680a0421416bf8390c1bc1",
+      "hostRevision": "54d2120688215cb87607be3c53b233f685d566c8",
+      "surfacePluginsRevision": "6071354e454bf1c5584e4608aa4ecf022c58238a"
+    }
+  }
+}

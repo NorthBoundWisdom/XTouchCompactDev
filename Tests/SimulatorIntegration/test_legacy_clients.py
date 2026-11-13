@@ -26,9 +26,8 @@ class LegacyClientsHTTPTests(unittest.TestCase):
 
     def frozen_sdk_gate(self, version):
         commit, digest = FROZEN_SDKS[version]
-        archive = ROOT / "build/deliveries" / ("xtouch-surface-simulator-" + commit) / ("surface-control-sdk-" + version + ".zip")
-        if not archive.exists():
-            self.skipTest("Frozen SDK " + version + " delivery zip is absent; old wire compatibility still runs")
+        archive = ROOT / "Tests/Fixtures/FrozenSDKs" / ("surface-control-sdk-" + version + ".zip")
+        self.assertTrue(archive.is_file(), "Required frozen SDK fixture is missing: " + str(archive))
         self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), digest)
         # A fresh interpreter imports exclusively from the verified frozen zip. Do not
         # change its allowlist, pass a fabricated host version, or import current SDK.
