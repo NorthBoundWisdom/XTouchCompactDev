@@ -29,21 +29,46 @@ class LiveConformanceHTTPTests(unittest.TestCase):
                     with self.subTest(fixture=fixture.name):
                         report_path = reports / fixture.name
                         environment = {**os.environ, "PYTHONPATH": str(SHARED / "clients/python")}
-                        completed = subprocess.run([sys.executable, "-B", "-m", "surface_conformance",
-                            "--url", host.ready["url"], "--token-file", str(token_file), "--instance-id", "conformance.http",
-                            "--fixture", str(fixture), "--roles", str(roles), "--report", str(report_path)],
-                            cwd=directory, env=environment, capture_output=True, text=True, timeout=30)
+                        completed = subprocess.run(
+                            [
+                                sys.executable,
+                                "-B",
+                                "-m",
+                                "surface_conformance",
+                                "--url",
+                                host.ready["url"],
+                                "--token-file",
+                                str(token_file),
+                                "--instance-id",
+                                "conformance.http",
+                                "--fixture",
+                                str(fixture),
+                                "--roles",
+                                str(roles),
+                                "--report",
+                                str(report_path),
+                            ],
+                            cwd=directory,
+                            env=environment,
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                        )
                         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                         report = json.loads(report_path.read_text())
                         source = json.loads(fixture.read_text())
                         self.assertEqual(report["counts"]["fail"], 0)
                         self.assertGreater(report["counts"]["pass"], 0)
-                        self.assertEqual(sum(report["counts"].values()), sum(len(row["steps"]) for row in source["scenarios"]))
+                        self.assertEqual(
+                            sum(report["counts"].values()), sum(len(row["steps"]) for row in source["scenarios"])
+                        )
                         self.assertEqual(report["roles"], role_map["fixtures"][source["scenario_id"]]["roles"])
                         for step in report["steps"]:
                             if step["status"] == "skip":
                                 self.assertTrue(step.get("reason"), "Every skipped step needs a reason")
-                        self.assertTrue(TOKEN not in completed.stdout + completed.stderr + report_path.read_text(),
-                            "Checker output must omit credentials")
+                        self.assertTrue(
+                            TOKEN not in completed.stdout + completed.stderr + report_path.read_text(),
+                            "Checker output must omit credentials",
+                        )
             finally:
                 host.close()

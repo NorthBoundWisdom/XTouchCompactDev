@@ -43,7 +43,8 @@
             }
             .formStyle(.grouped)
             .padding()
-            .frame(width: 580, height: 650)
+            .frame(width: 580)
+            .frame(minHeight: 650)
         }
     }
 #endif

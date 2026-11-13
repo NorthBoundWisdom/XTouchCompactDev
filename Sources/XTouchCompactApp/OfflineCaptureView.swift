@@ -36,6 +36,9 @@
                         if let hash = state.sha256 {
                             Text("SHA-256: " + hash).font(.caption.monospaced()).textSelection(.enabled)
                         }
+                        if let replay = state.replay {
+                            replayView(replay, loading: state.isLoading)
+                        }
                         if let audit = state.audit {
                             auditView(audit)
                         } else {
@@ -91,7 +94,7 @@
                                 Text("F\(fader.index)").font(.caption.monospaced()).frame(width: 26)
                                 Slider(value: Binding(get: { Double(fader.target) }, set: {
                                     intents.setOfflineReplayFader?(fader.index, UInt8($0.rounded()))
-                                }), in: 0 ... 127, step: 1)
+                                }), in: 0 ... 127)
                                     .disabled(loading || replay.isPlaying || intents.setOfflineReplayFader == nil)
                                     .accessibilityLabel(l.text("Replay test target F%@", String(fader.index)))
                                 Text(String(fader.target)).font(.caption.monospacedDigit()).frame(width: 30)

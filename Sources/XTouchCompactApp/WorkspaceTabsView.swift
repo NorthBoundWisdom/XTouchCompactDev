@@ -53,11 +53,10 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
-                Picker(l.text("工作区"), selection: $tab) {
-                    ForEach(WorkspaceTab.allCases) { Label(l.text($0.title), systemImage: $0.systemImage).tag($0) }
+                ViewThatFits(in: .horizontal) {
+                    workspacePicker.pickerStyle(.segmented)
+                    workspacePicker.pickerStyle(.menu)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 .frame(maxWidth: 680)
 
                 switch tab {
@@ -93,6 +92,13 @@
                 }
             }
             .panelStyle()
+        }
+
+        private var workspacePicker: some View {
+            Picker(l.text("工作区"), selection: $tab) {
+                ForEach(WorkspaceTab.allCases) { Label(l.text($0.title), systemImage: $0.systemImage).tag($0) }
+            }
+            .labelsHidden()
         }
     }
 

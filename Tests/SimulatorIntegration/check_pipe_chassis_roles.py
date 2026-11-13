@@ -59,13 +59,22 @@ def check(binary, pipe_root):
     binding["mapping_revision"] = discovery["expected"]["mapping_revision"]
     report["pipe_contract_versions"] = sorted(CONTRACT_VERSIONS)
     report["pipe_missing_capabilities"] = sorted(
-        capability for capability in discovery["profile"]["capabilities"]
+        capability
+        for capability in discovery["profile"]["capabilities"]
         if not capability.startswith("x.") and capability not in REGISTERED_CAPABILITIES
     )
     try:
         result = resolve_chassis_roles(config, discovery, mapping_revision=mapping_revision)
-        report.update(pipe_resolution="passed", resolved_controls=[result.enable.control_id, result.linear.control_id,
-            result.steer.control_id, result.stop_control_id], resolved_feedback=sorted(result.feedback))
+        report.update(
+            pipe_resolution="passed",
+            resolved_controls=[
+                result.enable.control_id,
+                result.linear.control_id,
+                result.steer.control_id,
+                result.stop_control_id,
+            ],
+            resolved_feedback=sorted(result.feedback),
+        )
     except SurfaceConsumerError as error:
         report.update(pipe_resolution="blocked", pipe_error={"code": error.code, "message": str(error)})
         # Probe the version-allowlist boundary separately, without changing any imported code.

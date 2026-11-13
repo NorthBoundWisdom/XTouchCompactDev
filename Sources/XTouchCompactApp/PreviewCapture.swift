@@ -53,6 +53,57 @@
         let width: CGFloat
         let height: CGFloat
         switch scene {
+        case "readme-console":
+            width = 1920; height = 1040
+            for (index, name, color, group) in [(1, "Kick", ParameterColor.red, "Drums"),
+                                                (2, "Snare", .orange, "Drums"), (3, "Hats", .yellow, "Drums"),
+                                                (4, "Bass", .blue, "Low end"), (5, "Keys", .green, "Music"),
+                                                (6, "Pad", .purple, "Music")]
+            {
+                model.renameControl(.fader(index), name: name)
+                model.setControlColor(.fader(index), color: color)
+                model.setControlGroup(.fader(index), group: group)
+            }
+            for (offset, value) in [70.0, 82, 54, 91, 63, 42, 76, 58, 96].enumerated() {
+                model.faderChanged(offset + 1, value: value)
+            }
+            for (offset, value) in [6.0, 24, 43, 64, 84, 108, 121, 54, 18, 22, 32, 43, 64, 87, 108, 127].enumerated() {
+                model.encoderChanged(offset + 1, value: value)
+            }
+            model.moveFader(1, value: 70)
+            model.touchFader(1, isTouched: true)
+            model.faderChanged(1, value: 105)
+            model.moveExpression(72)
+            model.agentPrimary(1)
+            content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents, selection: .fader(1)))
+        case "offline-capture":
+            width = 960; height = 1280
+            let metadata: [String: Any] = [
+                "deviceModel": "X-TOUCH COMPACT", "sessionID": "README-SYNTHETIC-EXAMPLE",
+                "hardwareMode": true, "configuredTransmitChannel": 1, "configuredGlobalReceiveChannel": 2,
+                "ledProtocol": "observed114", "connectionGeneration": 0,
+                "connectedInput": ["id": 1, "name": "Synthetic input"],
+                "connectedOutput": ["id": 2, "name": "Synthetic output"],
+            ]
+            var rows: [[String: Any]] = [["kind": "capture-start", "schemaVersion": 1, "session": metadata]]
+            for (index, bytes) in [[176, 101, 127], [176, 1, 36], [177, 1, 100], [176, 101, 0], [193, 1], [176, 111, 0], [176, 28, 64]].enumerated() {
+                let output = bytes[0] != 176
+                rows.append(["kind": "event", "sequence": index + 1, "source": "hardware", "hardwareMode": true,
+                             "hostLayer": index < 5 ? "a" : "b", "transmitChannel": 1, "globalReceiveChannel": 2,
+                             "ledProtocol": "observed114", "ignored": false, "rawMIDI1Bytes": bytes,
+                             "direction": output ? "OUT" : "IN", "delivery": output ? "sent" : "received"])
+            }
+            rows.append(["kind": "capture-end", "eventCount": 7])
+            var data = Data()
+            for row in rows {
+                try data.append(JSONSerialization.data(withJSONObject: row, options: [.sortedKeys])); data.append(10)
+            }
+            model.importOfflineCapture(data: data, name: "SYNTHETIC · touch-and-release.jsonl")
+            model.stepOfflineReplay(); model.stepOfflineReplay()
+            model.setOfflineReplayFader(1, value: 100)
+            model.stepOfflineReplay()
+            content = AnyView(OfflineCaptureView(snapshot: model.panelSnapshot, intents: model.panelIntents).padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(Theme.background))
         case "startup-readings", "startup-readings-live", "startup-readings-empty":
             width = 1600; height = 1000
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("XTouch-readings-preview-\(UUID().uuidString)")
@@ -131,7 +182,7 @@
             content = AnyView(LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents))
         case "organize-page":
             // The Organize workspace alone, with synthetic links and scenes.
-            width = 760; height = 760
+            width = 760; height = 560
             model.renameControl(.fader(1), name: "Kick")
             model.setControlColor(.fader(1), color: .red)
             model.setControlGroup(.fader(1), group: "Drums")
@@ -230,8 +281,9 @@
             snapshot.hardwareObservation?.isPreview = true
             content = AnyView(ContentView(snapshot: snapshot, intents: preview.panelIntents))
         case "settings":
-            width = 650; height = 760
-            content = AnyView(LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents))
+            width = 650; height = 940
+            content = AnyView(LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents)
+                .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.background))
         case "parameters":
             width = 700; height = 1000
             content = AnyView(ParameterWorkspace(snapshot: model.panelSnapshot, intents: model.panelIntents).padding())

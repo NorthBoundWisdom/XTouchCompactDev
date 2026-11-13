@@ -1,6 +1,6 @@
 // swift-tools-version: 6.0
-import PackageDescription
 import Foundation
+import PackageDescription
 
 // Acquisition is explicit and outside SwiftPM. Even direct Swift invocations validate
 // the locked clean materialization; this read-only verification never contacts a remote.
@@ -30,7 +30,7 @@ let package = Package(
         .library(name: "XTouchCompactCore", targets: ["XTouchCompactCore"]),
         .executable(name: "XTouchCompactApp", targets: ["XTouchCompactApp"]),
         .executable(name: "XTouchSurfaceSimulator", targets: ["XTouchSurfaceSimulator"]),
-        .executable(name: "XTouchRemoteMIDI", targets: ["XTouchRemoteMIDI"])
+        .executable(name: "XTouchRemoteMIDI", targets: ["XTouchRemoteMIDI"]),
     ],
     dependencies: [surfacePlugins],
     targets: [
@@ -46,7 +46,7 @@ let package = Package(
         .testTarget(name: "XTouchCompactCoreTests", dependencies: ["XTouchCompactCore"]),
         .testTarget(name: "CompactRemoteMIDITests", dependencies: ["CompactRemoteMIDI"]),
         .testTarget(name: "XTouchCompactLocalizationTests", dependencies: ["XTouchCompactLocalization"]),
-        .testTarget(name: "XTouchCompactAppTests", dependencies: ["XTouchCompactApp", "XTouchCompactLocalization"])
+        .testTarget(name: "XTouchCompactAppTests", dependencies: ["XTouchCompactApp", "XTouchCompactLocalization"]),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -73,15 +73,19 @@ def main() -> None:
         subprocess.run(["python3", "configs/setup_local_project.py"], cwd=ROOT, check=True)
         subprocess.run(["python3", "configs/macos_workflow.py", "build"], cwd=ROOT, check=True)
     executable = ROOT / "build/app/debug/XTouchCompactApp.app/Contents/MacOS/XTouchCompactApp"
-    for language in ("en", "zh-Hans", "zh-Hant"):
-        output = build_path(ROOT, f"screenshots/{language}.png")
-        build_path(ROOT, f"screenshots/{language}.log")
-        build_path(ROOT, f"screenshots/{language}.sample.txt")
-        capture(executable, output, language)
-    for scene in ("settings", "parameters"):
-        output = build_path(ROOT, f"screenshots/{scene}.png")
-        build_path(ROOT, f"screenshots/{scene}.log")
-        build_path(ROOT, f"screenshots/{scene}.sample.txt")
+    output = build_path(ROOT, "screenshots/en.png")
+    build_path(ROOT, "screenshots/en.log")
+    build_path(ROOT, "screenshots/en.sample.txt")
+    capture(executable, output, "en", "readme-console")
+    for scene, name in (
+        ("settings", "settings"),
+        ("parameters", "parameters"),
+        ("organize-page", "organization"),
+        ("offline-capture", "offline-capture"),
+    ):
+        output = build_path(ROOT, f"screenshots/{name}.png")
+        build_path(ROOT, f"screenshots/{name}.log")
+        build_path(ROOT, f"screenshots/{name}.sample.txt")
         capture(executable, output, "en", scene)
 
 

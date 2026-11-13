@@ -13,6 +13,7 @@ for (index, y) in [600, 390, 520, 680].enumerated() {
     NSColor(calibratedRed: 0.55, green: 0.95, blue: 0.55, alpha: 1).setFill()
     NSBezierPath(roundedRect: NSRect(x: x - 42, y: y, width: 114, height: 76), xRadius: 14, yRadius: 14).fill()
 }
+
 image.unlockFocus()
 let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
 try bitmap.representation(using: .png, properties: [:])!.write(to: root.appendingPathComponent("AppIcon.png"))

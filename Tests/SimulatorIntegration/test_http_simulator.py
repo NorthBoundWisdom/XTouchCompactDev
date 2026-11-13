@@ -1,4 +1,5 @@
 """Real subprocess + loopback tests; no MIDI, GUI, Pipe service, or user store."""
+
 import json
 import os
 from pathlib import Path
@@ -38,8 +39,14 @@ def copy_binary(directory):
 
 def start_failure(directory, arguments, stdin=TOKEN + "\n"):
     """Run a startup expected to be refused; return its exit status and stderr."""
-    completed = subprocess.run([str(copy_binary(directory)), *arguments], input=stdin, capture_output=True,
-        text=True, cwd=directory, timeout=10)
+    completed = subprocess.run(
+        [str(copy_binary(directory)), *arguments],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        cwd=directory,
+        timeout=10,
+    )
     return completed.returncode, completed.stdout, completed.stderr
 
 
@@ -53,8 +60,14 @@ class RunningSimulator:
             command += ["--surface-instance-id", instance]
         if mutations:
             command += ["--allow-surface-input", "--allow-surface-feedback", "--allow-surface-reset"]
-        self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, cwd=self.directory)
+        self.process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=self.directory,
+        )
         if not token_file:
             self.process.stdin.write(TOKEN + "\n")
         self.process.stdin.close()
@@ -70,8 +83,11 @@ class RunningSimulator:
         self.process.stderr.close()
 
     def request(self, name, args=None, token=TOKEN, origin=None):
-        return self.rpc({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": name, "arguments": args or {}}}, token=token, origin=origin)["result"]
+        return self.rpc(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args or {}}},
+            token=token,
+            origin=origin,
+        )["result"]
 
     def rpc(self, envelope, token=TOKEN, origin=None, raw=None, protocol=None):
         data = raw if raw is not None else json.dumps(envelope).encode()
@@ -88,12 +104,19 @@ class RunningSimulator:
         return self.request("surface_control_discover")["structuredContent"]
 
     def snapshot(self):
-        return self.request("surface_control_snapshot", {"instance_id": self.ready["surface_control"]["expected"]["instance_id"]})["structuredContent"]
+        return self.request(
+            "surface_control_snapshot", {"instance_id": self.ready["surface_control"]["expected"]["instance_id"]}
+        )["structuredContent"]
 
     def input(self, value=127, control="a.encoder.1", encoding="scalar"):
         discovery = self.discover()
-        return {"expected": discovery["expected"], "expected_sequence": discovery["latest_sequence"],
-            "control_id": control, "encoding": encoding, "value": value}
+        return {
+            "expected": discovery["expected"],
+            "expected_sequence": discovery["latest_sequence"],
+            "control_id": control,
+            "encoding": encoding,
+            "value": value,
+        }
 
 
 class SurfaceSimulatorHTTPTests(unittest.TestCase):
@@ -118,14 +141,24 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual((event["disposition"], event["source"], event["origin"]), ("accepted", "simulation", "remote"))
         repeated = self.a.request("surface_control_input", request)
         self.assertEqual(repeated["structuredContent"]["code"], "stale_sequence")
-        shown = self.a.request("surface_control_feedback", {"expected": discovery["expected"], "expected_sequence": event["sequence"],
-            "control_id": "a.button.1", "kind": "indicator", "value": "blink"})["structuredContent"]
+        shown = self.a.request(
+            "surface_control_feedback",
+            {
+                "expected": discovery["expected"],
+                "expected_sequence": event["sequence"],
+                "control_id": "a.button.1",
+                "kind": "indicator",
+                "value": "blink",
+            },
+        )["structuredContent"]
         snapshot = self.a.snapshot()
         self.assertEqual(snapshot["inputs"]["a.encoder.1"], 127)
         self.assertEqual(snapshot["inputs"]["a.button.1"], False)
         self.assertEqual(snapshot["feedback"]["a.button.1"]["indicator"], "blink")
-        page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"],
-            "after_sequence": "0", "limit": 100})["structuredContent"]
+        page = self.a.request(
+            "surface_control_events",
+            {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"], "after_sequence": "0", "limit": 100},
+        )["structuredContent"]
         self.assertEqual([event["kind"] for event in page["events"]], ["input", "feedback"])
         self.assertGreaterEqual(page["server_time"], shown["time"])
 
@@ -133,12 +166,14 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         stopped = threading.Event()
         with socket.create_connection(("127.0.0.1", self.a.ready["port"]), timeout=5) as connection:
             connection.sendall(b"P")
+
             def drip():
                 while not stopped.wait(0.2):
                     try:
                         connection.sendall(b"x")
                     except OSError:
                         break
+
             writer = threading.Thread(target=drip, daemon=True)
             started = time.monotonic()
             writer.start()
@@ -172,10 +207,21 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
 
     def test_lost_response_is_accepted_once_and_old_request_cannot_replay(self):
         args = self.a.input()
-        body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": "surface_control_input", "arguments": args}}).encode()
-        header = ("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer " + TOKEN +
-            "\r\nContent-Type: application/json\r\nContent-Length: " + str(len(body)) + "\r\n\r\n").encode()
+        body = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "surface_control_input", "arguments": args},
+            }
+        ).encode()
+        header = (
+            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer "
+            + TOKEN
+            + "\r\nContent-Type: application/json\r\nContent-Length: "
+            + str(len(body))
+            + "\r\n\r\n"
+        ).encode()
         with socket.create_connection(("127.0.0.1", self.a.ready["port"]), timeout=3) as connection:
             connection.sendall(header + body)
             # Intentionally discard the response: the caller has an unknown outcome.
@@ -230,8 +276,10 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
 
         def display(value):
             # The real HTTP request deliberately omits expected_sequence.
-            result = self.a.request("surface_control_feedback", {"expected": expected,
-                "control_id": "a.encoder.10", "kind": "value", "value": value})
+            result = self.a.request(
+                "surface_control_feedback",
+                {"expected": expected, "control_id": "a.encoder.10", "kind": "value", "value": value},
+            )
             self.assertFalse(result["isError"], result)
             feedback_events.append(result["structuredContent"])
 
@@ -288,16 +336,22 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(snapshot["latest_sequence"], "26")
         self.assertEqual(snapshot["inputs"]["a.encoder.9"], 13)
         self.assertEqual(snapshot["feedback"]["a.encoder.10"]["value"], 12)
-        page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": expected["epoch"],
-            "after_sequence": "0", "limit": 100})["structuredContent"]
+        page = self.a.request(
+            "surface_control_events",
+            {"instance_id": "car.a", "epoch": expected["epoch"], "after_sequence": "0", "limit": 100},
+        )["structuredContent"]
         self.assertEqual(len(page["events"]), 26)
 
     def test_event_pages_report_current_holds_after_acquire_renew_and_expiry(self):
         client = Client(self.a.ready["url"], TOKEN, "car.a")
         discovery = client.discover()
+
         def events():
-            return self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"],
-                "after_sequence": "0", "limit": 100})["structuredContent"]
+            return self.a.request(
+                "surface_control_events",
+                {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"], "after_sequence": "0", "limit": 100},
+            )["structuredContent"]
+
         self.assertNotIn("holds", events())
         held = client.input("a.touch.1", "boolean", True, hold_s=0.3)
         self.assertEqual(events()["holds"], {"a.touch.1": held["hold_deadline"]})
@@ -310,8 +364,15 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
 
     def test_describe_matches_live_discovery_and_the_sdk_mapping_revision(self):
         # The delivery manifest takes profile identity and mapping_revision from --describe.
-        described = json.loads(subprocess.run([str(copy_binary(self.temporary.name)), "--describe"],
-            capture_output=True, text=True, check=True, timeout=10).stdout)["discovery"]
+        described = json.loads(
+            subprocess.run(
+                [str(copy_binary(self.temporary.name)), "--describe"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            ).stdout
+        )["discovery"]
         live = self.a.discover()
         self.assertEqual(described["profile"], live["profile"])
         self.assertEqual(described["contract_version"], live["contract_version"])
@@ -329,17 +390,23 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         snapshot = client.snapshot()
         self.assertEqual(snapshot["latest_sequence"], "1")
         self.assertEqual(snapshot["holds"], {"a.touch.1": renewed["hold_deadline"]})
-        page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": client.expected["epoch"],
-            "after_sequence": "0", "limit": 100})["structuredContent"]
+        page = self.a.request(
+            "surface_control_events",
+            {"instance_id": "car.a", "epoch": client.expected["epoch"], "after_sequence": "0", "limit": 100},
+        )["structuredContent"]
         self.assertEqual(len(page["events"]), 1)
         for control, code in (("a.button.1", "unsupported_hold"), ("a.touch.2", "hold_expired")):
-            reply = self.a.request("surface_control_renew", {"expected": client.expected, "control_id": control, "hold_s": 1})
+            reply = self.a.request(
+                "surface_control_renew", {"expected": client.expected, "control_id": control, "hold_s": 1}
+            )
             self.assertEqual(reply["structuredContent"]["code"], code)
         with tempfile.TemporaryDirectory() as other:
             readonly = RunningSimulator(other, "car.ro", mutations=False)
             try:
                 expected = readonly.discover()["expected"]
-                reply = readonly.request("surface_control_renew", {"expected": expected, "control_id": "a.touch.1", "hold_s": 1})
+                reply = readonly.request(
+                    "surface_control_renew", {"expected": expected, "control_id": "a.touch.1", "hold_s": 1}
+                )
                 self.assertEqual(reply["structuredContent"]["code"], "permission_denied")
             finally:
                 readonly.close()
@@ -348,8 +415,9 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         last = client.snapshot()["holds"]["a.touch.1"]
         limited = None
         for _ in range(130):
-            reply = self.a.request("surface_control_renew", {"expected": client.expected, "control_id": "a.touch.1",
-                "hold_s": 5})["structuredContent"]
+            reply = self.a.request(
+                "surface_control_renew", {"expected": client.expected, "control_id": "a.touch.1", "hold_s": 5}
+            )["structuredContent"]
             if reply.get("code") == "rate_limited":
                 limited = reply
                 break
@@ -369,15 +437,21 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(snapshot["inputs"]["a.touch.3"], False)
         self.assertNotIn("holds", snapshot)
         self.assertEqual(snapshot["latest_sequence"], "2")
-        page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": client.expected["epoch"],
-            "after_sequence": "1", "limit": 100})["structuredContent"]
+        page = self.a.request(
+            "surface_control_events",
+            {"instance_id": "car.a", "epoch": client.expected["epoch"], "after_sequence": "1", "limit": 100},
+        )["structuredContent"]
         expired = page["events"][0]
-        self.assertEqual((expired["kind"], expired["disposition"], expired["reason"], expired["origin"], expired["value"]),
-            ("input", "accepted", "hold_expired", "remote", False))
+        self.assertEqual(
+            (expired["kind"], expired["disposition"], expired["reason"], expired["origin"], expired["value"]),
+            ("input", "accepted", "hold_expired", "remote", False),
+        )
         # Processed on schedule, not at the next request: within a small margin of the deadline.
         self.assertGreaterEqual(expired["time"], held["hold_deadline"])
         self.assertLess(expired["time"] - held["hold_deadline"], 0.3)
-        reply = self.a.request("surface_control_renew", {"expected": client.expected, "control_id": "a.touch.3", "hold_s": 1})
+        reply = self.a.request(
+            "surface_control_renew", {"expected": client.expected, "control_id": "a.touch.3", "hold_s": 1}
+        )
         self.assertEqual(reply["structuredContent"]["code"], "hold_expired")
 
     def expiry_lateness_under_slow_drip(self, control, hold_s=0.3):
@@ -410,21 +484,44 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertTrue(reply.startswith(b"HTTP/1.1 400"))
         self.assertGreater(occupied, hold_s + 1.5)  # The reader really was busy across the deadline.
         self.assertLess(occupied, 4.2)
-        page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": client.expected["epoch"],
-            "after_sequence": held["sequence"], "limit": 100})["structuredContent"]
+        page = self.a.request(
+            "surface_control_events",
+            {
+                "instance_id": "car.a",
+                "epoch": client.expected["epoch"],
+                "after_sequence": held["sequence"],
+                "limit": 100,
+            },
+        )["structuredContent"]
         expired = page["events"][0]
-        self.assertEqual((expired["control_id"], expired["reason"], expired["disposition"], expired["value"]),
-            (control, "hold_expired", "accepted", False))
+        self.assertEqual(
+            (expired["control_id"], expired["reason"], expired["disposition"], expired["value"]),
+            (control, "hold_expired", "accepted", False),
+        )
         return expired["time"] - held["hold_deadline"]
 
     def test_lease_expires_within_bound_while_a_slow_drip_holds_the_reader(self):
         lateness = [self.expiry_lateness_under_slow_drip("a.touch.%d" % index) for index in (5, 6, 7)]
-        print("\nhold expiry lateness under slow drip (s):", ", ".join("%.4f" % value for value in lateness), file=sys.stderr)
+        print(
+            "\nhold expiry lateness under slow drip (s):",
+            ", ".join("%.4f" % value for value in lateness),
+            file=sys.stderr,
+        )
         # Measured values are kept as evidence next to the scenario reports.
         report = ROOT / "build/surface-expiry-latency.json"
         report.parent.mkdir(exist_ok=True)
-        report.write_text(json.dumps({"condition": "slow drip holds the reader across the deadline", "hold_s": 0.3,
-            "hard_limit_s": 0.5, "lateness_s": lateness, "binary": str(BINARY)}) + "\n")
+        report.write_text(
+            json.dumps(
+                {
+                    "condition": "slow drip holds the reader across the deadline",
+                    "hold_s": 0.3,
+                    "hard_limit_s": 0.5,
+                    "lateness_s": lateness,
+                    "binary": str(BINARY),
+                }
+            )
+            + "\n"
+        )
         for value in lateness:
             self.assertGreaterEqual(value, 0)
             # Documented hard bound: the event is never later than deadline + 0.5 s, although the
@@ -444,36 +541,65 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
 
     def test_both_protocols_carry_input_feedback_reset_semantics(self):
         for protocol in ("2025-11-25", "2026-07-28"):
-            initialized = self.a.rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                "params": {"protocolVersion": protocol, "capabilities": {}}}, protocol=protocol)
+            initialized = self.a.rpc(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {"protocolVersion": protocol, "capabilities": {}},
+                },
+                protocol=protocol,
+            )
             self.assertEqual(initialized["result"]["protocolVersion"], protocol)
             discovery = self.a.discover()
             cursor = discovery["latest_sequence"]
             accepted = self.a.request("surface_control_input", self.a.input(127))["structuredContent"]
             self.assertEqual((accepted["disposition"], accepted["mapped_value"]), ("accepted", 127))
-            feedback = self.a.request("surface_control_feedback", {"expected": discovery["expected"],
-                "expected_sequence": accepted["sequence"], "control_id": "a.button.1", "kind": "indicator",
-                "value": "on"})["structuredContent"]
+            feedback = self.a.request(
+                "surface_control_feedback",
+                {
+                    "expected": discovery["expected"],
+                    "expected_sequence": accepted["sequence"],
+                    "control_id": "a.button.1",
+                    "kind": "indicator",
+                    "value": "on",
+                },
+            )["structuredContent"]
             self.assertEqual(feedback["kind"], "feedback")
             repeated = self.a.request("surface_control_input", self.a.input(127))["structuredContent"]
             self.assertEqual((repeated["disposition"], repeated["reason"]), ("ignored", "no_change"))
-            page = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"],
-                "after_sequence": cursor, "limit": 100})["structuredContent"]
-            self.assertEqual([(e["kind"], e["disposition"]) for e in page["events"]],
-                [("input", "accepted"), ("feedback", "accepted"), ("input", "ignored")])
+            page = self.a.request(
+                "surface_control_events",
+                {
+                    "instance_id": "car.a",
+                    "epoch": discovery["expected"]["epoch"],
+                    "after_sequence": cursor,
+                    "limit": 100,
+                },
+            )["structuredContent"]
+            self.assertEqual(
+                [(e["kind"], e["disposition"]) for e in page["events"]],
+                [("input", "accepted"), ("feedback", "accepted"), ("input", "ignored")],
+            )
             current = self.a.discover()
-            reset = self.a.request("surface_control_reset", {"expected": current["expected"],
-                "expected_sequence": current["latest_sequence"]})["structuredContent"]
+            reset = self.a.request(
+                "surface_control_reset",
+                {"expected": current["expected"], "expected_sequence": current["latest_sequence"]},
+            )["structuredContent"]
             self.assertNotEqual(reset["expected"]["epoch"], discovery["expected"]["epoch"])
-            stale = self.a.request("surface_control_events", {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"],
-                "after_sequence": "0", "limit": 100})["structuredContent"]
+            stale = self.a.request(
+                "surface_control_events",
+                {"instance_id": "car.a", "epoch": discovery["expected"]["epoch"], "after_sequence": "0", "limit": 100},
+            )["structuredContent"]
             self.assertEqual(stale["code"], "stale_epoch")
 
     def test_public_layer_keys_reach_inactive_layer_without_new_epoch(self):
         before = self.a.discover()
         ignored = self.a.request("surface_control_input", self.a.input(100, "b.fader.1"))["structuredContent"]
         self.assertEqual(ignored["reason"], "inactive_layer")
-        press = self.a.request("surface_control_input", self.a.input(True, "global.layer.b", "boolean"))["structuredContent"]
+        press = self.a.request("surface_control_input", self.a.input(True, "global.layer.b", "boolean"))[
+            "structuredContent"
+        ]
         self.assertEqual((press["disposition"], press["mapped_value"]), ("accepted", "b"))
         accepted = self.a.request("surface_control_input", self.a.input(100, "b.fader.1"))["structuredContent"]
         self.assertEqual(accepted["disposition"], "accepted")
@@ -483,8 +609,10 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(self.a.snapshot()["inputs"]["b.fader.1"], 100)
         pedal = self.a.request("surface_control_input", self.a.input(64, "b.expression.1"))["structuredContent"]
         self.assertEqual(pedal["disposition"], "accepted")
-        self.assertEqual(self.a.request("surface_control_input", self.a.input(5, "a.expression.1"))["structuredContent"]["reason"],
-            "inactive_layer")
+        self.assertEqual(
+            self.a.request("surface_control_input", self.a.input(5, "a.expression.1"))["structuredContent"]["reason"],
+            "inactive_layer",
+        )
 
     def test_json_rpc_error_codes(self):
         cases = [
@@ -494,7 +622,10 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
             (json.dumps({"jsonrpc": "2.0", "id": {"x": 1}, "method": "ping"}).encode(), -32600),
             (json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": 3}).encode(), -32600),
             (json.dumps({"jsonrpc": "2.0", "id": 7, "method": "resources/list"}).encode(), -32601),
-            (json.dumps({"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"arguments": {}}}).encode(), -32602),
+            (
+                json.dumps({"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"arguments": {}}}).encode(),
+                -32602,
+            ),
         ]
         for raw, code in cases:
             with self.subTest(code=code, raw=raw):
@@ -512,9 +643,19 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         # so 61 rejected writes followed by 60 valid ones all fit one window; the 61st valid
         # write is the first rate-limited one and leaves the journal unchanged.
         expected = self.a.discover()["expected"]
+
         def write(sequence, value, encoding="scalar"):
-            return self.a.request("surface_control_input", {"expected": expected, "expected_sequence": str(sequence),
-                "control_id": "a.encoder.1", "encoding": encoding, "value": value})["structuredContent"]
+            return self.a.request(
+                "surface_control_input",
+                {
+                    "expected": expected,
+                    "expected_sequence": str(sequence),
+                    "control_id": "a.encoder.1",
+                    "encoding": encoding,
+                    "value": value,
+                },
+            )["structuredContent"]
+
         for attempt in range(3):
             started = time.monotonic()
             base = int(self.a.snapshot()["latest_sequence"])
@@ -561,11 +702,15 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
                 old = self.a.input()
                 self.a.request("surface_control_input", old)
                 discovery = self.a.discover()
-                reset = self.a.request("surface_control_reset", {"expected": discovery["expected"],
-                    "expected_sequence": discovery["latest_sequence"]})["structuredContent"]
+                reset = self.a.request(
+                    "surface_control_reset",
+                    {"expected": discovery["expected"], "expected_sequence": discovery["latest_sequence"]},
+                )["structuredContent"]
                 self.assertNotEqual(reset["expected"]["epoch"], old["expected"]["epoch"])
                 self.assertEqual(self.a.snapshot()["inputs"]["a.encoder.1"], 0)
-                self.assertEqual(self.a.request("surface_control_input", old)["structuredContent"]["code"], "stale_epoch")
+                self.assertEqual(
+                    self.a.request("surface_control_input", old)["structuredContent"]["code"], "stale_epoch"
+                )
                 self.a.close()
                 self.a = RunningSimulator(self.temporary.name, "car.a")
                 self.assertNotEqual(self.a.discover()["expected"]["epoch"], reset["expected"]["epoch"])
@@ -574,7 +719,6 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
                     self.assertEqual(after_b[key], before_b[key])
             finally:
                 b.close()
-
 
 
 class SurfaceSimulatorStartupTests(unittest.TestCase):
@@ -607,8 +751,14 @@ class SurfaceSimulatorStartupTests(unittest.TestCase):
         # Same rule as the BCR Provider: a redirected file would bypass the --token-file checks.
         redirected = self.private_token_file("redirected", 0o644)
         with open(redirected, encoding="utf-8") as stream:
-            completed = subprocess.run([str(copy_binary(self.directory)), "--token-stdin"], stdin=stream,
-                capture_output=True, text=True, cwd=self.directory, timeout=10)
+            completed = subprocess.run(
+                [str(copy_binary(self.directory)), "--token-stdin"],
+                stdin=stream,
+                capture_output=True,
+                text=True,
+                cwd=self.directory,
+                timeout=10,
+            )
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(completed.stdout, "")
 
@@ -655,7 +805,9 @@ class SurfaceSimulatorStartupTests(unittest.TestCase):
         for stop in (signal.SIGTERM, signal.SIGINT):
             with self.subTest(signal=stop):
                 ready = self.directory / ("ready-%d.json" % stop)
-                running = RunningSimulator(self.directory, "car.ready", mutations=False, extra=("--ready-file", str(ready)))
+                running = RunningSimulator(
+                    self.directory, "car.ready", mutations=False, extra=("--ready-file", str(ready))
+                )
                 try:
                     self.assertEqual(json.loads(ready.read_text()), running.ready)
                     self.assertNotIn(TOKEN, ready.read_text())
@@ -677,11 +829,27 @@ class SurfaceSimulatorStartupTests(unittest.TestCase):
         running = RunningSimulator(self.directory, "car.example", token_file=token, extra=("--ready-file", str(ready)))
         try:
             example = ROOT / "examples/surface_simulator/minimal_consumer.py"
-            completed = subprocess.run([sys.executable, "-I", str(example), "--ready-file", str(ready),
-                "--token-file", str(token), "--exercise"], capture_output=True, text=True, timeout=20, check=True)
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    str(example),
+                    "--ready-file",
+                    str(ready),
+                    "--token-file",
+                    str(token),
+                    "--exercise",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=True,
+            )
             result = json.loads(completed.stdout)
             self.assertEqual(result["source"], "simulation")
-            self.assertEqual((result["input"]["disposition"], result["input"]["control_id"]), ("accepted", "a.encoder.1"))
+            self.assertEqual(
+                (result["input"]["disposition"], result["input"]["control_id"]), ("accepted", "a.encoder.1")
+            )
             self.assertEqual(result["feedback"]["control_id"], "a.button.2")
             self.assertEqual(running.snapshot()["latest_sequence"], "2")
         finally:
@@ -709,16 +877,37 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
     def test_example_describe_and_momentary_expiry(self):
         example = ROOT / "examples/surface_simulator/chassis.json"
         with tempfile.TemporaryDirectory() as directory:
-            described = subprocess.run([str(copy_binary(directory)), "--simulation-configuration", str(example), "--describe"],
-                capture_output=True, text=True, cwd=directory, check=True)
+            described = subprocess.run(
+                [str(copy_binary(directory)), "--simulation-configuration", str(example), "--describe"],
+                capture_output=True,
+                text=True,
+                cwd=directory,
+                check=True,
+            )
             discovery = json.loads(described.stdout)["discovery"]
             self.assertEqual(discovery["expected"]["mapping_revision"], "49d7fa84456ffc4e")
-            default = subprocess.run([str(copy_binary(directory)), "--describe"], capture_output=True,
-                text=True, cwd=directory, check=True)
-            self.assertEqual(discovery["profile"]["capabilities"], json.loads(default.stdout)["discovery"]["profile"]["capabilities"])
+            default = subprocess.run(
+                [str(copy_binary(directory)), "--describe"], capture_output=True, text=True, cwd=directory, check=True
+            )
+            self.assertEqual(
+                discovery["profile"]["capabilities"], json.loads(default.stdout)["discovery"]["profile"]["capabilities"]
+            )
             mappings = {row["mapping"]["id"]: row for row in discovery["profile"]["controls"] if row.get("mapping")}
-            self.assertEqual(set(mappings), {"simulation." + role for role in
-                ("enable", "linear", "steer", "stop", "speed_feedback", "steer_feedback", "stopped_feedback")})
+            self.assertEqual(
+                set(mappings),
+                {
+                    "simulation." + role
+                    for role in (
+                        "enable",
+                        "linear",
+                        "steer",
+                        "stop",
+                        "speed_feedback",
+                        "steer_feedback",
+                        "stopped_feedback",
+                    )
+                },
+            )
             self.assertTrue(all(row["accepts_input"] for row in mappings.values()))
             self.assertEqual(mappings["simulation.enable"]["hold"], {"rest_value": False, "max_hold_s": 10})
             simulator = RunningSimulator(directory, "configured", extra=("--simulation-configuration", str(example)))
@@ -730,15 +919,30 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
                 deadline = time.monotonic() + 1
                 while simulator.snapshot().get("holds") and time.monotonic() < deadline:
                     time.sleep(0.01)
-                page = simulator.request("surface_control_events", {"instance_id": "configured",
-                    "epoch": discovery["expected"]["epoch"], "after_sequence": "0", "limit": 100})
+                page = simulator.request(
+                    "surface_control_events",
+                    {
+                        "instance_id": "configured",
+                        "epoch": discovery["expected"]["epoch"],
+                        "after_sequence": "0",
+                        "limit": 100,
+                    },
+                )
                 # Describe has a discovery-only epoch; the running process must reject that pin.
                 self.assertEqual(page["structuredContent"]["code"], "stale_epoch")
                 running = simulator.discover()
-                page = simulator.request("surface_control_events", {"instance_id": "configured",
-                    "epoch": running["expected"]["epoch"], "after_sequence": "0", "limit": 100})["structuredContent"]
-                self.assertEqual([(event["kind"], event["mapped_value"]) for event in page["events"]],
-                    [("input", 1), ("input", 0)])
+                page = simulator.request(
+                    "surface_control_events",
+                    {
+                        "instance_id": "configured",
+                        "epoch": running["expected"]["epoch"],
+                        "after_sequence": "0",
+                        "limit": 100,
+                    },
+                )["structuredContent"]
+                self.assertEqual(
+                    [(event["kind"], event["mapped_value"]) for event in page["events"]], [("input", 1), ("input", 0)]
+                )
                 self.assertEqual(page["events"][-1]["reason"], "hold_expired")
             finally:
                 simulator.close()
@@ -751,22 +955,30 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
                 request["hold_s"] = 5
                 acquired = simulator.request("surface_control_input", request)["structuredContent"]
                 expected = simulator.discover()["expected"]
-                shown = simulator.request("surface_control_feedback", {"expected": expected,
-                    "control_id": "a.encoder.10", "kind": "value", "value": 10})["structuredContent"]
+                shown = simulator.request(
+                    "surface_control_feedback",
+                    {"expected": expected, "control_id": "a.encoder.10", "kind": "value", "value": 10},
+                )["structuredContent"]
                 self.assertEqual(shown["sequence"], "2")
                 before = simulator.snapshot()
-                operations = [("surface_control_input", simulator.input(127)),
-                    ("surface_control_feedback", {"expected": expected, "control_id": "a.encoder.10", "kind": "value", "value": 99}),
+                operations = [
+                    ("surface_control_input", simulator.input(127)),
+                    (
+                        "surface_control_feedback",
+                        {"expected": expected, "control_id": "a.encoder.10", "kind": "value", "value": 99},
+                    ),
                     ("surface_control_renew", {"expected": expected, "control_id": "a.touch.1", "hold_s": 5}),
-                    ("surface_control_reset", {"expected": expected, "expected_sequence": "2"})]
+                    ("surface_control_reset", {"expected": expected, "expected_sequence": "2"}),
+                ]
                 for name, arguments in operations:
                     self.assertEqual(simulator.request(name, arguments)["structuredContent"]["code"], "rate_limited")
                     snapshot = simulator.snapshot()
                     for key in ("expected", "latest_sequence", "inputs", "feedback", "holds"):
                         self.assertEqual(snapshot.get(key), before.get(key), key)
                 time.sleep(1.05)
-                renewed = simulator.request("surface_control_renew", {"expected": expected,
-                    "control_id": "a.touch.1", "hold_s": 5})
+                renewed = simulator.request(
+                    "surface_control_renew", {"expected": expected, "control_id": "a.touch.1", "hold_s": 5}
+                )
                 self.assertFalse(renewed["isError"], renewed)
                 self.assertGreater(renewed["structuredContent"]["hold_deadline"], acquired["hold_deadline"])
                 self.assertFalse(simulator.request("surface_control_input", simulator.input(127))["isError"])
@@ -781,10 +993,12 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
     def test_strict_configuration_rejects_invalid_fields_bindings_and_permissions(self):
         original = json.loads((ROOT / "examples/surface_simulator/chassis.json").read_text())
         variants = []
+
         def variant(change):
             value = json.loads(json.dumps(original))
             change(value)
             variants.append(value)
+
         variant(lambda value: value.update(unknown=True))
         variant(lambda value: value["parameters"][0].update(unknown=True))
         variant(lambda value: value["assignments"][0].update(unknown=True))
@@ -800,7 +1014,9 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
                 path = Path(directory) / "invalid.json"
                 path.write_text(json.dumps(value))
                 with self.subTest(configuration=value):
-                    code, stdout, stderr = start_failure(directory, ["--simulation-configuration", str(path), "--describe"])
+                    code, stdout, stderr = start_failure(
+                        directory, ["--simulation-configuration", str(path), "--describe"]
+                    )
                     self.assertNotEqual(code, 0)
                     self.assertEqual(stdout, "")
                     self.assertIn("failed", stderr)
@@ -809,8 +1025,12 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
             valid["version"] = 2
             valid["parameters"][0]["externallyProtected"] = False
             path.write_text(json.dumps(valid))
-            described = subprocess.run([str(copy_binary(directory)), "--simulation-configuration", str(path), "--describe"],
-                capture_output=True, text=True, cwd=directory)
+            described = subprocess.run(
+                [str(copy_binary(directory)), "--simulation-configuration", str(path), "--describe"],
+                capture_output=True,
+                text=True,
+                cwd=directory,
+            )
             self.assertEqual(described.returncode, 0, described.stderr)
 
 
@@ -825,34 +1045,90 @@ class Contract13HTTPTests(unittest.TestCase):
                 self.assertIn("events.writer_id", discovery["profile"]["capabilities"])
                 self.assertEqual(discovery["latest_input_sequence"], "0")
                 for value in range(3):
-                    self.assertFalse(simulator.request("surface_control_feedback", {"expected": discovery["expected"],
-                        "control_id": "a.encoder.10", "kind": "value", "value": value})["isError"])
+                    self.assertFalse(
+                        simulator.request(
+                            "surface_control_feedback",
+                            {
+                                "expected": discovery["expected"],
+                                "control_id": "a.encoder.10",
+                                "kind": "value",
+                                "value": value,
+                            },
+                        )["isError"]
+                    )
                 event = operator.input("a.encoder.9", "scalar", 50)
                 self.assertEqual((event["sequence"], event["input_sequence"]), ("4", "1"))
-                legacy = {"expected": discovery["expected"], "expected_sequence": "0", "control_id": "a.encoder.9", "encoding": "scalar", "value": 60}
-                self.assertEqual(simulator.request("surface_control_input", legacy)["structuredContent"]["code"], "stale_sequence")
+                legacy = {
+                    "expected": discovery["expected"],
+                    "expected_sequence": "0",
+                    "control_id": "a.encoder.9",
+                    "encoding": "scalar",
+                    "value": 60,
+                }
+                self.assertEqual(
+                    simulator.request("surface_control_input", legacy)["structuredContent"]["code"], "stale_sequence"
+                )
                 held = operator.input("a.touch.1", "boolean", True, hold_s=0.05)
-                stale = {"expected": discovery["expected"], "expected_input_sequence": held["input_sequence"],
-                    "control_id": "a.encoder.9", "encoding": "scalar", "value": 60}
+                stale = {
+                    "expected": discovery["expected"],
+                    "expected_input_sequence": held["input_sequence"],
+                    "control_id": "a.encoder.9",
+                    "encoding": "scalar",
+                    "value": 60,
+                }
                 time.sleep(0.08)
-                self.assertEqual(simulator.request("surface_control_input", stale)["structuredContent"]["code"], "stale_input_sequence")
+                self.assertEqual(
+                    simulator.request("surface_control_input", stale)["structuredContent"]["code"],
+                    "stale_input_sequence",
+                )
                 current = operator.refresh_input_sequence()
                 self.assertEqual(current, "3")
                 self.assertEqual(operator.input("a.encoder.9", "scalar", 60)["input_sequence"], "4")
-                page = simulator.request("surface_control_events", {"instance_id": "contract13", "epoch": discovery["expected"]["epoch"],
-                    "after_sequence": "0", "limit": 100})["structuredContent"]
+                page = simulator.request(
+                    "surface_control_events",
+                    {
+                        "instance_id": "contract13",
+                        "epoch": discovery["expected"]["epoch"],
+                        "after_sequence": "0",
+                        "limit": 100,
+                    },
+                )["structuredContent"]
                 self.assertEqual([row["sequence"] for row in page["events"]], [str(value) for value in range(1, 8)])
                 self.assertEqual([row["input_sequence"] for row in page["events"]], ["0", "0", "0", "1", "2", "3", "4"])
                 remote = event["writer_id"]
-                self.assertTrue(all(row["writer_id"] == remote for row in page["events"] if row.get("reason") != "hold_expired"))
+                self.assertTrue(
+                    all(row["writer_id"] == remote for row in page["events"] if row.get("reason") != "hold_expired")
+                )
                 expiry = next(row for row in page["events"] if row.get("reason") == "hold_expired")
                 self.assertNotEqual(expiry["writer_id"], remote)
                 # IDs are host-owned, not accepted as a client-supplied request field.
-                forged_writes = [("surface_control_input", {**simulator.input(100), "writer_id": remote}),
+                forged_writes = [
+                    ("surface_control_input", {**simulator.input(100), "writer_id": remote}),
                     ("surface_control_input", {**simulator.input(100), "expected_input_sequence": "4"}),
-                    ("surface_control_feedback", {"expected": discovery["expected"], "control_id": "a.encoder.10", "kind": "value", "value": 10, "writer_id": remote}),
-                    ("surface_control_renew", {"expected": discovery["expected"], "control_id": "a.touch.1", "hold_s": 1, "writer_id": remote}),
-                    ("surface_control_reset", {"expected": discovery["expected"], "expected_sequence": "7", "writer_id": remote})]
+                    (
+                        "surface_control_feedback",
+                        {
+                            "expected": discovery["expected"],
+                            "control_id": "a.encoder.10",
+                            "kind": "value",
+                            "value": 10,
+                            "writer_id": remote,
+                        },
+                    ),
+                    (
+                        "surface_control_renew",
+                        {
+                            "expected": discovery["expected"],
+                            "control_id": "a.touch.1",
+                            "hold_s": 1,
+                            "writer_id": remote,
+                        },
+                    ),
+                    (
+                        "surface_control_reset",
+                        {"expected": discovery["expected"], "expected_sequence": "7", "writer_id": remote},
+                    ),
+                ]
                 for name, forged in forged_writes:
                     before = simulator.snapshot()
                     self.assertEqual(simulator.request(name, forged)["structuredContent"]["code"], "invalid_argument")
@@ -864,11 +1140,17 @@ class Contract13HTTPTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             record = directory / "principals.json"
-            described = subprocess.run([str(copy_binary(directory)), "--describe", "--surface-principal-file", str(record)],
-                cwd=directory, capture_output=True, text=True)
+            described = subprocess.run(
+                [str(copy_binary(directory)), "--describe", "--surface-principal-file", str(record)],
+                cwd=directory,
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(described.returncode, 0, described.stderr)
             self.assertFalse(record.exists())
-            code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(record)], stdin="bad\n")
+            code, _, _ = start_failure(
+                directory, ["--token-stdin", "--surface-principal-file", str(record)], stdin="bad\n"
+            )
             self.assertNotEqual(code, 0)
             self.assertFalse(record.exists())
             remote_ids, epochs = [], []
@@ -876,10 +1158,13 @@ class Contract13HTTPTests(unittest.TestCase):
                 token = directory / ("token-%d" % index)
                 token.write_text(secrets.token_hex(32))
                 token.chmod(0o600)
-                running = RunningSimulator(directory, "persistent", extra=("--surface-principal-file", str(record)), token_file=token)
+                running = RunningSimulator(
+                    directory, "persistent", extra=("--surface-principal-file", str(record)), token_file=token
+                )
                 try:
                     client = Client(running.ready["url"], token.read_text(), "persistent")
-                    d = client.discover(); epochs.append(d["expected"]["epoch"])
+                    d = client.discover()
+                    epochs.append(d["expected"]["epoch"])
                     first = client.input("a.encoder.1", "scalar", 127)
                     other = Client(running.ready["url"], token.read_text(), "persistent")
                     other.discover()
@@ -893,7 +1178,9 @@ class Contract13HTTPTests(unittest.TestCase):
             self.assertNotEqual(epochs[0], epochs[1])
             self.assertEqual(record.stat().st_mode & 0o777, 0o600)
             value = json.loads(record.read_text())
-            self.assertEqual(set(value), {"schema_version", "remote_writer_id", "interface_writer_id", "system_writer_id"})
+            self.assertEqual(
+                set(value), {"schema_version", "remote_writer_id", "interface_writer_id", "system_writer_id"}
+            )
             self.assertEqual(value["remote_writer_id"], remote_ids[0])
             self.assertEqual(len({value[key] for key in value if key != "schema_version"}), 3)
             # No principal path remains memory-only, including across restarts.
@@ -901,7 +1188,9 @@ class Contract13HTTPTests(unittest.TestCase):
             for index in range(2):
                 running = RunningSimulator(directory, "ephemeral")
                 try:
-                    ids.append(running.request("surface_control_input", running.input())["structuredContent"]["writer_id"])
+                    ids.append(
+                        running.request("surface_control_input", running.input())["structuredContent"]["writer_id"]
+                    )
                 finally:
                     running.close()
             self.assertNotEqual(ids[0], ids[1])
@@ -909,68 +1198,113 @@ class Contract13HTTPTests(unittest.TestCase):
     def test_principal_file_rejects_unsafe_modes_symlinks_and_invalid_records(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
-            valid = {"schema_version": 1, "remote_writer_id": "a" * 32, "interface_writer_id": "b" * 32, "system_writer_id": "c" * 32}
+            valid = {
+                "schema_version": 1,
+                "remote_writer_id": "a" * 32,
+                "interface_writer_id": "b" * 32,
+                "system_writer_id": "c" * 32,
+            }
             record = directory / "principal.json"
-            variants = [{**valid, "unknown": 1}, {**valid, "schema_version": 2},
-                {**valid, "remote_writer_id": "c" * 32}, {**valid, "remote_writer_id": "bad"},
-                {key: value for key, value in valid.items() if key != "interface_writer_id"}]
+            variants = [
+                {**valid, "unknown": 1},
+                {**valid, "schema_version": 2},
+                {**valid, "remote_writer_id": "c" * 32},
+                {**valid, "remote_writer_id": "bad"},
+                {key: value for key, value in valid.items() if key != "interface_writer_id"},
+            ]
             for value in variants:
-                record.write_text(json.dumps(value));record.chmod(0o600)
+                record.write_text(json.dumps(value))
+                record.chmod(0o600)
                 code, stdout, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(record)])
-                self.assertNotEqual(code, 0);self.assertEqual(stdout, "")
+                self.assertNotEqual(code, 0)
+                self.assertEqual(stdout, "")
             duplicate = json.dumps(valid)[:-1] + ', "remote_writer_id": "' + "a" * 32 + '"}'
-            record.write_text(duplicate);record.chmod(0o600)
+            record.write_text(duplicate)
+            record.chmod(0o600)
             code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(record)])
             self.assertNotEqual(code, 0)
-            record.write_text(json.dumps(valid));record.chmod(0o644)
+            record.write_text(json.dumps(valid))
+            record.chmod(0o644)
             code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(record)])
             self.assertNotEqual(code, 0)
             record.chmod(0o600)
-            link = directory / "symlink";link.symlink_to(record)
+            link = directory / "symlink"
+            link.symlink_to(record)
             code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(link)])
             self.assertNotEqual(code, 0)
-            fifo = directory / "fifo";os.mkfifo(fifo, 0o600)
+            fifo = directory / "fifo"
+            os.mkfifo(fifo, 0o600)
             code, _, _ = start_failure(directory, ["--token-stdin", "--surface-principal-file", str(fifo)])
             self.assertNotEqual(code, 0)
             self.assertEqual(json.loads(record.read_text()), valid)
 
     def test_independent_budgets_keep_input_rest_renew_and_expiry_available(self):
         with tempfile.TemporaryDirectory() as directory:
-            running = RunningSimulator(directory, "limits", extra=("--write-limits", "input=4,feedback=1,renew=1,admin=1"))
+            running = RunningSimulator(
+                directory, "limits", extra=("--write-limits", "input=4,feedback=1,renew=1,admin=1")
+            )
             try:
-                discovery = running.discover();expected = discovery["expected"]
+                discovery = running.discover()
+                expected = discovery["expected"]
                 self.assertIn("writes.independent_limits", discovery["profile"]["capabilities"])
-                self.assertEqual(discovery["write_limits"], {"window_s": 1, "input_per_window": 4,
-                    "feedback_per_window": 1, "renew_per_window": 1, "admin_per_window": 1})
+                self.assertEqual(
+                    discovery["write_limits"],
+                    {
+                        "window_s": 1,
+                        "input_per_window": 4,
+                        "feedback_per_window": 1,
+                        "renew_per_window": 1,
+                        "admin_per_window": 1,
+                    },
+                )
                 self.assertEqual(expected["mapping_revision"], "2fc51394e3593d7c")
                 feedback = {"expected": expected, "control_id": "a.encoder.10", "kind": "value", "value": 1}
                 self.assertFalse(running.request("surface_control_feedback", feedback)["isError"])
-                self.assertEqual(running.request("surface_control_feedback", feedback)["structuredContent"]["code"], "rate_limited")
-                held = running.input(True, "a.touch.1", "boolean");held["hold_s"] = 0.2
+                self.assertEqual(
+                    running.request("surface_control_feedback", feedback)["structuredContent"]["code"], "rate_limited"
+                )
+                held = running.input(True, "a.touch.1", "boolean")
+                held["hold_s"] = 0.2
                 self.assertFalse(running.request("surface_control_input", held)["isError"])
                 renew = {"expected": expected, "control_id": "a.touch.1", "hold_s": 0.2}
                 self.assertFalse(running.request("surface_control_renew", renew)["isError"])
                 before = running.snapshot()
-                self.assertEqual(running.request("surface_control_renew", renew)["structuredContent"]["code"], "rate_limited")
+                self.assertEqual(
+                    running.request("surface_control_renew", renew)["structuredContent"]["code"], "rate_limited"
+                )
                 self.assertEqual(running.snapshot()["holds"], before["holds"])
                 # Renew exhaustion cannot block an explicit rest (input category).
-                self.assertFalse(running.request("surface_control_input", running.input(False, "a.touch.1", "boolean"))["isError"])
+                self.assertFalse(
+                    running.request("surface_control_input", running.input(False, "a.touch.1", "boolean"))["isError"]
+                )
                 # Exhaust input while another hold is active; system expiry bypasses every budget.
-                held = running.input(True, "a.touch.1", "boolean");held["hold_s"] = 0.05
+                held = running.input(True, "a.touch.1", "boolean")
+                held["hold_s"] = 0.05
                 self.assertFalse(running.request("surface_control_input", held)["isError"])
                 self.assertFalse(running.request("surface_control_input", running.input(100))["isError"])
-                self.assertEqual(running.request("surface_control_input", running.input(101))["structuredContent"]["code"], "rate_limited")
+                self.assertEqual(
+                    running.request("surface_control_input", running.input(101))["structuredContent"]["code"],
+                    "rate_limited",
+                )
                 time.sleep(0.08)
                 after = running.snapshot()
-                self.assertFalse(after.get("holds"));self.assertFalse(after["inputs"]["a.touch.1"])
+                self.assertFalse(after.get("holds"))
+                self.assertFalse(after["inputs"]["a.touch.1"])
                 self.assertEqual(after["latest_input_sequence"], "5")
             finally:
                 running.close()
-            invalid = ["input=1,feedback=1,renew=1", "input=1,feedback=1,renew=1,admin=0", "input=1,feedback=1,renew=1,admin=1,input=2", "input=1,feedback=1,renew=1,unknown=1"]
+            invalid = [
+                "input=1,feedback=1,renew=1",
+                "input=1,feedback=1,renew=1,admin=0",
+                "input=1,feedback=1,renew=1,admin=1,input=2",
+                "input=1,feedback=1,renew=1,unknown=1",
+            ]
             for value in invalid:
                 code, _, _ = start_failure(directory, ["--describe", "--write-limits", value])
                 self.assertNotEqual(code, 0)
-            code, _, _ = start_failure(directory, ["--describe", "--write-limit", "60", "--write-limits", "input=1,feedback=1,renew=1,admin=1"])
+            code, _, _ = start_failure(
+                directory, ["--describe", "--write-limit", "60", "--write-limits", "input=1,feedback=1,renew=1,admin=1"]
+            )
             self.assertNotEqual(code, 0)
 
 

@@ -1,4 +1,5 @@
 """Frozen SDK version gates and old wire shapes against the real current host."""
+
 import hashlib
 import json
 import subprocess
@@ -46,9 +47,15 @@ except SurfaceError as error:
 else:
     raise AssertionError('Frozen SDK unexpectedly accepted contract 1.3')
 """
-        result = subprocess.run([sys.executable, "-B", "-c", script, str(archive)],
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", script, str(archive)],
             input=json.dumps({"url": self.host.ready["url"], "token": TOKEN}),
-            capture_output=True, text=True, cwd=self.temporary.name, timeout=10, check=True)
+            capture_output=True,
+            text=True,
+            cwd=self.temporary.name,
+            timeout=10,
+            check=True,
+        )
         self.assertEqual(json.loads(result.stdout)["code"], "unsupported_contract")
         self.assertEqual(self.host.snapshot()["latest_sequence"], "0")
 
@@ -71,16 +78,33 @@ else:
 
         # The legacy client supplies the global sequence, never input_sequence or
         # writer identity. Responses may contain additive 1.3 fields.
-        accepted = call("input", {"expected": expected, "expected_sequence": "0",
-            "control_id": "a.encoder.1", "encoding": "scalar", "value": 127})
+        accepted = call(
+            "input",
+            {
+                "expected": expected,
+                "expected_sequence": "0",
+                "control_id": "a.encoder.1",
+                "encoding": "scalar",
+                "value": 127,
+            },
+        )
         self.assertEqual((accepted["sequence"], accepted["disposition"]), ("1", "accepted"))
         feedback = {"expected": expected, "control_id": "a.button.1", "kind": "indicator", "value": "blink"}
         if version == "1.1":
             feedback["expected_sequence"] = "1"
         shown = call("feedback", feedback)
         self.assertEqual(shown["sequence"], "2")
-        held = call("input", {"expected": expected, "expected_sequence": "2", "control_id": "a.touch.1",
-            "encoding": "boolean", "value": True, "hold_s": 5})
+        held = call(
+            "input",
+            {
+                "expected": expected,
+                "expected_sequence": "2",
+                "control_id": "a.touch.1",
+                "encoding": "boolean",
+                "value": True,
+                "hold_s": 5,
+            },
+        )
         renewed = call("renew", {"expected": expected, "control_id": "a.touch.1", "hold_s": 6})
         self.assertGreater(renewed["hold_deadline"], held["hold_deadline"])
         snapshot = self.host.snapshot()
@@ -88,20 +112,38 @@ else:
         self.assertEqual(snapshot["inputs"]["a.encoder.1"], 127)
         self.assertTrue(snapshot["inputs"]["a.touch.1"])
         self.assertEqual(snapshot["feedback"]["a.button.1"]["indicator"], "blink")
-        page = call("events", {"instance_id": "legacy.client", "epoch": expected["epoch"], "after_sequence": "0", "limit": 100})
+        page = call(
+            "events", {"instance_id": "legacy.client", "epoch": expected["epoch"], "after_sequence": "0", "limit": 100}
+        )
         self.assertEqual([row["sequence"] for row in page["events"]], ["1", "2", "3"])
         self.assertEqual([row["kind"] for row in page["events"]], ["input", "feedback", "input"])
         if version == "1.2":
             self.assertEqual(page["holds"]["a.touch.1"], snapshot["holds"]["a.touch.1"])
-        released = call("input", {"expected": expected, "expected_sequence": "3", "control_id": "a.touch.1",
-            "encoding": "boolean", "value": False})
+        released = call(
+            "input",
+            {
+                "expected": expected,
+                "expected_sequence": "3",
+                "control_id": "a.touch.1",
+                "encoding": "boolean",
+                "value": False,
+            },
+        )
         self.assertEqual(released["sequence"], "4")
         self.assertNotIn("a.touch.1", self.host.snapshot().get("holds", {}))
         reset = call("reset", {"expected": expected, "expected_sequence": "4"})
         self.assertNotEqual(reset["expected"]["epoch"], expected["epoch"])
         self.assertEqual(self.host.snapshot()["latest_sequence"], "0")
-        stale = self.host.request("surface_control_input", {"expected": expected, "expected_sequence": "0",
-            "control_id": "a.encoder.1", "encoding": "scalar", "value": 0})
+        stale = self.host.request(
+            "surface_control_input",
+            {
+                "expected": expected,
+                "expected_sequence": "0",
+                "control_id": "a.encoder.1",
+                "encoding": "scalar",
+                "value": 0,
+            },
+        )
         self.assertEqual(stale["structuredContent"]["code"], "stale_epoch")
 
     def test_contract_1_1_wire_shapes_roundtrip_on_current_host(self):
