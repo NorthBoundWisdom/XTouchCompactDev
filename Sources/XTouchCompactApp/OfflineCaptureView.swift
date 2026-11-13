@@ -24,7 +24,7 @@
                             ProgressView().controlSize(.small)
                         }
                     }
-                    Text(l.text("Read-only offline review. No MIDI is sent; recorded evidence is not hardware qualification."))
+                    Text(l.text("Offline actions send no MIDI; the live console keeps its mode. Recorded evidence is not hardware qualification."))
                         .font(.caption).foregroundStyle(.secondary)
                     if let state = snapshot.offlineCapture {
                         if let failure = state.failure {

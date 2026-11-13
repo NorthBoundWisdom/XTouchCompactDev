@@ -268,3 +268,17 @@ class MotorSafetyAuditTests(unittest.TestCase):
             self.assertEqual(report["assessment"], "inconclusive")
             self.assertFalse(report["evidenceSufficient"])
             self.assertEqual(path.read_bytes(), data)
+
+    def test_other_declared_device_is_not_interpreted_as_compact(self):
+        session = dict(
+            hardwareMode=True,
+            configuredTransmitChannel=1,
+            connectionGeneration=0,
+            connectedInput={"id": 1},
+            connectedOutput={"id": 2},
+            deviceModel="BCR2000",
+        )
+        with self.assertRaises(module.CaptureError):
+            module.audit(capture([], session=session))
+        session["deviceModel"] = "X-TOUCH COMPACT"
+        self.assertEqual(module.audit(capture([], session=session))["eventCount"], 0)

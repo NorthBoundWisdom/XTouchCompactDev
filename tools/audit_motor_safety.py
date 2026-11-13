@@ -114,6 +114,8 @@ def input_layer_and_touch(raw):
 
 def audit(data):
     events, complete, session = read_capture(data)
+    if session.get("deviceModel") not in (None, "X-TOUCH COMPACT"):
+        raise CaptureError("capture declares an unsupported device")
     route = route_identity(session, "connectionGeneration")
     if (
         "hardwareMode" not in session

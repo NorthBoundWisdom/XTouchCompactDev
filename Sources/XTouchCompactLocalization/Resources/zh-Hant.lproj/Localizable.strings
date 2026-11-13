@@ -670,3 +670,5 @@
 "Mock cap %@ · recorded position %@" = "Mock 推桿 %@ · 已記錄位置 %@";
 
 "Replay stopped: invalid recorded state." = "重播已停止：錄製狀態無效。";
+
+"Offline actions send no MIDI; the live console keeps its mode. Recorded evidence is not hardware qualification." = "離線操作不傳送 MIDI，主控台維持目前模式；錄製證據不等於實機驗收。";

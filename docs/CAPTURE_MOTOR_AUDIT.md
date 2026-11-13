@@ -72,6 +72,11 @@ main actor; a stale or cancelled import cannot replace a newer review. Invalid
 input leaves the original file and previous valid review intact. No user profile,
 live session, CoreMIDI mode, current target or MIDI permission is changed.
 
+Captures explicitly declaring another controller are rejected by both the native
+reviewer and CLI instead of being interpreted with Compact addresses. Legacy
+missing/null device labels remain unknown; they are never hardware confirmation.
+The supported interpretation remains factory Standard MIDI only.
+
 The native `RecordedCapture` / `CaptureMotorAudit` core has no Python runtime or
 CoreMIDI dependency and runs on Linux. Shared synthetic fixtures independently
 compare its complete report with the existing Python CLI. The app computes the

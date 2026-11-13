@@ -86,3 +86,22 @@ private var fixtureURL: URL {
         #expect(throws: CaptureDocumentError.self) { try RecordedCapture(data: encoded(rows)) }
     }
 }
+
+@Test func offlineCaptureRejectsKnownOtherDeviceInsteadOfAssumingCompactAddresses() throws {
+    let fixtures = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as? [[String: Any]])
+    let text = try #require(fixtures.first?["jsonl"] as? String)
+    let lines = try text.split(separator: "\n").map { try #require(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]) }
+    for model in ["X-TOUCH COMPACT", "BCR2000"] {
+        var rows = lines
+        var session = try #require(rows[0]["session"] as? [String: Any]); session["deviceModel"] = model; rows[0]["session"] = session
+        var data = Data()
+        for row in rows {
+            try data.append(JSONSerialization.data(withJSONObject: row)); data.append(10)
+        }
+        if model == "X-TOUCH COMPACT" {
+            _ = try RecordedCapture(data: data)
+        } else {
+            #expect(throws: CaptureDocumentError.invalidRecord(line: 1)) { try RecordedCapture(data: data) }
+        }
+    }
+}

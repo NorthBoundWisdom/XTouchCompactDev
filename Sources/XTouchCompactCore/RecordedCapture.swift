@@ -46,11 +46,14 @@ public struct CaptureSessionFacts: Equatable, Sendable, Decodable {
 
     private enum CodingKeys: String, CodingKey {
         case connectedInput, connectedOutput, connectionGeneration, hardwareMode
-        case configuredTransmitChannel, configuredGlobalReceiveChannel, ledProtocol, sourceRevision
+        case configuredTransmitChannel, configuredGlobalReceiveChannel, ledProtocol, sourceRevision, deviceModel
     }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let model = try c.decodeIfPresent(String.self, forKey: .deviceModel), model != "X-TOUCH COMPACT" {
+            throw DecodingError.dataCorruptedError(forKey: .deviceModel, in: c, debugDescription: "Unsupported capture device")
+        }
         route = try CaptureRoute(inputID: c.decode(CaptureEndpoint?.self, forKey: .connectedInput)?.id,
                                  outputID: c.decode(CaptureEndpoint?.self, forKey: .connectedOutput)?.id,
                                  generation: c.decode(UInt64?.self, forKey: .connectionGeneration))

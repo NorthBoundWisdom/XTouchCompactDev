@@ -670,3 +670,5 @@
 "Mock cap %@ · recorded position %@" = "Mock cap %@ · recorded position %@";
 
 "Replay stopped: invalid recorded state." = "Replay stopped: invalid recorded state.";
+
+"Offline actions send no MIDI; the live console keeps its mode. Recorded evidence is not hardware qualification." = "Offline actions send no MIDI; the live console keeps its mode. Recorded evidence is not hardware qualification.";
