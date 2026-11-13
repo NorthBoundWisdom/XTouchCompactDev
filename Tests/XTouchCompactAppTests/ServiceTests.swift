@@ -424,4 +424,21 @@
         #expect(midi.sent == [.noteOn(channel: 0, number: 0, velocity: 1)])
         #expect(model.error as? CompactError == .fadersTouched)
     }
+
+    @Test @MainActor func t21RestoreSceneAndUndoKeepExistingOutputPermissions() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareListen)
+        model.setParameter("a.Fader.1", value: 80)
+        model.captureScene(name: "Fixture")
+        model.setParameter("a.Fader.1", value: 20)
+        if let id = model.session.parameters.configuration.scenes?.first?.id {
+            model.recallScene(id)
+        }
+        model.undo(); model.redo()
+        model.applyConfiguration(model.session.parameters.configuration)
+        #expect(midi.sent.isEmpty)
+        #expect(model.listenOnly && !model.mcpMotorWritesAllowed)
+        #expect(model.nonMotorTests.approval == nil)
+    }
 #endif
