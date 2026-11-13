@@ -149,3 +149,30 @@ private func motors(_ messages: [MIDIMessage]) -> [MIDIMessage] {
         try state.validateLayerAssertion()
     }
 }
+
+@Test(arguments: [UInt8(101), UInt8(111)]) func crossLayerReleasePreservesMismatch(releaseAddress: UInt8) throws {
+    var state = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = state.receive(.controlChange(channel: 0, number: 101, value: 127))
+    #expect(try state.setFader(1, value: 80).isEmpty)
+    _ = state.receive(.controlChange(channel: 0, number: 37, value: 20))
+    _ = state.receive(.controlChange(channel: 0, number: releaseAddress, value: 0))
+    #expect(!state.isTouched(1))
+    #expect(state.layerMismatch)
+    #expect(try state.reconcileReleasedFader(1).isEmpty)
+    // Release edges of other controls cannot restore layer evidence either.
+    _ = state.receive(.noteOff(channel: 0, number: 16, velocity: 0))
+    #expect(state.layerMismatch)
+    _ = state.receive(.controlChange(channel: 0, number: 10, value: 30))
+    #expect(!state.layerMismatch)
+    #expect(try state.reconcileReleasedFader(1).isEmpty) // Old pending target is invalidated.
+}
+
+@Test(arguments: [UInt8(101), UInt8(111)]) func sessionCrossLayerReleaseNeverReplaysMotor(releaseAddress: UInt8) throws {
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    _ = try session.receive([.controlChange(channel: 0, number: 101, value: 127)])
+    #expect(try motors(session.setFader(1, value: 80)).isEmpty)
+    #expect(try motors(session.receive([.controlChange(channel: 0, number: 37, value: 20)]).feedback).isEmpty)
+    #expect(try motors(session.receive([.controlChange(channel: 0, number: releaseAddress, value: 0)]).feedback).isEmpty)
+    #expect(!session.state.isTouched(1))
+    #expect(session.state.layerMismatch)
+}

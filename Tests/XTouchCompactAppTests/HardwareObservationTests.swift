@@ -231,4 +231,25 @@
         #expect(model.panelSnapshot.fader(1)?.isTouched == true)
         #expect(midi.sent.isEmpty)
     }
+
+    @Test @MainActor func crossLayerReleaseIsBlockedAtHardwareBoundary() {
+        for releaseAddress: UInt8 in [101, 111] {
+            let midi = FakeMIDIService()
+            let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+            midi.connect(); model.setConsoleMode(.hardwareSend)
+            midi.onMessages?([.controlChange(channel: 0, number: 101, value: 127)])
+            model.faderChanged(1, value: 80)
+            midi.onMessages?([.controlChange(channel: 0, number: 37, value: 20)])
+            midi.onMessages?([.controlChange(channel: 0, number: releaseAddress, value: 0)])
+            #expect(!model.session.state.isTouched(1))
+            #expect(model.session.state.layerMismatch)
+            #expect(!midi.sent.contains {
+                if case .controlChange(_, 1 ... 9, _) = $0 {
+                    true
+                } else {
+                    false
+                }
+            })
+        }
+    }
 #endif

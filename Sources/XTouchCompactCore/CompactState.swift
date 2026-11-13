@@ -123,7 +123,15 @@ public struct CompactState: Sendable {
     /// The domain engine consumes the returned CompactInput and chooses the resulting parameter value.
     public mutating func receive(_ message: MIDIMessage) -> CompactInput? {
         guard let event = map.decode(message) else { return nil }
-        observedLayer = event.layer
+        // A release ends a gesture; it cannot prove the device returned to our layer.
+        // Once contradicted, withheld motion is obsolete even if fresh positive input
+        // later restores layer agreement.
+        if !layerMismatch || event.isPressed != false {
+            observedLayer = event.layer
+        }
+        if layerMismatch {
+            pendingMotor.removeAll()
+        }
         switch event.control {
         case let .fader(i):
             observedFaders[i] = event.value
