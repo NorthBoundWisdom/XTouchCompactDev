@@ -566,3 +566,61 @@
 "Layer change refused while a fader is touched. Release all faders and retry; nothing was queued." = "Layer change refused while a fader is touched. Release all faders and retry; nothing was queued.";
 
 "Lights not synchronized; use Sync lights to assert the layer." = "Lights not synchronized; use Sync lights to assert the layer.";
+
+"Offline capture" = "Offline capture";
+
+"Open capture…" = "Open capture…";
+
+"Clear offline review" = "Clear offline review";
+
+"Read-only offline review. No MIDI is sent; recorded evidence is not hardware qualification." = "Read-only offline review. No MIDI is sent; recorded evidence is not hardware qualification.";
+
+"No capture imported." = "No capture imported.";
+
+"Events %@ · motor outputs %@ · layer assertions %@" = "Events %@ · motor outputs %@ · layer assertions %@";
+
+"Complete capture" = "Complete capture";
+
+"Incomplete capture prefix" = "Incomplete capture prefix";
+
+"Motor output while touched" = "Motor output while touched";
+
+"Motor output during known layer mismatch" = "Motor output during known layer mismatch";
+
+"Layer assertion while touched" = "Layer assertion while touched";
+
+"Motor output with unknown touch" = "Motor output with unknown touch";
+
+"Motor output with unknown layer" = "Motor output with unknown layer";
+
+"Motor output with unknown route" = "Motor output with unknown route";
+
+"Layer assertion with incomplete touch evidence" = "Layer assertion with incomplete touch evidence";
+
+"Layer assertion with unknown route" = "Layer assertion with unknown route";
+
+"Output with unknown delivery" = "Output with unknown delivery";
+
+"Outputs after each release" = "Outputs after each release";
+
+"Counts include later explicit writes until the next touch or state boundary; they do not prove release catch-up." = "Counts include later explicit writes until the next touch or state boundary; they do not prove release catch-up.";
+
+"F%@ · release #%@ → #%@ · %@ motor outputs" = "F%@ · release #%@ → #%@ · %@ motor outputs";
+
+"Showing the first 100 release windows; totals use the full capture." = "Showing the first 100 release windows; totals use the full capture.";
+
+"Showing the first 200 matching sequences." = "Showing the first 200 matching sequences.";
+
+"Recorded violations" = "Recorded violations";
+
+"Insufficient recorded evidence" = "Insufficient recorded evidence";
+
+"No recorded violations" = "No recorded violations";
+
+"Capture exceeds the 16 MiB import limit." = "Capture exceeds the 16 MiB import limit.";
+
+"Capture exceeds the 100000 event import limit." = "Capture exceeds the 100000 event import limit.";
+
+"Invalid capture metadata or MIDI bytes at line %@. Original preserved." = "Invalid capture metadata or MIDI bytes at line %@. Original preserved.";
+
+"Cannot read this regular capture file. Original preserved." = "Cannot read this regular capture file. Original preserved.";

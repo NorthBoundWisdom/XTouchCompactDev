@@ -566,3 +566,61 @@
 "Layer change refused while a fader is touched. Release all faders and retry; nothing was queued." = "有推子被触摸，已拒绝切层。请松开所有推子后重试；操作未排队。";
 
 "Lights not synchronized; use Sync lights to assert the layer." = "灯光未同步；请点“同步灯光”显式设定设备层。";
+
+"Offline capture" = "离线录制";
+
+"Open capture…" = "打开录制…";
+
+"Clear offline review" = "清除离线审查";
+
+"Read-only offline review. No MIDI is sent; recorded evidence is not hardware qualification." = "只读离线审查，不发送 MIDI；录制证据不等于实机验收。";
+
+"No capture imported." = "尚未导入录制。";
+
+"Events %@ · motor outputs %@ · layer assertions %@" = "事件 %@ · 电机输出 %@ · 切层指令 %@";
+
+"Complete capture" = "完整录制";
+
+"Incomplete capture prefix" = "不完整的录制前缀";
+
+"Motor output while touched" = "触摸期间电机输出";
+
+"Motor output during known layer mismatch" = "已知层不一致期间电机输出";
+
+"Layer assertion while touched" = "触摸期间切层指令";
+
+"Motor output with unknown touch" = "触摸状态未知的电机输出";
+
+"Motor output with unknown layer" = "层未知的电机输出";
+
+"Motor output with unknown route" = "路由未知的电机输出";
+
+"Layer assertion with incomplete touch evidence" = "触摸证据不完整的切层指令";
+
+"Layer assertion with unknown route" = "路由未知的切层指令";
+
+"Output with unknown delivery" = "发送结果未知的输出";
+
+"Outputs after each release" = "每次松手后的输出";
+
+"Counts include later explicit writes until the next touch or state boundary; they do not prove release catch-up." = "计数包括下一次触摸或状态边界前的后续显式写入，不证明由松手补发引起。";
+
+"F%@ · release #%@ → #%@ · %@ motor outputs" = "F%@ · 松手 #%@ → #%@ · %@ 条电机输出";
+
+"Showing the first 100 release windows; totals use the full capture." = "显示前 100 次松手，统计使用全部录制。";
+
+"Showing the first 200 matching sequences." = "显示前 200 个匹配序号。";
+
+"Recorded violations" = "已记录的违规";
+
+"Insufficient recorded evidence" = "录制证据不足";
+
+"No recorded violations" = "未记录到违规";
+
+"Capture exceeds the 16 MiB import limit." = "录制超过 16 MiB 导入上限。";
+
+"Capture exceeds the 100000 event import limit." = "录制超过 100000 个事件的导入上限。";
+
+"Invalid capture metadata or MIDI bytes at line %@. Original preserved." = "第 %@ 行的录制元数据或 MIDI 字节无效，原文件未改动。";
+
+"Cannot read this regular capture file. Original preserved." = "无法读取该普通录制文件，原文件未改动。";

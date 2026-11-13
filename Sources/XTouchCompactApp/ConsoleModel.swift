@@ -52,6 +52,10 @@
         @Published private(set) var observationStartedAt: Date?
         @Published private(set) var lastReviewExport: InputReviewExportReceipt?
         @Published private(set) var capturePath: String?
+        // Owned by ConsoleModel+OfflineCapture; the panel adapter exposes value snapshots only.
+        @Published var offlineCaptureState = OfflineCaptureWorkspace()
+        var offlineImportTask: Task<Void, Never>?
+        var offlineGeneration = UUID()
         private var lastCaptureURL: URL?
         private var observationInputID: Int32?
         private var monitorCapture: MonitorCapture?
@@ -559,7 +563,7 @@
             runtimeTask?.cancel(); runtimeTask = nil; setOSCEnabled(false)
         }
 
-        deinit { runtimeTask?.cancel() }
+        deinit { runtimeTask?.cancel(); offlineImportTask?.cancel() }
 
         func setParameter(_ id: String, value: Double, fromAgent: Bool = false) {
             do {

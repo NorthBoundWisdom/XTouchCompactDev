@@ -363,6 +363,15 @@
         case mock, hardwareListen, hardwareSend
     }
 
+    struct OfflineCapturePresentation: Equatable, Sendable {
+        var name: String?
+        var byteCount: Int?
+        var sha256: String?
+        var isLoading = false
+        var failure: LocalizedMessage?
+        var audit: CaptureMotorAudit?
+    }
+
     struct PanelSnapshot: Equatable, Sendable {
         var mode: ConsoleMode {
             isMock ? .mock : listenOnly ? .hardwareListen : .hardwareSend
@@ -386,6 +395,7 @@
         var hardwareObservation: HardwareObservationPresentation?
         var listenOnly = true
         var capturePath: String?
+        var offlineCapture: OfflineCapturePresentation?
         var notifications: [ConsoleNotification] = []
         /// Host has not completed an explicit layer + light synchronization on this
         /// hardware attachment. False is transport delivery, never physical readback.
@@ -462,6 +472,8 @@
         var retrySave: (() -> Void)?
         var dismissNotification: ((String) -> Void)?
         var clearMonitor: (() -> Void)?
+        var openOfflineCapture: (() -> Void)?
+        var clearOfflineCapture: (() -> Void)?
         var selectPorts: ((Int32, Int32) -> Void)?
         var configureDevice: ((Int, Int, Bool) -> Void)?
 

@@ -4,7 +4,7 @@
     import XTouchCompactLocalization
 
     enum WorkspaceTab: String, CaseIterable, Identifiable {
-        case values, parameters, organize, agents, monitor, connection
+        case values, parameters, organize, agents, monitor, offlineCapture, connection
 
         var id: String {
             rawValue
@@ -17,6 +17,7 @@
             case .organize: "Organize"
             case .agents: "Agents"
             case .monitor: "MIDI 监视"
+            case .offlineCapture: "Offline capture"
             case .connection: "连接"
             }
         }
@@ -28,6 +29,7 @@
             case .organize: "square.stack.3d.up"
             case .agents: "person.3"
             case .monitor: "waveform.path"
+            case .offlineCapture: "doc.text.magnifyingglass"
             case .connection: "cable.connector.horizontal"
             }
         }
@@ -56,7 +58,7 @@
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(maxWidth: 480)
+                .frame(maxWidth: 680)
 
                 switch tab {
                 case .agents:
@@ -86,6 +88,7 @@
                 case .organize: ScrollView { OrganizeWorkspace(snapshot: snapshot, intents: intents) }
                 case .values: ValueListView(snapshot: snapshot, intents: intents, selection: $selection)
                 case .monitor: MIDIMonitorView(snapshot: snapshot, intents: intents)
+                case .offlineCapture: OfflineCaptureView(snapshot: snapshot, intents: intents)
                 case .connection: ConnectionSettingsView(snapshot: snapshot, intents: intents)
                 }
             }

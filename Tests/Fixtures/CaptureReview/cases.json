@@ -1,0 +1,585 @@
+[
+  {
+    "name": "empty",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"capture-end\",\"eventCount\":0}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 0,
+      "complete": true,
+      "evidenceSufficient": true,
+      "assessment": "no-recorded-violations",
+      "motorOutputs": 0,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 0
+    },
+    "sha256": "e4da09fcf7a92972a3cfc947d5be76641b6a2679d1e40d34be58cfbf9e552dd9"
+  },
+  {
+    "name": "incomplete",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 0,
+      "complete": false,
+      "evidenceSufficient": false,
+      "assessment": "inconclusive",
+      "motorOutputs": 0,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 0
+    },
+    "sha256": "6c5171a96472606530a70c8bf02a337df1d344e9ac48d6ee0fa57c5c35f6d28a"
+  },
+  {
+    "name": "unknown",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":1}\n{\"kind\":\"capture-end\",\"eventCount\":1}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 1,
+      "complete": true,
+      "evidenceSufficient": false,
+      "assessment": "inconclusive",
+      "motorOutputs": 1,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [],
+      "motorWithUnknownTouch": [
+        1
+      ],
+      "motorWithUnknownLayer": [
+        1
+      ],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 0
+    },
+    "sha256": "a8c89e2363a9380e2dc751635d66cd64e35818874778c16f310f3d8fb81fadbf"
+  },
+  {
+    "name": "held-mismatch",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,111,127],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":2}\n{\"kind\":\"capture-end\",\"eventCount\":2}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 2,
+      "complete": true,
+      "evidenceSufficient": true,
+      "assessment": "violations",
+      "motorOutputs": 1,
+      "layerAssertions": 0,
+      "motorWhileTouched": [
+        2
+      ],
+      "motorDuringLayerMismatch": [
+        2
+      ],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 2
+    },
+    "sha256": "1d948568dd76a6642af38b4ce1c56dc76afb91994d56c844c34dae1456f6dcf3"
+  },
+  {
+    "name": "release-counts",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,127],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,0],\"delivery\":\"received\",\"sequence\":2}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":3}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":4}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,0],\"delivery\":\"received\",\"sequence\":5}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,127],\"delivery\":\"received\",\"sequence\":6}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,0],\"delivery\":\"received\",\"sequence\":7}\n{\"kind\":\"capture-end\",\"eventCount\":7}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 7,
+      "complete": true,
+      "evidenceSufficient": true,
+      "assessment": "no-recorded-violations",
+      "motorOutputs": 2,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [
+        {
+          "fader": 1,
+          "releaseSequence": 2,
+          "motorSequences": [
+            3,
+            4
+          ],
+          "endReason": "next-touch",
+          "endSequence": 6,
+          "motorCount": 2
+        },
+        {
+          "fader": 1,
+          "releaseSequence": 7,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 7,
+          "motorCount": 0
+        }
+      ],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 0
+    },
+    "sha256": "127420530f2230239d79f1515b300055e9ac1a298d955bfd790bda3dfe98cb0a"
+  },
+  {
+    "name": "unknown-assertion",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[193,0],\"sequence\":1}\n{\"kind\":\"capture-end\",\"eventCount\":1}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 1,
+      "complete": true,
+      "evidenceSufficient": false,
+      "assessment": "inconclusive",
+      "motorOutputs": 0,
+      "layerAssertions": 1,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [
+        1
+      ],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 0
+    },
+    "sha256": "a9fde5af9a002b2cb18cae04edaead69e9e715505ec641acd7ed3512a5c2dd58"
+  },
+  {
+    "name": "known-assertion",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,0],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,102,0],\"delivery\":\"received\",\"sequence\":2}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,103,0],\"delivery\":\"received\",\"sequence\":3}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,104,0],\"delivery\":\"received\",\"sequence\":4}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,105,0],\"delivery\":\"received\",\"sequence\":5}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,106,0],\"delivery\":\"received\",\"sequence\":6}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,107,0],\"delivery\":\"received\",\"sequence\":7}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,108,0],\"delivery\":\"received\",\"sequence\":8}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,109,0],\"delivery\":\"received\",\"sequence\":9}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[193,0],\"sequence\":10}\n{\"kind\":\"capture-end\",\"eventCount\":10}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 10,
+      "complete": true,
+      "evidenceSufficient": true,
+      "assessment": "no-recorded-violations",
+      "motorOutputs": 0,
+      "layerAssertions": 1,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [
+        {
+          "fader": 1,
+          "releaseSequence": 1,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 10,
+          "motorCount": 0
+        },
+        {
+          "fader": 2,
+          "releaseSequence": 2,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 10,
+          "motorCount": 0
+        },
+        {
+          "fader": 3,
+          "releaseSequence": 3,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 10,
+          "motorCount": 0
+        },
+        {
+          "fader": 4,
+          "releaseSequence": 4,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 10,
+          "motorCount": 0
+        },
+        {
+          "fader": 5,
+          "releaseSequence": 5,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 10,
+          "motorCount": 0
+        },
+        {
+          "fader": 6,
+          "releaseSequence": 6,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 10,
+          "motorCount": 0
+        },
+        {
+          "fader": 7,
+          "releaseSequence": 7,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 10,
+          "motorCount": 0
+        },
+        {
+          "fader": 8,
+          "releaseSequence": 8,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 10,
+          "motorCount": 0
+        },
+        {
+          "fader": 9,
+          "releaseSequence": 9,
+          "motorSequences": [],
+          "endReason": "capture-end",
+          "endSequence": 10,
+          "motorCount": 0
+        }
+      ],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 0
+    },
+    "sha256": "c1cd936a02cae3f2dcf59d10d9460a3f8423d6fa3d2b732c0d0fa773ef60a770"
+  },
+  {
+    "name": "mock-safety",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":false,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":false,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,127],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":2}\n{\"kind\":\"capture-end\",\"eventCount\":2}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 2,
+      "complete": true,
+      "evidenceSufficient": false,
+      "assessment": "violations",
+      "motorOutputs": 1,
+      "layerAssertions": 0,
+      "motorWhileTouched": [
+        2
+      ],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [
+        2
+      ],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [
+        {
+          "sequence": 2,
+          "reason": "hardware-mode-change"
+        }
+      ],
+      "recordedViolationCount": 1
+    },
+    "sha256": "d20e16e645b43930c64b185e3c8c74fd3b63e3097e4cca38bde34ee4cca52307"
+  },
+  {
+    "name": "route-release-expiry",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,0],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"connection\":{\"generation\":1,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}},\"sequence\":2}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":3}\n{\"kind\":\"capture-end\",\"eventCount\":3}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 3,
+      "complete": true,
+      "evidenceSufficient": false,
+      "assessment": "inconclusive",
+      "motorOutputs": 1,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [
+        {
+          "fader": 1,
+          "releaseSequence": 1,
+          "motorSequences": [],
+          "endReason": "connection-change",
+          "endSequence": 2,
+          "motorCount": 0
+        }
+      ],
+      "motorWithUnknownTouch": [
+        3
+      ],
+      "motorWithUnknownLayer": [
+        3
+      ],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [
+        {
+          "sequence": 2,
+          "reason": "connection-change"
+        }
+      ],
+      "recordedViolationCount": 0
+    },
+    "sha256": "c3489d160ac3a44af4c7506fe429f2fbe64d986aed045891655092b468edf779"
+  },
+  {
+    "name": "same-route",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,111,0],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"connection\":{\"generation\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}},\"sequence\":2}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":3}\n{\"kind\":\"capture-end\",\"eventCount\":3}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 3,
+      "complete": true,
+      "evidenceSufficient": true,
+      "assessment": "violations",
+      "motorOutputs": 1,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [
+        3
+      ],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [
+        {
+          "fader": 1,
+          "releaseSequence": 1,
+          "motorSequences": [
+            3
+          ],
+          "endReason": "capture-end",
+          "endSequence": 3,
+          "motorCount": 1
+        }
+      ],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 1
+    },
+    "sha256": "8922437278dcbe21ac98c9bb4e612c6859439447161c33df4aedcd3ba0526029"
+  },
+  {
+    "name": "mode-boundary",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,0],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"application\",\"hardwareMode\":false,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"sequence\":2}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":3}\n{\"kind\":\"capture-end\",\"eventCount\":3}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 3,
+      "complete": true,
+      "evidenceSufficient": false,
+      "assessment": "inconclusive",
+      "motorOutputs": 1,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [
+        {
+          "fader": 1,
+          "releaseSequence": 1,
+          "motorSequences": [],
+          "endReason": "hardware-mode-change",
+          "endSequence": 2,
+          "motorCount": 0
+        }
+      ],
+      "motorWithUnknownTouch": [
+        3
+      ],
+      "motorWithUnknownLayer": [
+        3
+      ],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [
+        {
+          "sequence": 2,
+          "reason": "hardware-mode-change"
+        },
+        {
+          "sequence": 3,
+          "reason": "hardware-mode-change"
+        }
+      ],
+      "recordedViolationCount": 0
+    },
+    "sha256": "675d0453b86db3e5e425a23bffa11f6d6ef47faee7fc9a42551fe4fb856ecc86"
+  },
+  {
+    "name": "tx-boundary",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,127],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":5,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"sequence\":2}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":5,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":3}\n{\"kind\":\"capture-end\",\"eventCount\":3}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 3,
+      "complete": true,
+      "evidenceSufficient": false,
+      "assessment": "violations",
+      "motorOutputs": 1,
+      "layerAssertions": 0,
+      "motorWhileTouched": [
+        3
+      ],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [
+        3
+      ],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [
+        {
+          "sequence": 2,
+          "reason": "transmit-channel-change"
+        }
+      ],
+      "recordedViolationCount": 1
+    },
+    "sha256": "cecddc4ac5ed6a51011edd9ae42514c59dea44b47a92f19bdf282ab96b8c0f70"
+  },
+  {
+    "name": "unknown-route",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":null,\"connectedInput\":null,\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,0],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":2}\n{\"kind\":\"capture-end\",\"eventCount\":2}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 2,
+      "complete": true,
+      "evidenceSufficient": false,
+      "assessment": "inconclusive",
+      "motorOutputs": 1,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [
+        {
+          "fader": 1,
+          "releaseSequence": 1,
+          "motorSequences": [
+            2
+          ],
+          "endReason": "capture-end",
+          "endSequence": 2,
+          "motorCount": 1
+        }
+      ],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [],
+      "motorWithUnknownRoute": [
+        2
+      ],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 0
+    },
+    "sha256": "fd61cd0f3925ce0b1995b1500e7c8bfac5a25c0101d20cb20327e7d6becfe2e9"
+  },
+  {
+    "name": "delivery-filter",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[176,101,127],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"suppressed\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":2}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"failed\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":3}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":null,\"rawMIDI1Bytes\":[177,1,60],\"sequence\":4}\n{\"kind\":\"event\",\"source\":\"mock\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":5}\n{\"kind\":\"capture-end\",\"eventCount\":5}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 5,
+      "complete": true,
+      "evidenceSufficient": false,
+      "assessment": "inconclusive",
+      "motorOutputs": 0,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [],
+      "motorWithUnknownTouch": [],
+      "motorWithUnknownLayer": [],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [
+        4
+      ],
+      "stateBoundaries": [],
+      "recordedViolationCount": 0
+    },
+    "sha256": "6c1010e9c09f5cd921b466391740906b298821aa3c7767842e66009a830d50ec"
+  },
+  {
+    "name": "unsupported-and-wrong-channel",
+    "jsonl": "{\"kind\":\"capture-start\",\"schemaVersion\":1,\"session\":{\"hardwareMode\":true,\"configuredTransmitChannel\":1,\"configuredGlobalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"connectionGeneration\":0,\"connectedInput\":{\"id\":1},\"connectedOutput\":{\"id\":2}}}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"IN\",\"rawMIDI1Bytes\":[180,101,127],\"delivery\":\"received\",\"sequence\":1}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":true,\"direction\":\"IN\",\"rawMIDI1Bytes\":[208,60],\"delivery\":\"received\",\"sequence\":2}\n{\"kind\":\"event\",\"source\":\"hardware\",\"hardwareMode\":true,\"hostLayer\":\"a\",\"transmitChannel\":1,\"globalReceiveChannel\":2,\"ledProtocol\":\"observed114\",\"ignored\":false,\"direction\":\"OUT\",\"delivery\":\"sent\",\"rawMIDI1Bytes\":[177,1,60],\"sequence\":3}\n{\"kind\":\"capture-end\",\"eventCount\":3}\n",
+    "expected": {
+      "schemaVersion": 1,
+      "eventCount": 3,
+      "complete": true,
+      "evidenceSufficient": false,
+      "assessment": "inconclusive",
+      "motorOutputs": 1,
+      "layerAssertions": 0,
+      "motorWhileTouched": [],
+      "motorDuringLayerMismatch": [],
+      "layerAssertionWhileTouched": [],
+      "releaseWindows": [],
+      "motorWithUnknownTouch": [
+        3
+      ],
+      "motorWithUnknownLayer": [
+        3
+      ],
+      "motorWithUnknownRoute": [],
+      "layerAssertionWithUnknownTouch": [],
+      "layerAssertionWithUnknownRoute": [],
+      "outputsWithUnknownDelivery": [],
+      "stateBoundaries": [],
+      "recordedViolationCount": 0
+    },
+    "sha256": "466e0e2e13fb50fd94c0b1acfcf5473568d75f71dec01bfdfa1d9d8723bc4e0b"
+  }
+]

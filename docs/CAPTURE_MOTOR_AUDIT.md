@@ -62,3 +62,23 @@ is rejected instead of silently skipping potential hardware outputs. Null route
 facts remain unknown and are reported for motor/layer outputs. All-nine touch
 coverage is required to assess Program Change under touch; F1 alone is insufficient.
 These stricter offline results remain **未在实机复核**.
+
+## Native offline review (U16)
+
+The app's **Offline capture** workspace imports a regular JSONL file read-only.
+It shows its frozen-byte SHA-256, completion status, violations, unknown evidence
+and release windows. Import is bounded to 16 MiB / 100000 events and runs off the
+main actor; a stale or cancelled import cannot replace a newer review. Invalid
+input leaves the original file and previous valid review intact. No user profile,
+live session, CoreMIDI mode, current target or MIDI permission is changed.
+
+The native `RecordedCapture` / `CaptureMotorAudit` core has no Python runtime or
+CoreMIDI dependency and runs on Linux. Shared synthetic fixtures independently
+compare its complete report with the existing Python CLI. The app computes the
+SHA-256 from exactly the frozen bytes parsed. Imports never write those bytes.
+The UI displays at most 200 matching sequence numbers and 100 release windows per
+section; all totals use the complete imported prefix. No result is hardware sign-off.
+
+Views consume `PanelSnapshot.offlineCapture` and emit only the two new import/clear
+PanelIntents; `ConsoleModel+Panel.swift` remains the adapter. Visual desktop
+acceptance and hardware remain **未在实机复核**.

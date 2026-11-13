@@ -48,6 +48,12 @@
                 nonMotorTests: nonMotorTestPresentation,
                 hardwareObservation: observation,
                 listenOnly: listenOnly, capturePath: capturePath,
+                offlineCapture: OfflineCapturePresentation(name: offlineCaptureState.loaded?.name,
+                                                           byteCount: offlineCaptureState.loaded?.byteCount,
+                                                           sha256: offlineCaptureState.loaded?.sha256,
+                                                           isLoading: offlineCaptureState.isLoading,
+                                                           failure: offlineCaptureState.failure,
+                                                           audit: offlineCaptureState.loaded?.audit),
                 notifications: notifications, hardwareFeedbackNeedsSync: hardwareMode ? hardwareFeedbackNeedsSync : nil, runtimeError: error.map { localizedError($0) } ?? connection.error,
                 events: events, connection: connection, inputChoice: inputChoice, outputChoice: outputChoice,
                 transmitChannel: transmitChannel, feedbackChannel: feedbackChannel, observedLEDVariant: observedLEDVariant,
@@ -261,6 +267,8 @@
                 retrySave: { [weak self] in self?.retryWorkspaceSave() },
                 dismissNotification: { [weak self] in self?.dismissNotification($0) },
                 clearMonitor: { [weak self] in self?.clearMonitor() },
+                openOfflineCapture: { [weak self] in self?.chooseOfflineCapture() },
+                clearOfflineCapture: { [weak self] in self?.clearOfflineCapture() },
                 selectPorts: { [weak self] input, output in
                     guard let self else { return }
                     inputChoice = input; outputChoice = output; selectPorts()
