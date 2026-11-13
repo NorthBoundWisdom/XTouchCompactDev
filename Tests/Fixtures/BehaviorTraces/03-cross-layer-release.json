@@ -1,0 +1,221 @@
+{
+  "scenario" : "03-cross-layer-release",
+  "schema_version" : 1,
+  "source" : "mock",
+  "steps" : [
+    {
+      "input" : {
+        "hardware_context" : "a",
+        "injected_time" : 0,
+        "operation" : "receive",
+        "raw_messages" : [
+          [
+            176,
+            101,
+            127
+          ]
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : false,
+        "observed_layer" : "a",
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+          1
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+
+        ],
+        "deferred" : [
+
+        ],
+        "failed" : [
+
+        ],
+        "sent" : [
+
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+
+        },
+        "rejection_reason" : null
+      }
+    },
+    {
+      "input" : {
+        "hardware_context" : null,
+        "injected_time" : 0.10000000000000001,
+        "operation" : "set_parameter_80",
+        "raw_messages" : [
+
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : false,
+        "observed_layer" : "a",
+        "pending_motor" : [
+          1
+        ],
+        "touched" : [
+          1
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+
+        ],
+        "deferred" : [
+          {
+            "control" : "fader.1",
+            "reason" : "touch"
+          }
+        ],
+        "failed" : [
+
+        ],
+        "sent" : [
+
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+          "a.Fader.1" : 80
+        },
+        "rejection_reason" : null
+      }
+    },
+    {
+      "input" : {
+        "hardware_context" : "b",
+        "injected_time" : 0.20000000000000001,
+        "operation" : "receive",
+        "raw_messages" : [
+          [
+            176,
+            37,
+            20
+          ]
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : true,
+        "observed_layer" : "b",
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+          1
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+          {
+            "control" : "fader.1",
+            "reason" : "layer_mismatch"
+          }
+        ],
+        "deferred" : [
+
+        ],
+        "failed" : [
+
+        ],
+        "sent" : [
+
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+
+        },
+        "rejection_reason" : null
+      }
+    },
+    {
+      "input" : {
+        "hardware_context" : "a",
+        "injected_time" : 0.29999999999999999,
+        "operation" : "receive",
+        "raw_messages" : [
+          [
+            176,
+            101,
+            0
+          ]
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : true,
+        "observed_layer" : "b",
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+
+        ],
+        "deferred" : [
+
+        ],
+        "failed" : [
+
+        ],
+        "sent" : [
+
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+
+        },
+        "rejection_reason" : null
+      }
+    }
+  ]
+}

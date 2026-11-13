@@ -1,0 +1,117 @@
+{
+  "scenario" : "04-touched-layer-refused",
+  "schema_version" : 1,
+  "source" : "mock",
+  "steps" : [
+    {
+      "input" : {
+        "hardware_context" : "a",
+        "injected_time" : 0,
+        "operation" : "receive",
+        "raw_messages" : [
+          [
+            176,
+            107,
+            127
+          ]
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : false,
+        "observed_layer" : "a",
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+          7
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+
+        ],
+        "deferred" : [
+
+        ],
+        "failed" : [
+
+        ],
+        "sent" : [
+
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+
+        },
+        "rejection_reason" : null
+      }
+    },
+    {
+      "input" : {
+        "hardware_context" : null,
+        "injected_time" : 0.10000000000000001,
+        "operation" : "request_layer_b",
+        "raw_messages" : [
+
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : false,
+        "observed_layer" : "a",
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+          7
+        ]
+      },
+      "output" : {
+        "deferred" : [
+
+        ],
+        "sent" : [
+
+        ],
+        "suppressed" : [
+          {
+            "affected_controls" : [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "category" : "mechanism_motion",
+            "reason" : "fadersTouched"
+          }
+        ]
+      },
+      "result" : {
+        "accepted" : false,
+        "action_count" : 0,
+        "parameter_changes" : {
+
+        },
+        "rejection_reason" : "fadersTouched"
+      }
+    }
+  ]
+}

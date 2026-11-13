@@ -1,0 +1,113 @@
+{
+  "scenario" : "06-send-failure-cache",
+  "schema_version" : 1,
+  "source" : "mock",
+  "steps" : [
+    {
+      "input" : {
+        "hardware_context" : null,
+        "injected_time" : 0,
+        "operation" : "failed_motor_write",
+        "raw_messages" : [
+
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : false,
+        "observed_layer" : null,
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+
+        ],
+        "deferred" : [
+
+        ],
+        "failed" : [
+          [
+            176,
+            1,
+            80
+          ]
+        ],
+        "sent" : [
+
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+          "a.Fader.1" : 80
+        },
+        "rejection_reason" : null
+      }
+    },
+    {
+      "input" : {
+        "hardware_context" : null,
+        "injected_time" : 0.10000000000000001,
+        "operation" : "retry_same_desired_value",
+        "raw_messages" : [
+
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : false,
+        "observed_layer" : null,
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+
+        ],
+        "deferred" : [
+
+        ],
+        "failed" : [
+
+        ],
+        "sent" : [
+          [
+            176,
+            1,
+            80
+          ]
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+
+        },
+        "rejection_reason" : null
+      }
+    }
+  ]
+}

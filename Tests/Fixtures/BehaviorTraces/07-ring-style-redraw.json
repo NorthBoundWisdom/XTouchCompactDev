@@ -1,0 +1,167 @@
+{
+  "scenario" : "07-ring-style-redraw",
+  "schema_version" : 1,
+  "source" : "mock",
+  "steps" : [
+    {
+      "input" : {
+        "hardware_context" : null,
+        "injected_time" : 0,
+        "operation" : "set_ring_value",
+        "raw_messages" : [
+
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : false,
+        "observed_layer" : null,
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+
+        ],
+        "deferred" : [
+
+        ],
+        "failed" : [
+
+        ],
+        "sent" : [
+          [
+            176,
+            26,
+            7
+          ]
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+
+        },
+        "rejection_reason" : null
+      }
+    },
+    {
+      "input" : {
+        "hardware_context" : null,
+        "injected_time" : 0.10000000000000001,
+        "operation" : "style_redraw_and_same_value",
+        "raw_messages" : [
+
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : false,
+        "observed_layer" : null,
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+
+        ],
+        "deferred" : [
+
+        ],
+        "failed" : [
+
+        ],
+        "sent" : [
+          [
+            176,
+            10,
+            1
+          ],
+          [
+            176,
+            26,
+            7
+          ]
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+
+        },
+        "rejection_reason" : null
+      }
+    },
+    {
+      "input" : {
+        "hardware_context" : null,
+        "injected_time" : 0.20000000000000001,
+        "operation" : "same_ring_value_after_redraw",
+        "raw_messages" : [
+
+        ]
+      },
+      "observation" : {
+        "fader_1_observation_current" : null,
+        "fader_1_observed" : null,
+        "host_layer" : "a",
+        "last_sent_motor" : null,
+        "layer_mismatch" : false,
+        "observed_layer" : null,
+        "pending_motor" : [
+
+        ],
+        "touched" : [
+
+        ]
+      },
+      "output" : {
+        "cancelled" : [
+
+        ],
+        "deferred" : [
+
+        ],
+        "failed" : [
+
+        ],
+        "sent" : [
+
+        ],
+        "suppressed" : [
+
+        ]
+      },
+      "result" : {
+        "accepted" : true,
+        "action_count" : 0,
+        "parameter_changes" : {
+
+        },
+        "rejection_reason" : null
+      }
+    }
+  ]
+}
