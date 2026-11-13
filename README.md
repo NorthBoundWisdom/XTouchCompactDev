@@ -78,7 +78,7 @@ These bundles are ad-hoc signed for local use. They are not signed with a Develo
 | Parameters | Define parameters, bulk-assign them to controls, load presets, import and export configurations. |
 | Agents | Start, interrupt and approve the eight demonstration agent slots; view explicitly enabled optional module states. |
 | MIDI monitor | Watch incoming and outgoing messages; start and stop capture to a JSONL file. |
-| Offline capture | Import a JSONL recording read-only and review motor safety, unknown evidence and release counts without sending MIDI. |
+| Offline capture | Import JSONL read-only, review motor safety/unknown evidence, and step or run inputs through an isolated Mock without sending MIDI. |
 | Connection | Select MIDI ports and channels and explicitly realign the layer. Source choice and motor recall are in the header. |
 
 Select any control on the panel to open the inspector, which shows its assignment, value and MIDI addresses.

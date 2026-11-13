@@ -93,4 +93,70 @@
         #expect(model.panelSnapshot.offlineCapture?.name == nil)
         #expect(model.panelSnapshot.offlineCapture?.isLoading == false)
     }
+
+    @Test @MainActor func offlineReplayControlsAndTestWritesCannotTouchLiveHardware() throws {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareSend)
+        midi.onMessages?([.controlChange(channel: 0, number: 102, value: 127)])
+        model.faderChanged(2, value: 91)
+        let before = model.panelSnapshot
+        try model.importOfflineCapture(data: offlineFixture("release-counts").0, name: "replay.jsonl")
+        let intents = model.panelIntents
+        #expect(intents.stepOfflineReplay != nil && intents.runOfflineReplay != nil && intents.pauseOfflineReplay != nil)
+        #expect(intents.resetOfflineReplay != nil && intents.setOfflineReplayFader != nil)
+        intents.stepOfflineReplay?()
+        intents.setOfflineReplayFader?(1, 100)
+        var replay = try #require(model.panelSnapshot.offlineCapture?.replay)
+        #expect(replay.faders[0].touched && replay.faders[0].pending)
+        #expect(replay.faders[0].simulatedPosition == 0)
+        intents.stepOfflineReplay?()
+        replay = try #require(model.panelSnapshot.offlineCapture?.replay)
+        #expect(replay.faders[0].simulatedPosition == 100 && !replay.faders[0].pending)
+        #expect(replay.faders[0].observed == nil) // Generated Mock movement is not recorded input.
+        intents.stepOfflineReplay?(); intents.stepOfflineReplay?()
+        replay = try #require(model.panelSnapshot.offlineCapture?.replay)
+        #expect(replay.recordedOutputsSkipped == 2 && replay.faders[0].simulatedPosition == 100)
+        var after = model.panelSnapshot; after.offlineCapture = before.offlineCapture
+        #expect(after == before)
+        #expect(midi.sent.isEmpty && midi.sendAttempts == 0)
+        intents.resetOfflineReplay?()
+        #expect(model.panelSnapshot.offlineCapture?.replay?.cursor == 0)
+        #expect(model.panelSnapshot.offlineCapture?.replay?.faders[0].target == 0)
+        #expect(model.session.state.isTouched(2) && model.session.state.isMotorPending(2))
+    }
+
+    @Test @MainActor func offlineRunPauseResetClearAndNewImportCancelStalePlayback() async throws {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        try model.importOfflineCapture(data: offlineFixture("release-counts").0, name: "run.jsonl")
+        model.runOfflineReplay()
+        await model.offlineReplayTask?.value
+        #expect(model.panelSnapshot.offlineCapture?.replay?.cursor == 7)
+        #expect(model.panelSnapshot.offlineCapture?.replay?.isPlaying == false)
+        #expect(model.panelSnapshot.offlineCapture?.replay?.recordedOutputsSkipped == 2)
+        for operation in 0 ... 3 {
+            model.resetOfflineReplay(); model.runOfflineReplay()
+            let old = model.offlineReplayTask
+            switch operation {
+            case 0: model.pauseOfflineReplay()
+            case 1: model.resetOfflineReplay()
+            case 2: model.clearOfflineCapture()
+            default: try model.importOfflineCapture(data: offlineFixture("empty").0, name: "new.jsonl")
+            }
+            await old?.value
+            #expect(model.panelSnapshot.offlineCapture?.replay?.isPlaying != true)
+            if operation == 2 {
+                #expect(model.panelSnapshot.offlineCapture?.name == nil)
+            } else if operation == 3 {
+                #expect(model.panelSnapshot.offlineCapture?.name == "new.jsonl")
+            } else {
+                #expect(model.panelSnapshot.offlineCapture?.replay?.cursor == 0)
+            }
+            if operation == 2 {
+                try model.importOfflineCapture(data: offlineFixture("release-counts").0, name: "run.jsonl")
+            }
+        }
+        #expect(midi.sent.isEmpty && midi.sendAttempts == 0)
+    }
 #endif

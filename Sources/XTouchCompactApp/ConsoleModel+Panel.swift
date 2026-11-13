@@ -53,7 +53,7 @@
                                                            sha256: offlineCaptureState.loaded?.sha256,
                                                            isLoading: offlineCaptureState.isLoading,
                                                            failure: offlineCaptureState.failure,
-                                                           audit: offlineCaptureState.loaded?.audit),
+                                                           audit: offlineCaptureState.loaded?.audit, replay: offlineReplayPresentation),
                 notifications: notifications, hardwareFeedbackNeedsSync: hardwareMode ? hardwareFeedbackNeedsSync : nil, runtimeError: error.map { localizedError($0) } ?? connection.error,
                 events: events, connection: connection, inputChoice: inputChoice, outputChoice: outputChoice,
                 transmitChannel: transmitChannel, feedbackChannel: feedbackChannel, observedLEDVariant: observedLEDVariant,
@@ -80,6 +80,33 @@
                 canUndo: session.canUndo, canRedo: session.canRedo,
                 highlightedGroup: highlightedGroup
             )
+        }
+
+        private var offlineReplayPresentation: OfflineReplayPresentation? {
+            guard let replay = offlineCaptureState.replay else { return nil }
+            let last = replay.cursor > 0 ? replay.capture.events[replay.cursor - 1] : nil
+            let disposition: String? = switch replay.lastDisposition {
+            case .input: "Recorded input replayed"
+            case .safetyTouch: "Recorded hardware safety touch retained"
+            case .recordedOutputSkipped: "Recorded output skipped"
+            case .boundary: "Recorded state boundary"
+            case .ignored: "Recorded event ignored"
+            case nil: nil
+            }
+            return OfflineReplayPresentation(cursor: replay.cursor, eventCount: replay.capture.events.count,
+                                             isPlaying: offlineCaptureState.isPlaying, lastSequence: replay.lastSequence,
+                                             lastMessage: last?.message?.description, dispositionKey: disposition,
+                                             hostLayer: replay.session.state.layer, inputLayer: replay.session.state.observedLayer,
+                                             inputsReplayed: replay.inputsReplayed, recordedOutputsSkipped: replay.recordedOutputsSkipped,
+                                             generatedFeedbackCount: replay.generatedFeedbackCount, boundaryCount: replay.boundaryCount,
+                                             ignoredActionCount: replay.ignoredActionCount, usesFallbackProfile: replay.usesFallbackProfile,
+                                             simulationTX: Int(replay.session.state.map.transmitChannel) + 1,
+                                             simulationRX: Int(replay.session.state.map.globalReceiveChannel) + 1,
+                                             faders: (1 ... 9).map { index in
+                                                 OfflineReplayFader(index: index, target: replay.session.bank(replay.session.state.layer).faders[index - 1],
+                                                                    observed: replay.session.state.observedFader(index), simulatedPosition: replay.mock.faders[index - 1],
+                                                                    touched: replay.session.state.isTouched(index), pending: replay.session.state.isMotorPending(index))
+                                             })
         }
 
         private func matchesCurrentInput(_ values: HardwareValueCache?) -> Bool {
@@ -269,6 +296,11 @@
                 clearMonitor: { [weak self] in self?.clearMonitor() },
                 openOfflineCapture: { [weak self] in self?.chooseOfflineCapture() },
                 clearOfflineCapture: { [weak self] in self?.clearOfflineCapture() },
+                stepOfflineReplay: { [weak self] in self?.stepOfflineReplay() },
+                runOfflineReplay: { [weak self] in self?.runOfflineReplay() },
+                pauseOfflineReplay: { [weak self] in self?.pauseOfflineReplay() },
+                resetOfflineReplay: { [weak self] in self?.resetOfflineReplay() },
+                setOfflineReplayFader: { [weak self] in self?.setOfflineReplayFader($0, value: $1) },
                 selectPorts: { [weak self] input, output in
                     guard let self else { return }
                     inputChoice = input; outputChoice = output; selectPorts()

@@ -103,6 +103,25 @@ public struct MockXTouchCompact: Sendable {
         firmwareFaderCycles += 1
     }
 
+    /// Restore a recorded factory TX input into this isolated simulation. Address-layer
+    /// evidence does not invent a physical layer-key event or a firmware motor cycle.
+    public mutating func applyCapturedInput(_ message: MIDIMessage) throws -> CompactInput? {
+        guard let input = map.decode(message), input.value < 128 else { return nil }
+        var next = self
+        next.layer = input.layer
+        switch input.control {
+        case let .fader(index): _ = try next.moveFader(index, value: input.value)
+        case let .faderTouch(index): _ = try next.touchFader(index, isTouched: input.isPressed == true)
+        case let .encoder(index): _ = try next.turnEncoder(index, value: input.value)
+        case let .encoderPush(index): _ = try next.pushEncoder(index, isDown: input.isPressed == true)
+        case let .button(index): _ = try next.pressButton(index, isDown: input.isPressed == true)
+        case .expression: _ = try next.moveExpression(input.value)
+        case .footswitch: _ = next.pressFootswitch(isDown: input.isPressed == true)
+        }
+        self = next
+        return input
+    }
+
     public mutating func receive(_ messages: [MIDIMessage]) {
         for message in messages {
             receive(message)
@@ -158,6 +177,7 @@ public struct MockXTouchCompact: Sendable {
         next.buttons = buttons; next.rings = rings; next.ringStyles = ringStyles
         next.ignoredMotorCommands = ignoredMotorCommands
         next.firmwareFaderCycles = firmwareFaderCycles
+        next.expression = expression; next.footswitchDown = footswitchDown
         return next
     }
 

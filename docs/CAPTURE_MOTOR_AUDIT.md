@@ -82,3 +82,32 @@ section; all totals use the complete imported prefix. No result is hardware sign
 Views consume `PanelSnapshot.offlineCapture` and emit only the two new import/clear
 PanelIntents; `ConsoleModel+Panel.swift` remains the adapter. Visual desktop
 acceptance and hardware remain **未在实机复核**.
+
+## Isolated Mock replay (U17)
+
+The same workspace offers Step, Run to end, Pause and Reset. Playback follows the
+recorded sequence, not wall-clock timing. It uses its own neutral `CompactSession`
+and `MockXTouchCompact`; the live panel/session, device profile, cache, permissions,
+MCP/OSC and transport are not reachable from the replay engine. Background playback
+yields in bounded batches and cancellation generations prevent stale work after a
+reset, clear, replacement import or pause. No playback starts automatically.
+
+Only active-source recorded IN is replayed. Inactive hardware safety-touch inputs
+are retained separately; ignored/unsupported inputs are skipped. Every recorded
+OUT is skipped, including motors, LEDs, rings and Program Change. A recorded
+accepted layer assertion only invalidates older input-layer evidence in memory;
+it does not execute Program Change or invent a firmware cycle or position report.
+Route/mode/TX boundaries discard old motor intent while preserving touch latches.
+
+**Test targets (Mock only)** permits explicit neutral-fader writes while paused,
+so touch deferral/release can be examined without hardware. Simulated cap position,
+recorded input position and target are separate values. Reset restores the initial
+simulation and clears these test writes. Missing header TX/RX/LED settings are
+kept nil as source facts; declared simulation defaults are used only inside the
+Mock until recorded metadata is available. No actual Global RX is inferred.
+
+The source does not contain the original parameter assignments or all software
+write intent. Agent/business actions are counted but never invoked. Replay is not
+a reconstruction of the full original app session or evidence of physical travel.
+It cannot reproduce an unrecorded physical layer key. UI/physical review remains
+**未在实机复核**. H1–H7, N5 and organization visual acceptance remain open.

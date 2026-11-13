@@ -17,6 +17,8 @@
         var loaded: LoadedOfflineCapture?
         var isLoading = false
         var failure: LocalizedMessage?
+        var replay: RecordedCaptureReplay?
+        var isPlaying = false
     }
 
     enum OfflineCaptureReadError: Error { case notRegularFile }

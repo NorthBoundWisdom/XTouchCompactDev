@@ -363,6 +363,38 @@
         case mock, hardwareListen, hardwareSend
     }
 
+    struct OfflineReplayFader: Equatable, Sendable, Identifiable {
+        let index: Int
+        let target: UInt8
+        let observed: UInt8?
+        let simulatedPosition: UInt8
+        let touched: Bool
+        let pending: Bool
+        var id: Int {
+            index
+        }
+    }
+
+    struct OfflineReplayPresentation: Equatable, Sendable {
+        let cursor: Int
+        let eventCount: Int
+        let isPlaying: Bool
+        let lastSequence: Int?
+        let lastMessage: String?
+        let dispositionKey: String?
+        let hostLayer: CompactLayer
+        let inputLayer: CompactLayer?
+        let inputsReplayed: Int
+        let recordedOutputsSkipped: Int
+        let generatedFeedbackCount: Int
+        let boundaryCount: Int
+        let ignoredActionCount: Int
+        let usesFallbackProfile: Bool
+        let simulationTX: Int
+        let simulationRX: Int
+        let faders: [OfflineReplayFader]
+    }
+
     struct OfflineCapturePresentation: Equatable, Sendable {
         var name: String?
         var byteCount: Int?
@@ -370,6 +402,7 @@
         var isLoading = false
         var failure: LocalizedMessage?
         var audit: CaptureMotorAudit?
+        var replay: OfflineReplayPresentation?
     }
 
     struct PanelSnapshot: Equatable, Sendable {
@@ -474,6 +507,11 @@
         var clearMonitor: (() -> Void)?
         var openOfflineCapture: (() -> Void)?
         var clearOfflineCapture: (() -> Void)?
+        var stepOfflineReplay: (() -> Void)?
+        var runOfflineReplay: (() -> Void)?
+        var pauseOfflineReplay: (() -> Void)?
+        var resetOfflineReplay: (() -> Void)?
+        var setOfflineReplayFader: ((Int, UInt8) -> Void)?
         var selectPorts: ((Int32, Int32) -> Void)?
         var configureDevice: ((Int, Int, Bool) -> Void)?
 

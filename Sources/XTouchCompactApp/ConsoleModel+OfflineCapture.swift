@@ -7,6 +7,7 @@
 
     extension ConsoleModel {
         func chooseOfflineCapture() {
+            pauseOfflineReplay()
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [UTType(filenameExtension: "jsonl") ?? .data, .json]
             panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
@@ -16,6 +17,7 @@
         }
 
         func loadOfflineCapture(_ url: URL) {
+            pauseOfflineReplay()
             offlineImportTask?.cancel()
             let generation = UUID(); offlineGeneration = generation
             offlineCaptureState.isLoading = true; offlineCaptureState.failure = nil
@@ -31,18 +33,82 @@
 
         /// Already-frozen input boundary for tests and in-process importers; never uses MIDI.
         func importOfflineCapture(data: Data, name: String) {
+            pauseOfflineReplay()
             offlineImportTask?.cancel(); offlineGeneration = UUID()
             do { try installOfflineCapture(OfflineCaptureLoader.parse(data, name: name)) }
             catch { failOfflineCapture(error) }
         }
 
         func clearOfflineCapture() {
+            pauseOfflineReplay()
             offlineImportTask?.cancel(); offlineImportTask = nil; offlineGeneration = UUID()
             offlineCaptureState = .init()
         }
 
+        func stepOfflineReplay() {
+            guard !offlineCaptureState.isPlaying, !offlineCaptureState.isLoading else { return }
+            _ = advanceOfflineReplay(steps: 1)
+        }
+
+        func runOfflineReplay() {
+            guard !offlineCaptureState.isLoading, offlineCaptureState.replay?.isAtEnd == false else { return }
+            pauseOfflineReplay()
+            let generation = offlineReplayGeneration
+            offlineCaptureState.isPlaying = true
+            offlineReplayTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    guard self?.advanceOfflineReplayBatch(generation) == true else { return }
+                    await Task.yield()
+                }
+            }
+        }
+
+        func pauseOfflineReplay() {
+            offlineReplayTask?.cancel(); offlineReplayTask = nil
+            offlineReplayGeneration = UUID(); offlineCaptureState.isPlaying = false
+        }
+
+        func resetOfflineReplay() {
+            guard !offlineCaptureState.isLoading else { return }
+            pauseOfflineReplay()
+            do { try offlineCaptureState.replay?.reset() }
+            catch { offlineCaptureState.failure = LocalizedMessage("Replay stopped: invalid recorded state.") }
+        }
+
+        func setOfflineReplayFader(_ index: Int, value: UInt8) {
+            guard !offlineCaptureState.isLoading, !offlineCaptureState.isPlaying else { return }
+            do { try offlineCaptureState.replay?.setFader(index, value: value) }
+            catch { offlineCaptureState.failure = LocalizedMessage("Replay stopped: invalid recorded state.") }
+        }
+
+        private func advanceOfflineReplayBatch(_ generation: UUID) -> Bool {
+            guard offlineReplayGeneration == generation, offlineCaptureState.isPlaying else { return false }
+            let continuing = advanceOfflineReplay(steps: 128)
+            if !continuing {
+                offlineCaptureState.isPlaying = false; offlineReplayTask = nil
+            }
+            return continuing
+        }
+
+        private func advanceOfflineReplay(steps: Int) -> Bool {
+            guard var replay = offlineCaptureState.replay else { return false }
+            do {
+                for _ in 0 ..< steps {
+                    if try !replay.step() {
+                        break
+                    }
+                }
+                offlineCaptureState.replay = replay
+                return !replay.isAtEnd
+            } catch {
+                offlineCaptureState.failure = LocalizedMessage("Replay stopped: invalid recorded state.")
+                return false
+            }
+        }
+
         private func installOfflineCapture(_ loaded: LoadedOfflineCapture) {
-            offlineCaptureState = OfflineCaptureWorkspace(loaded: loaded)
+            do { offlineCaptureState = try OfflineCaptureWorkspace(loaded: loaded, replay: RecordedCaptureReplay(capture: loaded.capture)) }
+            catch { failOfflineCapture(error) }
         }
 
         private func failOfflineCapture(_ error: any Error) {

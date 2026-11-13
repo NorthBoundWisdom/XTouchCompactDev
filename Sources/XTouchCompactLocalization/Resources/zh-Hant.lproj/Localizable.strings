@@ -624,3 +624,49 @@
 "Invalid capture metadata or MIDI bytes at line %@. Original preserved." = "第 %@ 行的錄製中繼資料或 MIDI 位元組無效，原檔未改動。";
 
 "Cannot read this regular capture file. Original preserved." = "無法讀取該一般錄製檔案，原檔未改動。";
+
+"Isolated Mock replay" = "隔離 Mock 重播";
+
+"Recorded OUT is skipped. Only this isolated Mock can receive generated feedback." = "跳過錄製 OUT；產生的回饋只交給這個隔離 Mock。";
+
+"Replay uses neutral parameters, not the original assignments or software writes. Actions are not executed; timing follows sequence order." = "重播使用中性參數，不還原原始指派或軟體寫入；不執行動作，依序號推進。";
+
+"Step replay" = "重播下一步";
+
+"Run to end" = "執行至結尾";
+
+"Pause replay" = "暫停重播";
+
+"Reset replay" = "重設重播";
+
+"Replay progress %@ / %@" = "重播進度 %@ / %@";
+
+"Host %@ · input evidence %@ · simulation TX %@ / RX %@" = "主機 %@ · 輸入層證據 %@ · 模擬 TX %@ / RX %@";
+
+"Missing header profile facts use simulation defaults until recorded metadata is available." = "錄製檔頭缺少的設定資訊先用模擬預設值，直到錄製中繼資料可用。";
+
+"Recorded input replayed" = "已重播錄製輸入";
+
+"Recorded hardware safety touch retained" = "已保留錄製中的硬體安全觸摸";
+
+"Recorded output skipped" = "已跳過錄製輸出";
+
+"Recorded state boundary" = "錄製狀態邊界";
+
+"Recorded event ignored" = "已忽略錄製事件";
+
+"Replayed inputs %@ · skipped recorded outputs %@ · simulated feedback %@" = "已重播輸入 %@ · 跳過錄製輸出 %@ · 模擬回饋 %@";
+
+"State boundaries %@ · unexecuted actions %@" = "狀態邊界 %@ · 未執行動作 %@";
+
+"Test targets (Mock only)" = "測試目標（僅 Mock）";
+
+"Replay test target F%@" = "重播測試目標 F%@";
+
+"Replay touch owned" = "重播觸摸占用";
+
+"Replay motor deferred" = "重播電機暫緩";
+
+"Mock cap %@ · recorded position %@" = "Mock 推桿 %@ · 已記錄位置 %@";
+
+"Replay stopped: invalid recorded state." = "重播已停止：錄製狀態無效。";

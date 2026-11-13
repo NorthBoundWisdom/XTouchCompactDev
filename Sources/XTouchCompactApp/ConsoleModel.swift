@@ -56,6 +56,8 @@
         @Published var offlineCaptureState = OfflineCaptureWorkspace()
         var offlineImportTask: Task<Void, Never>?
         var offlineGeneration = UUID()
+        var offlineReplayTask: Task<Void, Never>?
+        var offlineReplayGeneration = UUID()
         private var lastCaptureURL: URL?
         private var observationInputID: Int32?
         private var monitorCapture: MonitorCapture?
@@ -563,7 +565,7 @@
             runtimeTask?.cancel(); runtimeTask = nil; setOSCEnabled(false)
         }
 
-        deinit { runtimeTask?.cancel(); offlineImportTask?.cancel() }
+        deinit { runtimeTask?.cancel(); offlineImportTask?.cancel(); offlineReplayTask?.cancel() }
 
         func setParameter(_ id: String, value: Double, fromAgent: Bool = false) {
             do {

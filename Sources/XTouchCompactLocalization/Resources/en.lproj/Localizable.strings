@@ -624,3 +624,49 @@
 "Invalid capture metadata or MIDI bytes at line %@. Original preserved." = "Invalid capture metadata or MIDI bytes at line %@. Original preserved.";
 
 "Cannot read this regular capture file. Original preserved." = "Cannot read this regular capture file. Original preserved.";
+
+"Isolated Mock replay" = "Isolated Mock replay";
+
+"Recorded OUT is skipped. Only this isolated Mock can receive generated feedback." = "Recorded OUT is skipped. Only this isolated Mock can receive generated feedback.";
+
+"Replay uses neutral parameters, not the original assignments or software writes. Actions are not executed; timing follows sequence order." = "Replay uses neutral parameters, not the original assignments or software writes. Actions are not executed; timing follows sequence order.";
+
+"Step replay" = "Step replay";
+
+"Run to end" = "Run to end";
+
+"Pause replay" = "Pause replay";
+
+"Reset replay" = "Reset replay";
+
+"Replay progress %@ / %@" = "Replay progress %@ / %@";
+
+"Host %@ · input evidence %@ · simulation TX %@ / RX %@" = "Host %@ · input evidence %@ · simulation TX %@ / RX %@";
+
+"Missing header profile facts use simulation defaults until recorded metadata is available." = "Missing header profile facts use simulation defaults until recorded metadata is available.";
+
+"Recorded input replayed" = "Recorded input replayed";
+
+"Recorded hardware safety touch retained" = "Recorded hardware safety touch retained";
+
+"Recorded output skipped" = "Recorded output skipped";
+
+"Recorded state boundary" = "Recorded state boundary";
+
+"Recorded event ignored" = "Recorded event ignored";
+
+"Replayed inputs %@ · skipped recorded outputs %@ · simulated feedback %@" = "Replayed inputs %@ · skipped recorded outputs %@ · simulated feedback %@";
+
+"State boundaries %@ · unexecuted actions %@" = "State boundaries %@ · unexecuted actions %@";
+
+"Test targets (Mock only)" = "Test targets (Mock only)";
+
+"Replay test target F%@" = "Replay test target F%@";
+
+"Replay touch owned" = "Replay touch owned";
+
+"Replay motor deferred" = "Replay motor deferred";
+
+"Mock cap %@ · recorded position %@" = "Mock cap %@ · recorded position %@";
+
+"Replay stopped: invalid recorded state." = "Replay stopped: invalid recorded state.";

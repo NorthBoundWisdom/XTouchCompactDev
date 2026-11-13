@@ -47,6 +47,71 @@
             }
         }
 
+        private func replayView(_ replay: OfflineReplayPresentation, loading: Bool) -> some View {
+            GroupBox(l.text("Isolated Mock replay")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(l.text("Recorded OUT is skipped. Only this isolated Mock can receive generated feedback."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(l.text("Replay uses neutral parameters, not the original assignments or software writes. Actions are not executed; timing follows sequence order."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button(l.text("Step replay")) { intents.stepOfflineReplay?() }
+                            .disabled(loading || replay.isPlaying || replay.cursor >= replay.eventCount || intents.stepOfflineReplay == nil)
+                        Button(l.text("Run to end")) { intents.runOfflineReplay?() }
+                            .disabled(loading || replay.isPlaying || replay.cursor >= replay.eventCount || intents.runOfflineReplay == nil)
+                        Button(l.text("Pause replay")) { intents.pauseOfflineReplay?() }
+                            .disabled(!replay.isPlaying || intents.pauseOfflineReplay == nil)
+                        Button(l.text("Reset replay")) { intents.resetOfflineReplay?() }
+                            .disabled(loading || intents.resetOfflineReplay == nil)
+                    }
+                    ProgressView(value: Double(replay.cursor), total: Double(max(replay.eventCount, 1)))
+                    Text(l.text("Replay progress %@ / %@", String(replay.cursor), String(replay.eventCount))).font(.caption.monospacedDigit())
+                    Text(l.text("Host %@ · input evidence %@ · simulation TX %@ / RX %@", replay.hostLayer.rawValue.uppercased(),
+                                replay.inputLayer?.rawValue.uppercased() ?? "—", String(replay.simulationTX), String(replay.simulationRX)))
+                        .font(.caption.monospacedDigit())
+                    if replay.usesFallbackProfile {
+                        Text(l.text("Missing header profile facts use simulation defaults until recorded metadata is available."))
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    if let key = replay.dispositionKey {
+                        Text(l.text(key)).font(.caption.bold())
+                    }
+                    if let message = replay.lastMessage {
+                        Text(message).font(.caption.monospaced())
+                    }
+                    Text(l.text("Replayed inputs %@ · skipped recorded outputs %@ · simulated feedback %@", String(replay.inputsReplayed),
+                                String(replay.recordedOutputsSkipped), String(replay.generatedFeedbackCount))).font(.caption.monospacedDigit())
+                    Text(l.text("State boundaries %@ · unexecuted actions %@", String(replay.boundaryCount), String(replay.ignoredActionCount)))
+                        .font(.caption.monospacedDigit())
+                    Divider()
+                    Text(l.text("Test targets (Mock only)")).font(.caption.bold())
+                    ForEach(replay.faders) { fader in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text("F\(fader.index)").font(.caption.monospaced()).frame(width: 26)
+                                Slider(value: Binding(get: { Double(fader.target) }, set: {
+                                    intents.setOfflineReplayFader?(fader.index, UInt8($0.rounded()))
+                                }), in: 0 ... 127, step: 1)
+                                    .disabled(loading || replay.isPlaying || intents.setOfflineReplayFader == nil)
+                                    .accessibilityLabel(l.text("Replay test target F%@", String(fader.index)))
+                                Text(String(fader.target)).font(.caption.monospacedDigit()).frame(width: 30)
+                                if fader.touched {
+                                    Text(l.text("Replay touch owned")).font(.caption2).foregroundStyle(.orange)
+                                }
+                                if fader.pending {
+                                    Text(l.text("Replay motor deferred")).font(.caption2).foregroundStyle(.orange)
+                                }
+                            }
+                            Text(l.text("Mock cap %@ · recorded position %@", String(fader.simulatedPosition), fader.observed.map(String.init) ?? "—"))
+                                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(4)
+            }
+        }
+
         private func auditView(_ audit: CaptureMotorAudit) -> some View {
             VStack(alignment: .leading, spacing: 10) {
                 Text(l.text(assessmentKey(audit.assessment)))
