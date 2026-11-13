@@ -178,7 +178,8 @@ The step-by-step checklist is in [Hardware bring-up](docs/HARDWARE_BRINGUP.md).
 | [Hardware bring-up](docs/HARDWARE_BRINGUP.md) | Checklist for testing on a physical controller |
 | [Build workflow](docs/FREECM.md) | Build, run, test and package commands; local settings |
 | [Upstream research](docs/UPSTREAM.md) | Related projects and their licenses |
-| [TODO](TODO.md) | Task list and open items |
+| [Experiment records](docs/EXPERIMENT_RECORDS.md) | Hardware evidence, historical build diagnostics and scoped validation sources |
+| [TODO](TODO.md) | Remaining acceptance, corrections and product decisions |
 
 More screenshots: [Settings](docs/images/settings.png) ·
 [Traditional Chinese interface](docs/images/console-zh-Hant.png)
