@@ -410,4 +410,18 @@
         })
         #expect(!restored.session.state.isMotorPending(1))
     }
+
+    @Test @MainActor func layerAssertionRechecksTouchBetweenTransportCalls() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.setConsoleMode(.hardwareSend)
+        midi.afterPinnedSend = { [weak midi] in
+            midi?.onMessages?([.controlChange(channel: 0, number: 107, value: 127)])
+        }
+        model.apply { session in
+            [.noteOn(channel: 0, number: 0, velocity: 1), session.state.map.selectLayer(.b)]
+        }
+        #expect(midi.sent == [.noteOn(channel: 0, number: 0, velocity: 1)])
+        #expect(model.error as? CompactError == .fadersTouched)
+    }
 #endif

@@ -282,6 +282,12 @@ public enum NonMotorFeedbackCommand: Equatable, Sendable {
         }
     }
 
+    /// Layer assertions affect all nine motors; any touch edge on either layer refuses.
+    public func mustRefuse(afterListeningTo words: [UInt32]) -> Bool {
+        guard case .selectLayer = self else { return false }
+        return (1 ... 9).contains { FaderMoveCommand(fader: $0, value: 0, channel: 1).mustRefuse(afterListeningTo: words) }
+    }
+
     public var summary: [String: Any] {
         switch self {
         case let .ringDisplay(encoder, value, channel): ["command": "ring-display", "encoder": encoder, "value": value, "channel": channel]

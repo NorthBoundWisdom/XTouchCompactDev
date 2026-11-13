@@ -100,3 +100,8 @@ private func reviewedPrerequisites() -> NonMotorTestPrerequisites {
     #expect(try session.setEncoder(1, value: 64).count == 1)
     #expect(session.state.observedFader(1) == 20)
 }
+
+@Test func layerAssertionsAreClassifiedAsMotorSideEffects() throws {
+    let message = try NonMotorTestCommand.layer(.a).message(receiveChannel: 5)
+    #expect(!NonMotorTestCommand.isNonMotorFeedback(message, receiveChannel: 5))
+}

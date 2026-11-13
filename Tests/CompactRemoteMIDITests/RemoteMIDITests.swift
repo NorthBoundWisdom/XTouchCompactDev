@@ -196,3 +196,16 @@ import Testing
     #expect(command.mustRefuse(afterListeningTo: [0x20B0_657F, 0x20B0_6500]))
     #expect(command.mustRefuse(afterListeningTo: [0x20B0_6F7F, 0x20B0_6F00]))
 }
+
+@Test func remoteLayerGuardRefusesEveryTouchEdgeOnBothLayers() {
+    let command = NonMotorFeedbackCommand.selectLayer(b: true, channel: 6)
+    #expect(!command.mustRefuse(afterListeningTo: []))
+    for number in Array(101 ... 109) + Array(111 ... 119) {
+        for value in [0, 127] {
+            let word = UInt32(0x20B5_0000) | UInt32(number) << 8 | UInt32(value)
+            #expect(command.mustRefuse(afterListeningTo: [word]))
+            #expect(!NonMotorFeedbackCommand.ringStyle(encoder: 1, style: 1, channel: 6).mustRefuse(afterListeningTo: [word]))
+        }
+    }
+    #expect(!command.mustRefuse(afterListeningTo: [0x20B5_0164]))
+}

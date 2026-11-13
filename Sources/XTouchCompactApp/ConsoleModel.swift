@@ -856,6 +856,15 @@
             catch { self.error = error; return .suppressed }
             var withheldMotor = false
             for message in messages {
+                // A preceding transport call can synchronously deliver a new touch edge.
+                do { try validateHardwareLayerAssertion([message]) }
+                catch {
+                    self.error = error
+                    session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
+                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control)
+                    return .suppressed
+                }
                 guard !session.filterFeedbackForDelivery([message]).isEmpty else {
                     withheldMotor = true
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed)

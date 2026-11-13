@@ -564,7 +564,7 @@ import Foundation
 
     /// Sends exactly one UMP word to the controller and prints what was sent as a JSON line.
     /// Callers pass words built by `ButtonLightCommand` or `NonMotorFeedbackCommand` only.
-    func sendOne(word: UInt32, deviceName: String, record: [String: Any], journal: EventJournal) throws {
+    func sendOne(word: UInt32, deviceName: String, record: [String: Any], journal: EventJournal, layerCommand: NonMotorFeedbackCommand? = nil) throws {
         var client: MIDIClientRef = 0
         var port: MIDIPortRef = 0
         try check(MIDIClientCreateWithBlock("XTouchRemoteMIDI send" as CFString, &client) { _ in }, "Create MIDI client")
@@ -582,6 +582,33 @@ import Foundation
         guard destination != 0 else {
             throw NSError(domain: "XTouchRemoteMIDI", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Controller output not found; nothing was sent"])
+        }
+        if let layerCommand {
+            var input: MIDIPortRef = 0
+            let lock = NSLock()
+            var received: [UInt32] = []
+            try check(MIDIInputPortCreateWithProtocol(client, "Layer guard In" as CFString, ._1_0, &input) { list, _ in
+                let words = packets(list).flatMap(\.self)
+                lock.lock(); received += words; lock.unlock()
+            }, "Create layer guard input")
+            var source: MIDIEndpointRef = 0
+            for index in 0 ..< MIDIGetNumberOfSources() {
+                let endpoint = MIDIGetSource(index)
+                if endpoint != 0, !isOffline(endpoint), let text = endpointName(endpoint), matcher.matchesDevice(text) {
+                    source = endpoint; break
+                }
+            }
+            guard source != 0 else {
+                throw NSError(domain: "XTouchRemoteMIDI", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Controller input not found; nothing was sent"])
+            }
+            try check(MIDIPortConnectSource(input, source, nil), "Connect layer guard input")
+            Thread.sleep(forTimeInterval: 1.0)
+            lock.lock(); let before = received; lock.unlock()
+            guard !layerCommand.mustRefuse(afterListeningTo: before) else {
+                journal.emit(["event": "select-layer-refused", "reason": "touch activity while listening", "messagesDuringGuard": before.count])
+                exit(3)
+            }
         }
         let sentAt = Date()
         guard withEventList([word], { MIDISendEventList(port, destination, $0) }) else {
@@ -718,7 +745,12 @@ import Foundation
             let command = try NonMotorFeedbackCommand.parse(name, Array(arguments.dropFirst()))
             var record = command.summary
             record["event"] = "sent-feedback"
-            try sendOne(word: command.word, deviceName: RemoteMIDIDefaults.deviceName, record: record, journal: journal)
+            let layerCommand: NonMotorFeedbackCommand? = if case .selectLayer = command {
+                command
+            } else {
+                nil
+            }
+            try sendOne(word: command.word, deviceName: RemoteMIDIDefaults.deviceName, record: record, journal: journal, layerCommand: layerCommand)
         case "listen":
             try Listener(options: RemoteBridgeOptions.parse(Array(arguments.dropFirst()))).run()
         default:

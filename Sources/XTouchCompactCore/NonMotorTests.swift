@@ -64,13 +64,20 @@ public enum NonMotorTestCommand: Equatable, Sendable {
         }
     }
 
+    /// A layer assertion may cycle every firmware motor even without motor CC messages.
+    public var mayMoveAllFaders: Bool {
+        if case .layer = self {
+            return true
+        }; return false
+    }
+
     public static func isNonMotorFeedback(_ message: MIDIMessage, receiveChannel: UInt8) -> Bool {
         guard receiveChannel < 16 else { return false }
         switch message {
         case let .controlChange(c, n, v):
             return c == receiveChannel && ((10 ... 25).contains(n) && v <= 4 || (26 ... 41).contains(n) && v <= 28)
         case let .noteOn(c, n, v): return c == receiveChannel && n <= 38 && v <= 3
-        case let .programChange(c, n): return c == receiveChannel && n <= 1
+        case .programChange: return false
         case .noteOff, .pitchBend: return false
         }
     }
@@ -125,6 +132,6 @@ public struct NonMotorTestGate: Equatable, Sendable {
         guard let channel = approval.prerequisites.receiveChannel,
               messages == [request.message],
               try request.message == (request.command.message(receiveChannel: channel)),
-              NonMotorTestCommand.isNonMotorFeedback(request.message, receiveChannel: channel) else { throw NonMotorTestError.invalidTransmission }
+              NonMotorTestCommand.isNonMotorFeedback(request.message, receiveChannel: channel) || request.command.mayMoveAllFaders else { throw NonMotorTestError.invalidTransmission }
     }
 }

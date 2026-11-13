@@ -47,6 +47,7 @@
             }
             if case let .layer(layer)? = command {
                 row["requestedLayer"] = layer.rawValue
+                row["motorSideEffect"] = "may-cycle-all-nine-faders"
             }
             return row
         }
@@ -86,7 +87,7 @@
             clearPreview()
             guard let channel else { throw NonMotorTestError.previewRequired }
             let message = try command.message(receiveChannel: channel)
-            guard NonMotorTestCommand.isNonMotorFeedback(message, receiveChannel: channel) else { throw NonMotorTestError.invalidTransmission }
+            guard NonMotorTestCommand.isNonMotorFeedback(message, receiveChannel: channel) || command.mayMoveAllFaders else { throw NonMotorTestError.invalidTransmission }
             previewCommand = command; previewMessage = message; previewChannel = channel
         }
 

@@ -258,4 +258,17 @@
             #expect(model.capturePath == nil && model.error != nil)
         }
     }
+
+    @Test @MainActor func diagnosticLayerAssertionRefusesEveryTouchedFader() throws {
+        let root = try temporaryEvidenceRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let (model, midi) = recordingModel(root)
+        midi.onMessages?([.controlChange(channel: 0, number: 107, value: 127)])
+        model.armNonMotorTests(operatorFixture())
+        model.previewNonMotorTest(.layer(.b), receiveChannel: 5)
+        model.performNonMotorTest(.layer(.b))
+        #expect(midi.sent.isEmpty)
+        #expect(model.error as? CompactError == .fadersTouched)
+        #expect(model.nonMotorTests.attempts.first?.delivery == .suppressed)
+        model.stopCapture()
+    }
 #endif
