@@ -209,3 +209,24 @@ import Testing
     }
     #expect(!command.mustRefuse(afterListeningTo: [0x20B5_0164]))
 }
+
+@Test func rawBridgeLayerAssertionsUseDeviceSideTouchEvidence() {
+    for number in Array(101 ... 109) + Array(111 ... 119) {
+        var gate = RemoteLayerAssertionGate()
+        let down = UInt32(0x20B0_0000) | UInt32(number) << 8 | 127
+        let up = UInt32(0x20B0_0000) | UInt32(number) << 8
+        let layer: UInt32 = 0x20C5_0100
+        #expect(!gate.refuses([layer]))
+        gate.observe([down])
+        #expect(gate.refuses([layer]))
+        #expect(gate.refuses([0x20B5_1A07, layer])) // Whole mixed batch is refused.
+        #expect(!gate.refuses([0x20B5_1A07])) // Existing display feedback stays available.
+        gate.observe([0x20B0_0140]) // Position reports never release touch ownership.
+        #expect(gate.refuses([layer]))
+        gate.observe([up])
+        #expect(!gate.refuses([layer]))
+    }
+    var gate = RemoteLayerAssertionGate()
+    gate.observe([0x20B0_657F, 0x20B0_667F, 0x20B0_6500])
+    #expect(gate.refuses([0x20C0_0100])) // Releasing F1 does not release F2.
+}

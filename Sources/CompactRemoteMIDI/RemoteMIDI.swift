@@ -484,3 +484,26 @@ public struct RemoteBridgeStatus: Codable, Equatable, Sendable {
         return decoder
     }()
 }
+
+/// Device-side evidence for raw bridge forwarding. A missing release remains touched
+/// across route changes; this gate never infers that a new connection released a hand.
+public struct RemoteLayerAssertionGate: Sendable {
+    private var touched: Set<Int> = []
+    public init() {}
+
+    public mutating func observe(_ words: [UInt32]) {
+        for index in 1 ... 9 {
+            if let down = FaderMoveCommand(fader: index, value: 0, channel: 1).touchState(in: words) {
+                if down {
+                    touched.insert(index)
+                } else {
+                    touched.remove(index)
+                }
+            }
+        }
+    }
+
+    public func refuses(_ words: [UInt32]) -> Bool {
+        !touched.isEmpty && words.contains { $0 >> 28 == 0x2 && ($0 >> 20) & 0xF == 0xC }
+    }
+}

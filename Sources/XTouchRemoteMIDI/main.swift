@@ -165,6 +165,7 @@ import Foundation
         private var toClient: UInt64 = 0
         private var toDevice: UInt64 = 0
         private var dropped: UInt64 = 0
+        private var layerGate = RemoteLayerAssertionGate()
 
         init(options: RemoteBridgeOptions, journal: EventJournal) {
             self.options = options
@@ -208,6 +209,7 @@ import Foundation
 
         private func fromDevice(_ list: UnsafePointer<MIDIEventList>) {
             for words in packets(list) {
+                lock.lock(); layerGate.observe(words); lock.unlock()
                 guard out.write(.midi(words: words)) else { finish("client stream closed") }
                 journal.emit(RemoteEventJSON.forwarding(words: words, direction: "device-to-client", delivery: "forwarded"), stdout: false)
                 lock.lock(); toClient &+= 1; lock.unlock()
@@ -225,9 +227,15 @@ import Foundation
                 lock.lock(); helloReceived = true; lock.unlock()
             case let .midi(words):
                 guard ready else { finish("MIDI before hello") }
-                lock.lock(); let target = destination; let port = outputPort; lock.unlock()
-                // Listen-only: the controller is never written, whatever the client sends.
-                let sent = !options.listenOnly && target != 0 && withEventList(words) { MIDISendEventList(port, target, $0) }
+                lock.lock()
+                let target = destination; let port = outputPort
+                let touchedLayerAssertion = layerGate.refuses(words)
+                lock.unlock()
+                // Listen-only and device-side touch evidence can only suppress a batch.
+                let sent = !options.listenOnly && !touchedLayerAssertion && target != 0 && withEventList(words) { MIDISendEventList(port, target, $0) }
+                if touchedLayerAssertion {
+                    journal.emit(["event": "layer-assertion-refused", "reason": "device-side fader touch"], stdout: false)
+                }
                 journal.emit(RemoteEventJSON.forwarding(words: words, direction: "client-to-device", delivery: sent ? "sent" : "dropped"), stdout: false)
                 lock.lock()
                 if sent {
