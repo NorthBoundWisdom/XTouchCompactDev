@@ -33,31 +33,15 @@ import Foundation
     /// Optional append-only JSONL journal. Open before CoreMIDI or SSH starts; errors
     /// stop the command and are never retried as MIDI. Bridge/client logs stay off stdout.
     final class EventJournal: @unchecked Sendable {
-        private let handle: FileHandle?
-        private let lock = NSLock()
+        private let journal: RemoteEventJournal
 
         init(path: String?) throws {
-            if let path {
-                let fd = Darwin.open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, 0o600)
-                guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-                handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-            } else {
-                handle = nil
-            }
+            journal = try RemoteEventJournal(path: path)
         }
 
         func emit(_ fields: [String: Any], at date: Date = Date(), stdout: Bool = true) {
-            guard stdout || handle != nil else { return }
-            lock.lock(); defer { lock.unlock() }
-            do {
-                let data = try RemoteEventJSON.line(fields, at: date)
-                if let handle {
-                    try handle.write(contentsOf: data); try handle.synchronize()
-                }
-                if stdout {
-                    try FileHandle.standardOutput.write(contentsOf: data)
-                }
-            } catch {
+            do { try journal.emit(fields, at: date, stdout: stdout) }
+            catch {
                 log("event logging failed: \(error.localizedDescription); command stopped, do not retry an already sent MIDI command")
                 exit(2)
             }

@@ -1,134 +1,110 @@
-# Remote hardware for development
+# XTouchCompactDev 当前待办
 
-Use this when the controller is plugged into another Mac (for example the CI Mac mini)
-and you want to develop against it from your own Mac. **For development only.** Real use
-and hardware sign-off still use a controller plugged in directly over USB.
+更新：2026-11-13。已完成的 B1–B10、F1–F6、N1–N4/N6–N8、共享插件迁移和审查整改移至 [历史记录](TODO_HISTORY.md)。本文只列尚未完成或待决策事项；工作区总排期见 `AstroController/TODO.md`（工作区文件）。
 
-## How it works
+## 当前基线
 
-```
-your Mac                                          Mac with the controller
-XTouchCompactApp ⇄ virtual MIDI ports ⇄ XTouchRemoteMIDI client ══ ssh ══ XTouchRemoteMIDI bridge ⇄ X-TOUCH COMPACT (USB)
-                   "X-TOUCH COMPACT (via <host>)"
-```
+- 共享插件接入与 P1/P2/P3 整改完成；唯一 registry、静默记账、1024 事件容量、运动最多4Hz、2秒大间隔保护及统一实例 ID 已实现。
+- 新 surface 工具已有写权限、60次/秒预算、独立模拟管理权限，realtime 拒绝远程 advance；旧三工具沿原策略。
+- 历史产品基线 `19bc0c4`：实体读数与目标分离，历史缓存标记为旧值；灯环局部采样校准已入面板。提交记录报告175 Swift、25工作流及原生启动通过；当时文档整理未重跑产品测试；本轮重新验证结果见 U7。
+- 上游 `4d91cec` 已增加踏板输入、参数数值持久化和独立 Agent 电机授权，均保留；启动不回放电机，硬件踏板行为仍待实测。
+- 现场已有观察页、输入、灯环、切层和电机记录；HW-6 已按记录范围签收（2026-11-13）。不等于 HW-1…HW-5/HW-7 全量、N5 或完整读回通过。
+- CI 当前配置为 `core-linux` 与 macOS 26/Xcode 26.6 的 `app-macos`；历史绿色运行不等于当前 HEAD 已验收。
 
-- The client starts the bridge over SSH and carries raw MIDI 1.0 packets over the SSH
-  session's stdin/stdout. No port is opened on either Mac, and SSH handles
-  authentication, so the existing ComputePool SSH trust applies.
-- The virtual ports exist only while the bridge reports the controller. Unplugging it,
-  losing the network, or stopping the client looks to the app like a USB unplug. The bridge
-  and client ping each other every 2 s and drop the link after 6 s of silence. The client
-  reconnects with backoff (1 → 15 s).
-- The port name contains "X-TOUCH COMPACT", so the app's automatic matching selects it
-  like a USB device. Stable unique IDs keep a manual port choice across restarts.
-- Neither side parses, filters, generates or acknowledges MIDI. Touch ownership, layer
-  gates, listen-only and every other safety rule stay in the app, unchanged.
-- The bridge notices the controller being plugged in or unplugged while it runs. (Until
-  2026-11-12 it only saw devices present at start, because CoreMIDI setup notifications
-  need the creating thread's run loop.)
-- The bridge never forwards a port whose name already contains "(via …)", so the link
-  cannot loop through another bridge.
+## 分工与约束
 
-macOS Network MIDI (RTP-MIDI) was considered first. Over SSH on the Mac mini its session
-stayed disabled, both from a plain SSH shell and from a job bootstrapped into the
-logged-in user's launchd domain. Enabling it needs Audio MIDI Setup clicks on the remote
-desktop, so this tool uses an SSH stream instead.
+视图只读 `PanelSnapshot`、只发 `PanelIntents`，`ConsoleModel+Panel.swift` 是唯一适配层；新增契约字段随提交明确说明。硬件未知值保留 nil，不用发送指令或历史缓存充当实测。协议与硬件保护规则见 [AGENTS.md](AGENTS.md)。
 
-## Use
+## 后续待办
 
-```sh
-python3 configs/setup_local_project.py            # once, as for any build
-python3 tools/remote_hardware.py deploy  --ssh henrys-mac-mini
-python3 tools/remote_hardware.py devices --ssh henrys-mac-mini   # the controller should show [controller]
-python3 tools/remote_hardware.py connect --ssh henrys-mac-mini   # keep running; Ctrl-C to stop
-python3 tools/remote_hardware.py status  --ssh henrys-mac-mini   # read-only check, any time
-```
+### 现在可做
 
-`connect --listen-only` publishes the same ports but drops everything the local app sends,
-in the client and again in the bridge. Use it while the app's own listen-only state is
-uncertain. An app started with `--hardware-control` selects hardware with fresh
-writes enabled, but now leaves attachment/reconnect silent; explicit Sync lights
-sends the layer assertion and LED/ring feedback. This U3 change is 未在实机复核。
+- [ ] N5 七项鼠标验收：触摸暂缓/松手、层不一致与重新对齐、预置确认、OSC停机/拒绝通知、MCP开关与令牌复制，以及新增的Agent电机授权和数值持久化。逐项记录实际结果，见 [验收步骤](docs/NATIVE_ACCEPTANCE.md)。观察页已验收不替代这七项。
+- [x] 核对本轮代码 HEAD `2d3defc` 的两条 CI 及产物来源（2026-11-13，见 U7）；最终签收记录提交的状态见 [草稿 PR #1](https://github.com/NorthBoundWisdom/XTouchCompactDev/pull/1)。CI 拓扑未改。
 
-`listen` (with or without `--ssh`) is a passive raw capture to stdout as JSON lines; it
-cannot send MIDI. See [the startup readback procedure](STARTUP_READBACK_INVESTIGATION.md).
+### 实机记录与修正
 
-`XTouchRemoteMIDI button-light --button 1-39 --velocity 0-3 --channel 1-16` is the tool's
-first sender, added for the LED-encoding check: one button-LED Note On per call.
-`ring-display --encoder 1-16 --value 0-28`, `ring-style --encoder 1-16 --style 0-4` and
-`select-layer --layer a|b` (each with `--channel 1-16`) send one ring or Program Change
-message. Every command prints what it sent. None can express CC 1–9 (motors) or CC 127
-(mode switch), and the channel is always explicit.
+设备已经有现场记录，“到货后再开始”不再适用。下一次仍按只听 → 非电机 → 单推子顺序推进，详见 [实机清单](docs/HARDWARE_BRINGUP.md)。
 
-`summarize FILE` decodes a `listen` capture offline (control, layer, count, value range).
+- [ ] 启动全量位置读回：分别检查上电、USB重连、App接入的主动回报与有依据的只读查询，排除监听/解析问题；结论仍是**未验证**，不是“不支持”。见 [调查记录](docs/STARTUP_READBACK_INVESTIGATION.md)。缓存仅为备用显示，不触发电机。
+- [ ] HW-1：补全固件、端口、TX与独立确认的Global RX。
+- [ ] HW-2/HW-3、C2实体验收：A/B两层全部位置、9触摸、16编码器及按下、39按键、跨层松手；导出原始录制/摘要/指纹。覆盖检查软件已实现。
+- [ ] HW-4/HW-5、C3实体验收：阶段一审查后，独立确认RX，逐键测试两套LED编码、灯环五样式与层断言；非电机工作台已实现。局部采样校准不代表所有边界/样式/层通过。
+- [ ] HW-7：核对物理A/B后的TX地址和跨层松手地址；阶段二核对Program Change确实切层。
+- [x] HW-6/C4（2026-11-13 用户签收，范围见 [实机清单](docs/HARDWARE_BRINGUP.md)）：单推子小步、触摸阻断、松手、层不一致、重连和无回路各核对一次；未覆盖项列在下方 H 组。
+- [x] 远程硬件开发通道（2026-11-12）：`XTouchRemoteMIDI` 经 SSH 标准输入输出转发原始 MIDI，本机出现
+  “X-TOUCH COMPACT (via <host>)” 端口；界面标“远程”，录制头记 `route` / `remoteBridgeHost`。不开监听端口，不改安全策略。
+  已用 mini 上的临时虚拟设备完成双向验证；见 [远程硬件](docs/REMOTE_HARDWARE.md)。
+- [x] 整理功能（2026-11-12）：检查器里直接命名、颜色标签和分组；整理页提供分组高亮、推子联动（VCA 式）、
+  场景保存与调用，以及 50 步数值撤销 / 重做。联动成员电机走同一套触摸、层不一致和 Agent 电机授权门禁；
+  场景调用只改目标值，推子要等显式电机归位才动。见 [软件工作流](docs/SOFTWARE_WORKFLOWS.md)。
+- [ ] 整理功能目视验收：在 Mock 里过一遍重命名、颜色、分组高亮、联动跟随与触摸暂缓、场景调用不动推子、撤销。
+- [x] 实机结论（2026-11-12，见 [验机记录](docs/HARDWARE_SESSION_2026-11-12.md)）：TX 通道 1；**Global RX 通道 2**（逐通道点灯测得，与默认 1 不符）；
+  按键 LED 编码为 **0 灭 / 2 亮 / 3 闪**（力度 1 不亮，手册 0/1/2 不成立）；输入地址在 A/B 两层与出厂表一致（各类 1 号控件）；
+  推子位置消息全部落在触摸期间；物理层键不发 MIDI；编码器为带加速的绝对值，两端钳位并继续发送。
+- [x] 实机结论续（2026-11-12）：灯环在通道 2 接收，显示值 0 / 1–13 / 14–26 / 27 / 28 与出厂表一致；主机显示值在任何样式下都只点亮单颗；
+  样式指令会立即按自身图案重画灯环并丢弃主机位置；Program Change 0 / 1 双向切层成立（触摸地址随之变化）。该段未发送电机 CC；后续电机记录见下一项。
+- [x] 电机实机结论（2026-11-13，见 [验机记录](docs/HARDWARE_SESSION_2026-11-12.md)）：电机在通道 2 接收，A/B 两层同一地址；本次已录制的电机运动未回报位置；
+  按住时收到的指令无效且松手后固件不补发；**每次切层固件都会把九个推子回零再走回原位**，两层共用同一物理位置。
+  App 的触摸暂缓、松手单次补发、层不一致阻断、重连和切层不发电机指令各在 F1 上核对一次。HW-6 已由用户按上述范围签收；未覆盖项仍留在 H 组。
+- [ ] 面板灯环样式画法：pan / fan / spread 对主机位置的连续段画法与实机不符（实机只亮单颗）；先实测各样式下本地转动的画法再改。
+- [ ] 按实机结论更新 App 设备档案：连接页把 Global 接收通道改为 2，并启用“按键 LED 使用固件 1.14 实测值”（由用户操作，不自动改写）。
+- [ ] 远程硬件实物验证：控制器插 mini 后运行 `remote_hardware.py devices`，确认 USB 端点在 SSH 环境下可见并双向可用。
+- [ ] HW 踏板（如有配件）：确认脚踏极性、表情踏板0–127范围与未插踏板时的发送行为；软件已支持expression（CC26/63）、footswitch（CC27/64）、Mock（面板顶部SW/EXP操作及FOOT灯）、观察与参数分配，无RX反馈地址，不计入89项内建覆盖，实体FOOT灯继续未知。
+- [ ] F7/C5：按证据修正面板/Mock/Core并更新协议、README和签收记录。未测项目继续未知，不按单元测试勾选硬件通过。
 
-`status` starts nothing. It reports whether the deployed bridge matches a local build
-(`current` / `outdated, run deploy` / `not deployed`), which bridges are running on the
-remote Mac, which local clients are running, and whether the controller is visible there.
+### 开发计划：无人值守可做（纯软件，按顺序）
 
-`deploy` builds a release binary in `build/remote-midi/` and installs it as
-`~/.xtouch-remote/XTouchRemoteMIDI` on the remote Mac. Rerun `deploy` after changing the
-bridge; a running bridge keeps its old binary until the next connection. The remote Mac
-needs a logged-in user only for the controller's own driver; the bridge itself runs from
-SSH. It does not touch the GitHub runner services.
+2026-11-13 起的一轮。约束：**不向实体控制器发送任何 MIDI**（电机、切层、灯光、灯环都不发；切层指令会让九个推子走一遍），不启动实体可发送模式的 App，不操作桌面界面。全部以 Mock、确定性测试和已有录制文件为依据；实机行为未复核的一律写明“未在实机复核”。
 
-Then start the app as usual. The Connection page labels the port **Remote** and shows
-which Mac it comes through.
+- [x] U1（软件完成，未在实机复核）Mock 贴合实机电机行为：物理切层和 Program Change 都记一次“固件推子循环”（九个推子位置不变、不发 TX、可计数）；补“按住时收到的指令被丢弃且松手后不补”的回归测试；同步 `docs/MIDI_PROTOCOL.md` 的模拟边界一节。
+- [x] U2（软件完成，未在实机复核）有推子被触摸时不发切层指令：切层会让固件驱动电机，等同于在触摸时命令电机。实体可发送模式下，`setLayer`、重新对齐、同步灯光在任一推子被触摸（含安全触摸）时拒绝并给出可见提示，不发送、不排队；松手后由用户重试。Mock 模式不变。每条路径配确定性测试。
+- [x] U3（软件完成，未在实机复核；独立行为变更提交，待用户审查）重连不再自动发切层指令：变更前实体可发送模式下重连会立即发 Program Change，实机上表现为九个推子自行走一遍。改为重连后只标记“层未确认、灯光未同步”，由用户点“同步灯光到设备”显式发送。需要改动的契约字段写进提交说明。**这是行为变更，合并前需用户确认。**
+- [x] U4（软件完成，未在实机复核）录制文件的电机安全审计：给录制审查加三项检查——同一推子“按下到松开”之间是否有电机输出、层不一致期间是否有电机输出、每次松手后的电机输出条数。提供命令行入口；用 `captures/private/XTouchCompact-capture-1794500725.jsonl` 和 `…1794501019.jsonl` 只读跑一遍，结果写进提交说明，录制文件本身不入库。入口与证据限制见 [离线安全审计](docs/CAPTURE_MOTOR_AUDIT.md)。
+- [x] U5（软件完成，未在实机复核）`XTouchRemoteMIDI` 记录能力：发送类命令加 `--log PATH` 追加写入（本轮最后两次是手工追加的）；`listen` 每条事件带墙上时间；`fader-move` 输出里汇总发送后观察窗口内的触摸与位置消息条数。只做解析和格式的测试，不实机运行。
+- [x] U6（文档完成，未在实机复核）文档按实测更正（C5/F7 的文档部分）：`README.md`、`docs/SOFTWARE_WORKFLOWS.md`、`docs/NATIVE_ACCEPTANCE.md`、`docs/HARDWARE_BRINGUP.md` 中凡写“切层/重连/对齐不动推子”或“电机行为未验证”的地方，改成实测结论；未测项保留未知。
+- [x] U7（CI 完成，未在实机复核）代码提交 `2d3defc` 的 `core-linux` / `app-macos` 均通过：[运行 43278244712](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43278244712)。实际检出 `ae9504d`，文件树与代码 HEAD 一致；依赖固定为 `c6b3083`。macOS 26 / Xcode 26.6 原生构建、隔离启动（`hardwareAccessed:false`）、ad-hoc ZIP/DMG 打包均通过。该 CI 未上传可下载产物，不作公证分发声明。首次旧作业取消后已重试通过；被新 main 合并取代的旧运行已取消。最终签收记录提交的检查见 [PR #1](https://github.com/NorthBoundWisdom/XTouchCompactDev/pull/1)，CI 拓扑未改。
+  本地新依赖下五项检查全过（142 核心、105 App Swift Testing + 14 XCTest、4 本地化、14 远程 MIDI；75 工作流）。模拟器集成首轮 38 项中 2 项因历史 SDK ZIP 缺失而跳过；从原固定提交恢复并匹配冻结 SHA-256 后，这 2 项定向补测通过。H 组、N5 与整理目视验收仍未通过。
 
-## Evidence
+### 无人值守复查发现（继续推进）
 
-Captures record `route: "remote"` and `remoteBridgeHost` in the session header, and the
-port name records the bridge host. Remote evidence is development data: it is never a USB
-sign-off for HW-1…HW-7, C2–C4 or the N5 checklist. Latency comes from the Tailscale path
-(about 110–125 ms through the peer relay on 2026-11-12, without a direct connection).
-Motor tests over this route can race a hand already on a fader, so run them with nobody
-touching the unit.
+- [x] U8（软件完成，未在实机复核）只听模式选择/对齐软件层必须保留真实输入层；切层首次发送失败也保留不一致门禁。仅传输层接受 Program Change 后丢弃旧层证据，不视为实机确认。已用 Fake MIDI 复现并补核心/宿主回归测试。
+- [x] U9（软件完成，未在实机复核）配置与录制一致性：触摸门禁拒绝设备档案应用时，Mock、读数缓存、持久化和日志须保持与实际已应用档案一致；切层输出的录制应记录新软件层。
+- [x] U10（软件完成，未在实机复核）普通硬件输出也固定输入/输出端点及连接代次，防止连接通知到达前把旧批次发送到新路由；失败丢弃暂缓目标。只用 Fake MIDI 验证。
+- [x] U11（软件完成，未在实机复核）离线审计证据边界：覆盖 Mock 期间的硬件安全触摸、断连后旧松手证据失效、模式/档案切换，严格拒绝缺失路由/模式等元数据；不把不完整/未知证据输出为完整安全结论。
 
-## Verified so far
+- [x] U12（软件完成，未在实机复核）批次末尾与逐条交付前复查电机安全：同批后续触摸/层不一致撤回先前生成的电机反馈；后续实体位置或无电机权限写入撤销旧意图，不能复活旧目标。已用确定性测试复现，保留合法松手单次补发。
 
-On 2026-11-12 a physical X-TOUCH COMPACT was attached to the Mac mini (USB VID/PID
-`0x1397 / 0x00B2`, `bcdDevice 0x0200`, the same identity as the 2026-11-11 session; the
-descriptor's serial string reads `1.0.1` and is **not** a verified firmware version).
+- [x] U13（软件完成，未在实机复核）传输层接受切层指令后将旧位置、层与按下读数降为历史/未知，等待新输入；诊断切层也失效电机命令缓存。首次发送失败则保留原读数和层不一致证据。
 
-- `status` and `devices` over SSH see the controller's source and destination, so a bridge
-  started from SSH can reach the real USB device.
-- A 12 s passive `listen` capture that attached to the already-powered, connected, idle
-  controller received no message (`captures/private/readback-attach-2026-11-12.jsonl`,
-  not committed). This is case C of the startup-readback procedure only, without the control
-  case D, so it does not yet show that the route delivers input.
-- A 12 s `connect --listen-only` link came online with the real controller. A locally
-  running app in hardware-control mode attached to the port at once and its first
-  packet was suppressed: nothing was written to the device.
-- **Not yet verified on the physical unit:** input arriving through the link (nobody
-  operated a control during these checks), and any host-to-device output.
+- [x] U14（文档完成，未在实机复核）纠正整理功能“均不动电机”的过度表述，明确值撤销/联动的电机门禁；将“设备从不回报”收窄为已录制范围，统一已有 HW-6 签收与 U3 历史行为的文案。不新增实机签收。
 
-On 2026-11-12, with no controller plugged into the Mac mini, a temporary virtual
-"X-TOUCH COMPACT" device stood in for it. The client published both ports locally, fader
-CC from the remote device arrived in order, and a Note On sent locally reached the remote
-device. The temporary device and its files were then removed. **A physical controller on the
-remote Mac has not been tested yet.** Run `devices` once it is plugged in.
+### 不接设备开发：第二轮
 
-## Command event logs (U5, software verification only)
+- [x] U15（软件完成，未在实机复核）历史 SDK 归档成为带原始 SHA-256、来源提交和 MIT 许可的测试 fixture；干净 CI 自动取得并校验，缺失必须失败，不再跳过两项旧 SDK 门禁测试。
+- [ ] U16 App 离线录制审查：只读导入 JSONL，展示触摸/层不一致输出、松手统计及未知证据；使用原生核心解析，不依赖外部 Python 运行时。
+- [ ] U17 隔离 Mock 重播：只处理录制输入及已记录状态边界，支持逐步/全部/重置，录制 OUT 永不送入设备或当前会话。
+- [x] U18（软件完成，未在实机复核）日志写入可靠性：可独立测试的追加写入层，覆盖权限、写入/同步失败与中断，不启动 MIDI 子命令。
 
-`button-light`, `ring-display`, `ring-style`, `select-layer`, `fader-move`, `bridge`
-and `client` accept `--log PATH`. The local file is opened for append before
-CoreMIDI/SSH starts; existing contents are preserved, new files use mode 0600,
-and symlink destinations are rejected. Parent directories must already exist.
-The option is not passed through SSH: a client log lives on the client Mac; a
-bridge log lives on the bridge Mac. One-shot commands append the same JSONL as
-stdout, including a refused fader move (exit 3). Forwarders append `midi-forward`
-records without contaminating the binary stdout stream. `forwarded` means only
-the local transport operation succeeded, never device acknowledgement.
+D2/D4 按用户本轮选择继续待定；H 组与 N5 仍不签收，不操作桌面。
 
-Every `listen` event now includes fractional ISO-8601 `wallClock` alongside the
-existing monotonic `t`. Fader observation records retain their receive wall time,
-even though they are printed after the window. The final `stopped` record has
-`touchMessages` and `positionMessages` for the selected physical fader on either
-TX layer, in the interval from send through `--observe` seconds. A zero count is
-silence in that window, not proof of arrival or a hand being absent.
+### 需要人在设备旁（H 组，回来后做）
 
-Logging failures stop with exit 2; a command may already have been sent, so do
-not automatically retry it. Synchronous log writes add latency; this development
-journal provides no realtime or lossless-sniffer guarantee. This round exercises
-argument parsing, JSON format and summary counting only. No sender, listener or
-forwarder was run against hardware. 未在实机复核。
+- [ ] H1 层按钮高亮与切层文案的目视复核：实体可发送模式点 A、B，高亮应跟随所点的层。
+- [ ] H2 工具“监听窗口内有触摸就拒绝”的实机触发：轻点 F1 时运行 `fader-move`，应退出码 3 且不发送。
+- [ ] H3 按住丢指令在 F2–F9 上各重复一次；F2–F9 在 B 层和其他数值各发一次。
+- [ ] H4 按住推子时切层，固件是否硬推：有夹手可能，先定做法（轻扶、可随时松手、只测一个推子）再做。
+- [ ] H5 插回 USB 时推子走动的来源：App 处于只听模式（不发切层）时拔插一次，区分上电与切层指令。
+- [ ] H6 U2/U3 合入后的实机复核：触摸时点层按钮应无动作；重连后推子不应自行走动。
+- [ ] H7 其余既有实机项：HW-1 固件版本、HW-2/HW-3 全量覆盖、灯环各样式下本地转动画法、踏板、启动读回、N5 七项鼠标验收、整理功能目视验收。
+
+### 产品方向，确定使用场景后再开发
+
+- [x] D1 参数数值持久化：上游已实现可选parameterValues，按配置ID校验，每秒至多保存一次、正常退出刷新；默认值不新建文件。恢复目标/bank/灯环/LED，启动、重连或进入硬件模式均不回放电机，回位仍需显式操作。
+- [x] D3 Agent电机授权：上游已增加会话级开关，默认关闭且依赖写权限。关闭时Agent仅改数值/灯环/LED，不发或排队推子电机指令，并丢弃旧暂缓目标；set_parameter返回motorsWithheld，get_state.permissions报告权限。本机界面与实体输入保留原行为。
+- 后续真实Agent若需要按进程/槽位/操作细分权限，再按具体业务立项；既有surface预算/模拟管理门禁保持。
+- [ ] D4 真实外部Agent适配：当前只有共享Mock时间线，依赖D3与实机触摸仲裁验收。
+- [ ] D2 输出接入：先明确可信actual与独立heartbeat的接收端协议，再实现认证、单调时间戳、断线/过期及off/on恢复；随后按实际需求扩展多参数/可配置OSC地址。目前只有单参数固定地址且无内建可信receiver。
+- [ ] D5 Mackie Control、编辑器预置、相对模式：有实际需求及设备特性证据后另立计划，不作为本轮必做项。
+
+版本标签/正式签署与发布按用户决定；硬件配置、设备预设和固件不因文档整理而改变。

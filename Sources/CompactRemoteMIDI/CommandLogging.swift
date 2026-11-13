@@ -32,10 +32,12 @@ public enum RemoteEventJSON {
     /// Same canonical JSONL for stdout and the append log. Wall time is recorded at
     /// observation, including MIDI replayed after the fader observation window.
     public static func line(_ fields: [String: Any], at date: Date) throws -> Data {
+        guard date.timeIntervalSince1970.isFinite else { throw RemoteMIDIError.protocolViolation("invalid event time") }
         var row = fields
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         row["wallClock"] = formatter.string(from: date)
+        guard JSONSerialization.isValidJSONObject(row) else { throw RemoteMIDIError.protocolViolation("invalid event JSON") }
         var data = try JSONSerialization.data(withJSONObject: row, options: [.sortedKeys])
         data.append(0x0A)
         return data
