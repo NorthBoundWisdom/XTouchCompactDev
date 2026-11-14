@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "fixtures": {
+    "surface-control-hardware-v1.4": {
+      "roles": {
+        "input_a": "b.fader.1",
+        "relative_input": null,
+        "button_input": "b.button.1",
+        "touch_input": "b.touch.1",
+        "feedback_state": "b.button.2",
+        "feedback_progress": "b.encoder.1"
+      }
+    }
+  }
+}
