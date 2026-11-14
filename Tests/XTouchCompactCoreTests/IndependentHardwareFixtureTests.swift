@@ -93,8 +93,8 @@ final class IndependentHardwareFixtureTests: XCTestCase {
                         let update = ControlFeedback(expected: host.controls.expected, expectedSequence: host.controls.discovery().latest_sequence, controlID: row.id, kind: kind, value: value)
                         var candidate = host
                         let messages = try candidate.displayPlan(update, allowed: true, at: time)
-                        let accepted = try candidate.recordFeedback(update, at: time)
                         try display.send(messages, configuration: host.configuration, reject: step["operation"] as? String == "feedback_failure")
+                        let accepted = try candidate.recordFeedback(update, at: time)
                         host = candidate; event = accepted
                     case "input":
                         let row = try XCTUnwrap(control)
