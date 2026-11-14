@@ -45,7 +45,7 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 
 | Delivery file | Shared source |
 | --- | --- |
-| `surface-control-sdk-1.4.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/`, and separate `surface_control_testing/` sources/README |
+| `surface-control-sdk-1.4.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/`, and separate `surface_control_testing/` / `surface_control_diagnostics/` sources/README |
 | `control-tools.json` | `docs/surface-control-tools.json` |
 | `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
 | `surface-control-software-v1.json`, `surface-control-software-v1.1.json`, `surface-control-software-v1.2.json`, `surface-control-software-v1.3.json` | `fixtures/` |
@@ -566,3 +566,9 @@ example profile version/mapping pin updated before newer deliveries can assemble
 probe reports that refusal separately from the supplier's descriptor checks; it does not patch
 the consumer or claim an accepted 1.2/1.3 assembly. Contract 1.3 consumer adoption
 is a separate consumer-side task; supplier tests do not establish that compatibility.
+
+The SDK includes the independent read-only `surface_control_diagnostics` package
+for bounded discovery/snapshot/events capture and completely offline verification.
+Its README and `surface-control-diagnostic-capture.schema.json` describe scope and
+nonzero incomplete results; the simulator remains simulation Contract 1.3 and
+the tool does not grant hardware access or emit inputs/displays.

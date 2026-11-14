@@ -30,8 +30,15 @@ private nonisolated(unsafe) var ownedReadyInode: ino_t = 0
 // Keep this inode alive until process exit. Closing it after creation lets Linux reuse the
 // inode for an unrelated replacement at the same path, defeating the ownership check.
 private nonisolated(unsafe) var ownedReadyDescriptor: Int32 = -1
+// Disabled-mode cleanup evidence is pre-encoded before installing handlers. The handler
+// performs only write/lstat/unlink/signal/raise; no locks, allocation or JSON encoding.
+private nonisolated(unsafe) var disabledCleanupBytes: UnsafeMutablePointer<UInt8>?
+private nonisolated(unsafe) var disabledCleanupCount = 0
 
 private func removeOwnedReadyFile() {
+    if let bytes = disabledCleanupBytes {
+        _ = write(STDERR_FILENO, bytes, disabledCleanupCount)
+    }
     guard ownedReadyDescriptor >= 0, let path = ownedReadyPath else { return }
     var info = stat()
     if lstat(path, &info) == 0, info.st_dev == ownedReadyDevice, info.st_ino == ownedReadyInode {
@@ -107,6 +114,8 @@ private func removeOwnedReadyFile() {
         var tokenStdin = false
         var readyPath: String?
         var deviceName = "X-TOUCH COMPACT"
+        var deviceAccess: HardwareDeviceAccess = .enabled
+        var explicitDeviceAccess = false
         var receiveChannel: UInt8?
         var transmitChannel: UInt8 = 0
         var lights: ButtonLightProtocol?
@@ -140,13 +149,16 @@ private func removeOwnedReadyFile() {
                 explicitWriteLimit = true
                 guard let limit = try Int(value()), (1 ... 10000).contains(limit) else { throw StartupError.invalidArguments }
                 writeLimit = limit
+            case "--device-access":
+                guard !explicitDeviceAccess, let parsed = try HardwareDeviceAccess(rawValue: value()) else { throw StartupError.invalidArguments }
+                deviceAccess = parsed; explicitDeviceAccess = true
             case "--describe": describe = true
             case "--device": deviceName = try value(); guard !deviceName.isEmpty else { throw StartupError.invalidArguments }
             case "--receive-channel": guard let channel = try UInt8(value()), (1 ... 16).contains(channel) else { throw StartupError.invalidArguments }; receiveChannel = channel - 1
             case "--transmit-channel": guard let channel = try UInt8(value()), (1 ... 16).contains(channel) else { throw StartupError.invalidArguments }; transmitChannel = channel - 1
             case "--light-protocol": guard let parsed = try ButtonLightProtocol(rawValue: value()) else { throw StartupError.invalidArguments }; lights = parsed
             case "--help":
-                print("XTouchSurfaceHardware --receive-channel 1..16 --light-protocol manual|observed114 [--transmit-channel 1..16] [--device NAME] [--token-file PATH|--token-stdin] [--port 0] [--ready-file PATH] [--surface-instance-id ID] [--surface-principal-file PATH] [--write-limit N|--write-limits input=N,feedback=N,renew=N,admin=N] [--allow-surface-feedback] [--describe]\nDisplay only; no motor, layer or mode output. Display feedback defaults off.")
+                print("XTouchSurfaceHardware --receive-channel 1..16 --light-protocol manual|observed114 [--transmit-channel 1..16] [--device NAME] [--device-access enabled|disabled] [--token-file PATH|--token-stdin] [--port 0] [--ready-file PATH] [--surface-instance-id ID] [--surface-principal-file PATH] [--write-limit N|--write-limits input=N,feedback=N,renew=N,admin=N] [--allow-surface-feedback] [--describe]\nDisplay only; no motor, layer or mode output. Display feedback defaults off.\n--device-access disabled is immutable offline diagnostics: no MIDI creation/enumeration/connection or scripted inputs; permanently disconnected, no physical qualification.")
                 return
             case "--surface-instance-id":
                 instance = try value()
@@ -160,10 +172,13 @@ private func removeOwnedReadyFile() {
             }
         }
         guard !explicitWriteLimit || writeLimits == nil, let receiveChannel, let lights else { throw StartupError.invalidArguments }
+        let environment = ProcessInfo.processInfo.environment
+        let injectionRequested = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] != nil || environment["XTOUCH_HARDWARE_TEST_REPORT"] != nil
+        guard deviceAccess != .disabled || !injectionRequested else { throw HardwareDeviceAccess.SelectionError.disabledRejectsTestInjection }
         let configuration = try CompactHardwareConfiguration(transmitChannel: transmitChannel, receiveChannel: receiveChannel, lightProtocol: lights)
         if describe {
             let surface = try CompactHardwareSurface(instanceID: "example.hardware", epoch: "discovery-only", configuration: configuration, hardwareWriterID: "hardware.example", remoteWriterID: "remote.example", writeLimits: writeLimits)
-            let value: JSONValue = try .object(["discovery": .encoded(surface.controls.discovery()), "tools": .array(SurfaceControlTools.descriptors(source: .hardware).map { try .encoded($0) })])
+            let value: JSONValue = try .object(["device_access": .string(deviceAccess.rawValue), "diagnostic_only": .bool(deviceAccess == .disabled), "discovery": .encoded(surface.controls.discovery()), "tools": .array(SurfaceControlTools.descriptors(source: .hardware).map { try .encoded($0) })])
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
             try FileHandle.standardOutput.write(encoder.encode(value) + Data("\n".utf8))
             return
@@ -188,15 +203,19 @@ private func removeOwnedReadyFile() {
         let principals = try SurfacePrincipals.loadOrCreate(path: principalPath)
         var surface = try CompactHardwareSurface(instanceID: instance, epoch: UUID().uuidString, configuration: configuration,
                                                  hardwareWriterID: principals.interface_writer_id, remoteWriterID: principals.remote_writer_id, writeLimits: writeLimits)
-        let environment = ProcessInfo.processInfo.environment
-        let midi: any HardwareMIDI
+        let audit = DeviceAccessAudit(access: deviceAccess)
         let testOnly = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] != nil
-        if let path = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] {
-            midi = ScriptedHardwareMIDI(path: path, report: environment["XTOUCH_HARDWARE_TEST_REPORT"], configuration: configuration)
-            FileHandle.standardError.write(Data("TEST ONLY MIDI: not an entity device; no physical qualification.\n".utf8))
-        } else {
-            midi = try CoreHardwareMIDI(deviceName: deviceName, configuration: configuration)
-        }
+        let midi: any HardwareMIDI = try deviceAccess.make(testInjectionRequested: injectionRequested, disabled: {
+            DisabledHardwareMIDI()
+        }, enabled: {
+            if let path = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] {
+                audit.increment("scripted_factory_calls")
+                FileHandle.standardError.write(Data("TEST ONLY MIDI: not an entity device; no physical qualification.\n".utf8))
+                return ScriptedHardwareMIDI(path: path, report: environment["XTOUCH_HARDWARE_TEST_REPORT"], configuration: configuration)
+            }
+            audit.increment("coremidi_factory_calls")
+            return try CoreHardwareMIDI(deviceName: deviceName, configuration: configuration, audit: audit)
+        })
         func drainMIDI() {
             do {
                 for event in try midi.drain() {
@@ -213,12 +232,19 @@ private func removeOwnedReadyFile() {
             }
         }
         drainMIDI()
+        if deviceAccess == .disabled {
+            let bytes = audit.line("device_access_disabled_cleanup")
+            disabledCleanupCount = bytes.count
+            disabledCleanupBytes = .allocate(capacity: bytes.count)
+            bytes.copyBytes(to: disabledCleanupBytes!, count: bytes.count)
+        }
+        audit.emit("device_access_startup")
         let server = try LoopbackHTTPServer(port: port, token: token)
         let discovery = surface.controls.discovery()
         let ready: JSONValue = try .object(["expected": .encoded(discovery.expected), "latest_sequence": .string(discovery.latest_sequence),
                                             "source": .string("hardware"), "contract_version": .string(discovery.contract_version)])
         let metadata: JSONValue = .object(["status": .string("ready"), "pid": .number(Int(ProcessInfo.processInfo.processIdentifier)),
-                                           "port": .number(Int(server.port)), "url": .string("http://127.0.0.1:\(server.port)/mcp"), "source": .string("hardware"), "test_only": .bool(testOnly), "surface_control": ready])
+                                           "port": .number(Int(server.port)), "url": .string("http://127.0.0.1:\(server.port)/mcp"), "source": .string("hardware"), "test_only": .bool(testOnly), "device_access": .string(deviceAccess.rawValue), "diagnostic_only": .bool(deviceAccess == .disabled), "device_io": .object(audit.snapshot.mapValues(JSONValue.number)), "surface_control": ready])
         let readyBytes = try JSONEncoder().encode(metadata)
         installTerminationCleanup()
         if let readyPath {
@@ -232,10 +258,17 @@ private func removeOwnedReadyFile() {
             drainMIDI()
             nextPoll = ProcessInfo.processInfo.systemUptime + 0.02
         }) { body in
+            var auditOperation = "unparsed"
+            defer {
+                if deviceAccess == .disabled {
+                    audit.emit("device_access_request_complete", operation: auditOperation)
+                }
+            }
             var id: JSONValue = .null
             do {
                 guard let request = try? JSONDecoder().decode(JSONValue.self, from: body) else { throw RPCError.parse }
                 guard let object = request.objectValue, object["jsonrpc"] == .string("2.0"), let method = object["method"]?.stringValue else { throw RPCError.invalidRequest }
+                auditOperation = ["initialize", "ping", "tools/list", "notifications/initialized"].contains(method) ? method : "unsupported"
                 if let requestID = object["id"] {
                     guard requestID.stringValue != nil || requestID.finiteNumber != nil || requestID == .null else { throw RPCError.invalidRequest }
                 }
@@ -257,6 +290,9 @@ private func removeOwnedReadyFile() {
                     })])
                 case "tools/call":
                     guard let params = object["params"]?.objectValue, let name = params["name"]?.stringValue else { throw RPCError.invalidParams }
+                    if SurfaceControlTools.descriptors(source: .hardware).contains(where: { $0.name == name }) {
+                        auditOperation = name
+                    }
                     do {
                         let operation = try SurfaceControlTools.parse(name, arguments: params["arguments"] ?? .object([:]))
                         drainMIDI()

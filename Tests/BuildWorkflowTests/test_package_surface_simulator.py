@@ -84,6 +84,10 @@ class DeliveryContentTests(unittest.TestCase):
         self.assertEqual(body, (shared / package_surface_simulator.SDK_SOURCE).read_bytes())
         self.assertIn(b'__version__ = "1.4.0"', body)
         self.assertIn("surface_control_testing/README.md", expected_members)
+        self.assertIn("surface_control_diagnostics/README.md", expected_members)
+        self.assertFalse(
+            any(member.startswith("surface_control/surface_control_diagnostics/") for member in expected_members)
+        )
         self.assertFalse(
             any(member.startswith("surface_control/surface_control_testing/") for member in expected_members)
         )

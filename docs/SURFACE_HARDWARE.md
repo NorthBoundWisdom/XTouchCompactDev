@@ -113,3 +113,57 @@ The original rich fixture retains its exact assertions and relative-role limitat
 The new transport rejection is injected in a test-only display adapter, with no
 new public tool or production error code. Outside-source describe verification
 uses the delivered checker to validate both hardware role-map entries.
+
+## Device access disabled: offline diagnostics
+
+`--device-access enabled|disabled` is a process-start choice; default `enabled`
+retains the ordinary device service. Explicit `disabled` selects a permanent
+no-device adapter. It creates no CoreMIDI client or ports, enumerates no sources
+or destinations, connects no endpoint, and cannot send. It never loads a local
+MIDI script: combining disabled access with either XTOUCH_HARDWARE_TEST_SCRIPT
+or XTOUCH_HARDWARE_TEST_REPORT is refused before either transport factory runs.
+There is no HTTP or runtime switch to enable access; use a fresh process with
+explicit `--device-access enabled` when separately authorized to access devices.
+
+RX channel and light protocol remain required even for offline profile inspection:
+
+```sh
+./XTouchSurfaceHardware --device-access disabled \
+  --receive-channel 2 --light-protocol observed114 \
+  --token-file /private/offline-token --port 0 --ready-file /private/offline.ready.json
+```
+
+Ready/describe identify `device_access: disabled`, `diagnostic_only: true`;
+ready also has public `device_io` call counters. Link is permanently disconnected,
+inputs/feedback remain unknown/empty and event sequences stay zero. The declared
+source is still hardware Contract 1.4; it does not assert that a controller is
+attached. SDK hardware opt-in does not override the disconnected gate. Even with
+`--allow-surface-feedback`, valid displays fail `invalid_transition` on this link.
+Input/renew/reset retain their fixed refusal codes and cannot create observations.
+
+The disabled process emits JSONL audit records to stderr at startup, admitted RPC
+completion and signal cleanup. Counts cover CoreMIDI/script factory calls, client
+and port creation, endpoint enumeration/connection, MIDI sends and accepted
+messages. Disabled mode keeps every count zero. Operation names are taken only
+from a fixed known catalog; request strings or credentials are not reflected.
+Signal cleanup uses pre-encoded immutable disabled-state evidence and async-safe
+writes; owned-ready cleanup remains the same as the ordinary service.
+
+`verify_hardware_http.py DELIVERY --evidence OUTSIDE_DIRECTORY` uses the delivered
+binary and zipped SDK, with no fake MIDI environment, for real authenticated
+127.0.0.1 HTTP. It labels read-only discovery/snapshot/events separately from
+explicit refusal/admission probes. It checks zero access counters, unknown state,
+SDK opt-in, fixed write denials, disconnected feedback denial, token/Origin,
+new-process epochs and SIGTERM/SIGINT cleanup. It is diagnostic transport evidence,
+not complete connected-device conformance or physical acceptance. The original
+`verify_hardware_delivery.py` remains the static/describe-only check.
+
+The SDK also carries independent `surface_control_diagnostics/` with its own
+README, alongside the runtime, checker and test double. Its bounded capture calls
+only discover/snapshot/events; offline verify reads the capture without HTTP.
+Initial disconnected capture and verification both intentionally exit 1, with
+`verified_recorded_invariants` and `incomplete_or_failed`. This is a well-formed
+record of a disconnected service, not successful hardware diagnostics. The shared
+capture schema is shipped separately and hashed. Source-independent verification
+checks its read-only request allowlist and verifies that offline validation adds
+no service request.

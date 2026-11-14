@@ -23,6 +23,7 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     private var destination: MIDIEndpointRef = 0
     private let configuration: CompactHardwareConfiguration
     private let deviceName: String
+    private let audit: DeviceAccessAudit
     private let lock = NSLock()
     private var pending: [HardwareMIDIEvent] = []
     private var overflow = false
@@ -30,10 +31,14 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     private var seenSource: MIDIEndpointRef = 0
     private var seenDestination: MIDIEndpointRef = 0
 
-    init(deviceName: String, configuration: CompactHardwareConfiguration) throws {
+    init(deviceName: String, configuration: CompactHardwareConfiguration, audit: DeviceAccessAudit) throws {
+        self.audit = audit
         self.configuration = configuration
         self.deviceName = deviceName
-        guard MIDIClientCreateWithBlock("XTouchSurfaceHardware" as CFString, &client, { _ in }) == noErr, MIDIInputPortCreateWithProtocol(client, "Hardware input" as CFString, ._1_0, &input, { [weak self] list, tag in
+        audit.increment("client_create_calls")
+        guard MIDIClientCreateWithBlock("XTouchSurfaceHardware" as CFString, &client, { _ in }) == noErr else { throw ControlContractError("transport_error") }
+        audit.increment("input_port_create_calls")
+        guard MIDIInputPortCreateWithProtocol(client, "Hardware input" as CFString, ._1_0, &input, { [weak self] list, tag in
             guard let self else { return }
             lock.lock(); defer { lock.unlock() }
             guard source != 0, source == MIDIEndpointRef(UInt(bitPattern: tag)), let packetOffset = MemoryLayout<MIDIEventList>.offset(of: \.packet), let wordsOffset = MemoryLayout<MIDIEventPacket>.offset(of: \.words) else { return }
@@ -50,7 +55,9 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
                 }
                 packet = UnsafePointer(MIDIEventPacketNext(packet))
             }
-        }) == noErr, MIDIOutputPortCreate(client, "Display only" as CFString, &output) == noErr else { throw ControlContractError("transport_error") }
+        }) == noErr else { throw ControlContractError("transport_error") }
+        audit.increment("output_port_create_calls")
+        guard MIDIOutputPortCreate(client, "Display only" as CFString, &output) == noErr else { throw ControlContractError("transport_error") }
     }
 
     deinit {
@@ -82,9 +89,16 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         return candidates.count == 1 ? candidates[0] : 0
     }
 
+    private func endpoints() -> (MIDIEndpointRef, MIDIEndpointRef) {
+        audit.increment("source_enumeration_calls")
+        let source = find(MIDIGetNumberOfSources(), at: MIDIGetSource)
+        audit.increment("destination_enumeration_calls")
+        let destination = find(MIDIGetNumberOfDestinations(), at: MIDIGetDestination)
+        return (source, destination)
+    }
+
     func drain() throws -> [HardwareMIDIEvent] {
-        let newSource = find(MIDIGetNumberOfSources(), at: MIDIGetSource)
-        let newDestination = find(MIDIGetNumberOfDestinations(), at: MIDIGetDestination)
+        let (newSource, newDestination) = endpoints()
         lock.lock()
         let oldSource = source
         let changed = !initialized || newSource != seenSource || newDestination != seenDestination || overflow
@@ -97,7 +111,11 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
             if oldSource != 0 {
                 MIDIPortDisconnectSource(input, oldSource)
             }
-            let connected = newSource != 0 && newDestination != 0 && MIDIPortConnectSource(input, newSource, UnsafeMutableRawPointer(bitPattern: UInt(newSource))) == noErr
+            var connected = false
+            if newSource != 0, newDestination != 0 {
+                audit.increment("source_connect_calls")
+                connected = MIDIPortConnectSource(input, newSource, UnsafeMutableRawPointer(bitPattern: UInt(newSource))) == noErr
+            }
             lock.lock()
             source = connected ? newSource : 0; destination = connected ? newDestination : 0
             pending.insert(.link(connected: connected), at: 0)
@@ -110,15 +128,16 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
 
     func send(_ message: HardwareDisplayMessage) throws {
         // Refresh endpoint identity immediately before sending. A transition invalidates the caller's pin.
-        let newSource = find(MIDIGetNumberOfSources(), at: MIDIGetSource)
-        let newDestination = find(MIDIGetNumberOfDestinations(), at: MIDIGetDestination)
+        let (newSource, newDestination) = endpoints()
         lock.lock(); let current = destination; let same = source != 0 && source == newSource && destination == newDestination; lock.unlock()
         guard same, current != 0 else { throw ControlContractError("invalid_transition") }
         var word = try message.word(configuration: configuration)
         var list = MIDIEventList()
         let first = MIDIEventListInit(&list, ._1_0)
         _ = MIDIEventListAdd(&list, MemoryLayout<MIDIEventList>.size, first, 0, 1, &word)
+        audit.increment("midi_send_calls")
         guard MIDISendEventList(output, current, &list) == noErr else { throw ControlContractError("transport_error") }
+        audit.increment("accepted_messages")
     }
 }
 

@@ -38,6 +38,8 @@ SDK_ZIP = "surface-control-sdk-" + SDK_VERSION + ".zip"
 # Published shared files, copied byte for byte from the managed dependency (single source, D19-6).
 # integrations/ and clients/python/tests are deliberately not part of a generic delivery.
 SHARED_FILES = {
+    "surface-control-diagnostic-capture.schema.json": "docs/surface-control-diagnostic-capture.schema.json",
+    "surface-control-diagnostics.md": "docs/surface-control-diagnostics.md",
     "control-tools.json": "docs/surface-control-tools.json",
     "surface-control-scenario.schema.json": "docs/surface-control-scenario.schema.json",
     "surface-control-software-v1.json": "fixtures/surface-control-software-v1.json",
@@ -63,7 +65,12 @@ def sdk_sources(shared=SHARED):
     python_root = shared / "clients/python"
     return sorted(
         str(path.relative_to(shared))
-        for package in ("surface_control", "surface_conformance", "surface_control_testing")
+        for package in (
+            "surface_control",
+            "surface_conformance",
+            "surface_control_testing",
+            "surface_control_diagnostics",
+        )
         for path in (python_root / package).rglob("*")
         if path.is_file() and path.suffix in (".py", ".md")
     )

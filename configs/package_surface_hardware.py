@@ -19,6 +19,8 @@ except ImportError:
     from package_surface_simulator import ROOT, SHARED, command
 
 SHARED_FILES = {
+    "surface-control-diagnostic-capture.schema.json": "docs/surface-control-diagnostic-capture.schema.json",
+    "surface-control-diagnostics.md": "docs/surface-control-diagnostics.md",
     "control-tools.json": "docs/surface-control-hardware-tools.json",
     "control-examples.json": "docs/surface-control-hardware-examples.json",
     "surface-control-hardware-v1.4.json": "fixtures/surface-control-hardware-v1.4.json",
@@ -43,7 +45,12 @@ def sdk_sources():
     python = SHARED / "clients/python"
     return sorted(
         path
-        for package in ("surface_control", "surface_conformance", "surface_control_testing")
+        for package in (
+            "surface_control",
+            "surface_conformance",
+            "surface_control_testing",
+            "surface_control_diagnostics",
+        )
         for path in (python / package).rglob("*")
         if path.is_file() and path.suffix in (".py", ".md")
     )
@@ -58,6 +65,7 @@ def stage_files(stage):
         ("configs/surface_plugins.lock.json", "surface_plugins.lock.json"),
         ("examples/surface_hardware/conformance-roles.json", "conformance-roles.json"),
         ("configs/verify_hardware_delivery.py", "verify_hardware_delivery.py"),
+        ("configs/verify_hardware_http.py", "verify_hardware_http.py"),
     ):
         shutil.copy2(ROOT / source, stage / name)
     with zipfile.ZipFile(stage / SDK_ZIP, "w") as sdk:
@@ -138,6 +146,12 @@ def package(output_root, configuration="release"):
                 if path.is_file()
             },
             "test_artifacts": [{"artifact": "surface-control-test-only-hardware-double", "qualification": "test-only"}],
+            "offline_diagnostic_mode": {
+                "argument": "--device-access disabled",
+                "device_access": "disabled",
+                "link": "disconnected",
+                "qualification": "diagnostic HTTP only; no connected hardware",
+            },
             "device_configuration": {
                 "transmit_channel": 1,
                 "receive_channel": 2,

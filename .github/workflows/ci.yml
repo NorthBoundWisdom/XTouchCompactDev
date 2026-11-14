@@ -53,6 +53,8 @@ jobs:
         run: swift build --jobs 2 --product XTouchSurfaceHardware
       - name: Exercise hardware service with isolated fake MIDI only
         run: python3 -B -m unittest discover -s Tests/SimulatorIntegration -p test_hardware_service.py -v
+      - name: Exercise immutable no-device diagnostics over real HTTP
+        run: python3 -B -m unittest discover -s Tests/SimulatorIntegration -p test_hardware_offline_diagnostics.py -v
       - run: python3 configs/macos_workflow.py build
       - name: Isolated native startup
         run: |
