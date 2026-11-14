@@ -92,7 +92,18 @@
         @Published var mcpWritesAllowed = false
         @Published var mcpSimulationControlAllowed = false
         /// Session-only, default off: Agent parameter writes may move motors only when granted.
-        @Published var mcpMotorWritesAllowed = false
+        @Published var mcpMotorWritesAllowed = false {
+            didSet {
+                if mcpMotorWritesAllowed {
+                    confirmCurrentMotorAction()
+                }
+            }
+        }
+
+        // Initial attachment keeps the existing passive/startup semantics. Once a route
+        // has existed, every replacement requires a new confirmation on that route.
+        private var hardwareMotorActionCurrent = true
+        private var hasAttachedHardwareRoute = false
         /// Session-only panel highlight; never persisted or sent to the device.
         @Published var highlightedGroup: String?
         private var surfaceWriteBudget = SurfaceWriteBudget()
@@ -143,6 +154,13 @@
                     || snapshot.connectedOutput?.id != connection.connectedOutput?.id
                     || snapshot.generation != connection.generation
                 if routeChanged {
+                    if hasAttachedHardwareRoute {
+                        hardwareMotorActionCurrent = false
+                        mcpMotorWritesAllowed = false
+                    }
+                    if snapshot.isConnected {
+                        hasAttachedHardwareRoute = true
+                    }
                     liveHardwareValues = nil
                     reportedHardwarePresses = [:]
                 }
@@ -223,6 +241,9 @@
                     return
                 }
                 session.setInputTouches([])
+                if !listenOnly {
+                    confirmCurrentMotorAction()
+                }
                 hardwareFeedbackNeedsSync = true
                 apply { try $0.connect(assertLayer: false) }
             } else {
@@ -269,6 +290,9 @@
             if hardwareMode {
                 hardwareFeedbackNeedsSync = true
                 session.discardPendingMotorWrites(); session.invalidateTransportFeedback(); updateBank()
+                if !enabled {
+                    confirmCurrentMotorAction()
+                }
             }
         }
 
@@ -299,6 +323,16 @@
             guard hardwareMode else { return }
             endHardwareObservation()
             setListenOnly(false)
+            confirmCurrentMotorAction()
+        }
+
+        /// Confirmation is scoped to the current route; it never replays a withheld target.
+        private func confirmCurrentMotorAction() {
+            guard hardwareMode, connection.isConnected, !listenOnly, !isObservingHardware else { return }
+            if !hardwareMotorActionCurrent {
+                session.discardPendingMotorWrites()
+            }
+            hardwareMotorActionCurrent = true
         }
 
         func resetHardwareObservation() {
@@ -652,6 +686,7 @@
         }
 
         func recallMotors() {
+            confirmCurrentMotorAction()
             apply { try $0.recallFaders() }
         }
 
@@ -855,7 +890,21 @@
             do { try validateHardwareLayerAssertion(messages) }
             catch { self.error = error; return .suppressed }
             var withheldMotor = false
+            if hardwareMode, !hardwareMotorActionCurrent {
+                // Even a touched write which generated no message must not queue a target.
+                session.discardPendingMotorWrites()
+            }
             for message in messages {
+                if hardwareMode, !hardwareMotorActionCurrent,
+                   case .controlChange(_, 1 ... 9, _) = message
+                {
+                    withheldMotor = true
+                    hardwareFeedbackNeedsSync = true
+                    error = ConsoleError.motorActionRequired
+                    session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed)
+                    continue
+                }
                 // A preceding transport call can synchronously deliver a new touch edge.
                 do { try validateHardwareLayerAssertion([message]) }
                 catch {
@@ -1069,7 +1118,7 @@
             objectWillChange.send()
         }
 
-        private enum ConsoleError: Error { case noConnection }
+        private enum ConsoleError: Error { case noConnection, motorActionRequired }
 
         func errorText(using l: Localizer) -> String {
             guard let error else { return connection.error.map { l.text($0) } ?? "" }
@@ -1096,7 +1145,9 @@
                 }
             case is CaptureReviewError:
                 return l.text("Capture evidence is malformed; the original was preserved.")
-            case is ConsoleError:
+            case ConsoleError.motorActionRequired:
+                return l.text("Explicit motor recall is required after connecting or switching layers. Make sure the faders are unobstructed.")
+            case ConsoleError.noConnection:
                 return l.text("No complete Compact MIDI input/output connection; select endpoints or connect hardware.")
             case let error as CompactMIDIError:
                 switch error {
