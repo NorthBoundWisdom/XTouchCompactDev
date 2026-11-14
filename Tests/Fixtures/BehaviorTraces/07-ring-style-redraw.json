@@ -5,14 +5,64 @@
   "steps" : [
     {
       "input" : {
+        "context" : {
+          "kind" : "layer",
+          "value" : null
+        },
+        "element" : null,
         "hardware_context" : null,
         "injected_time" : 0,
         "operation" : "set_ring_value",
         "raw_messages" : [
 
-        ]
+        ],
+        "role" : null
       },
       "observation" : {
+        "declarations" : [
+          {
+            "source_field" : "/observation/fader_1_observation_current",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/fader_1_observed",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/host_layer",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/last_sent_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/layer_mismatch",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/observed_layer",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/pending_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/touched",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/output/sent/0",
+            "state" : "sent_only",
+            "target" : "encoder.1.ring",
+            "value" : [
+              176,
+              26,
+              7
+            ]
+          }
+        ],
         "fader_1_observation_current" : null,
         "fader_1_observed" : null,
         "host_layer" : "a",
@@ -29,6 +79,16 @@
       "output" : {
         "cancelled" : [
 
+        ],
+        "declarations" : [
+          {
+            "affected" : [
+              "encoder.1"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/0",
+            "target" : "encoder.1.ring"
+          }
         ],
         "deferred" : [
 
@@ -58,14 +118,74 @@
     },
     {
       "input" : {
+        "context" : {
+          "kind" : "layer",
+          "value" : null
+        },
+        "element" : null,
         "hardware_context" : null,
         "injected_time" : 0.10000000000000001,
         "operation" : "style_redraw_and_same_value",
         "raw_messages" : [
 
-        ]
+        ],
+        "role" : null
       },
       "observation" : {
+        "declarations" : [
+          {
+            "source_field" : "/observation/fader_1_observation_current",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/fader_1_observed",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/host_layer",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/last_sent_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/layer_mismatch",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/observed_layer",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/pending_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/touched",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/output/sent/0",
+            "state" : "sent_only",
+            "target" : "encoder.1.ring.style",
+            "value" : [
+              176,
+              10,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/1",
+            "state" : "sent_only",
+            "target" : "encoder.1.ring",
+            "value" : [
+              176,
+              26,
+              7
+            ]
+          }
+        ],
         "fader_1_observation_current" : null,
         "fader_1_observed" : null,
         "host_layer" : "a",
@@ -82,6 +202,24 @@
       "output" : {
         "cancelled" : [
 
+        ],
+        "declarations" : [
+          {
+            "affected" : [
+              "encoder.1"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/0",
+            "target" : "encoder.1.ring.style"
+          },
+          {
+            "affected" : [
+              "encoder.1"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/1",
+            "target" : "encoder.1.ring"
+          }
         ],
         "deferred" : [
 
@@ -116,14 +254,54 @@
     },
     {
       "input" : {
+        "context" : {
+          "kind" : "layer",
+          "value" : null
+        },
+        "element" : null,
         "hardware_context" : null,
         "injected_time" : 0.20000000000000001,
         "operation" : "same_ring_value_after_redraw",
         "raw_messages" : [
 
-        ]
+        ],
+        "role" : null
       },
       "observation" : {
+        "declarations" : [
+          {
+            "source_field" : "/observation/fader_1_observation_current",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/fader_1_observed",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/host_layer",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/last_sent_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/layer_mismatch",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/observed_layer",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/pending_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/touched",
+            "state" : "unknown"
+          }
+        ],
         "fader_1_observation_current" : null,
         "fader_1_observed" : null,
         "host_layer" : "a",
@@ -139,6 +317,9 @@
       },
       "output" : {
         "cancelled" : [
+
+        ],
+        "declarations" : [
 
         ],
         "deferred" : [

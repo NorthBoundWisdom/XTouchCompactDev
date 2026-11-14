@@ -5,14 +5,54 @@
   "steps" : [
     {
       "input" : {
+        "context" : {
+          "kind" : "layer",
+          "value" : null
+        },
+        "element" : null,
         "hardware_context" : null,
         "injected_time" : 0,
         "operation" : "failed_motor_write",
         "raw_messages" : [
 
-        ]
+        ],
+        "role" : null
       },
       "observation" : {
+        "declarations" : [
+          {
+            "source_field" : "/observation/fader_1_observation_current",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/fader_1_observed",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/host_layer",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/last_sent_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/layer_mismatch",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/observed_layer",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/pending_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/touched",
+            "state" : "unknown"
+          }
+        ],
         "fader_1_observation_current" : null,
         "fader_1_observed" : null,
         "host_layer" : "a",
@@ -29,6 +69,16 @@
       "output" : {
         "cancelled" : [
 
+        ],
+        "declarations" : [
+          {
+            "affected" : [
+              "fader.1"
+            ],
+            "category" : "motion",
+            "source_field" : "/output/failed/0",
+            "target" : "fader.1.motor"
+          }
         ],
         "deferred" : [
 
@@ -58,14 +108,64 @@
     },
     {
       "input" : {
+        "context" : {
+          "kind" : "layer",
+          "value" : null
+        },
+        "element" : null,
         "hardware_context" : null,
         "injected_time" : 0.10000000000000001,
         "operation" : "retry_same_desired_value",
         "raw_messages" : [
 
-        ]
+        ],
+        "role" : null
       },
       "observation" : {
+        "declarations" : [
+          {
+            "source_field" : "/observation/fader_1_observation_current",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/fader_1_observed",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/host_layer",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/last_sent_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/layer_mismatch",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/observed_layer",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/pending_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/touched",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/output/sent/0",
+            "state" : "sent_only",
+            "target" : "fader.1.motor",
+            "value" : [
+              176,
+              1,
+              80
+            ]
+          }
+        ],
         "fader_1_observation_current" : null,
         "fader_1_observed" : null,
         "host_layer" : "a",
@@ -82,6 +182,16 @@
       "output" : {
         "cancelled" : [
 
+        ],
+        "declarations" : [
+          {
+            "affected" : [
+              "fader.1"
+            ],
+            "category" : "motion",
+            "source_field" : "/output/sent/0",
+            "target" : "fader.1.motor"
+          }
         ],
         "deferred" : [
 

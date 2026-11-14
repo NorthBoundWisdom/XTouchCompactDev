@@ -5,6 +5,11 @@
   "steps" : [
     {
       "input" : {
+        "context" : {
+          "kind" : "layer",
+          "value" : "a"
+        },
+        "element" : "fader.7",
         "hardware_context" : "a",
         "injected_time" : 0,
         "operation" : "receive",
@@ -14,9 +19,44 @@
             107,
             127
           ]
-        ]
+        ],
+        "role" : "touch"
       },
       "observation" : {
+        "declarations" : [
+          {
+            "source_field" : "/observation/fader_1_observation_current",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/fader_1_observed",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/host_layer",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/last_sent_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/layer_mismatch",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/observed_layer",
+            "state" : "observed"
+          },
+          {
+            "source_field" : "/observation/pending_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/touched",
+            "state" : "observed"
+          }
+        ],
         "fader_1_observation_current" : null,
         "fader_1_observed" : null,
         "host_layer" : "a",
@@ -32,6 +72,9 @@
       },
       "output" : {
         "cancelled" : [
+
+        ],
+        "declarations" : [
 
         ],
         "deferred" : [
@@ -58,14 +101,54 @@
     },
     {
       "input" : {
+        "context" : {
+          "kind" : "layer",
+          "value" : null
+        },
+        "element" : null,
         "hardware_context" : null,
         "injected_time" : 0.10000000000000001,
         "operation" : "request_layer_b",
         "raw_messages" : [
 
-        ]
+        ],
+        "role" : null
       },
       "observation" : {
+        "declarations" : [
+          {
+            "source_field" : "/observation/fader_1_observation_current",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/fader_1_observed",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/host_layer",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/last_sent_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/layer_mismatch",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/observed_layer",
+            "state" : "observed"
+          },
+          {
+            "source_field" : "/observation/pending_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/touched",
+            "state" : "observed"
+          }
+        ],
         "fader_1_observation_current" : null,
         "fader_1_observed" : null,
         "host_layer" : "a",
@@ -80,6 +163,27 @@
         ]
       },
       "output" : {
+        "declarations" : [
+          {
+            "affected" : [
+              "fader.1",
+              "fader.2",
+              "fader.3",
+              "fader.4",
+              "fader.5",
+              "fader.6",
+              "fader.7",
+              "fader.8",
+              "fader.9"
+            ],
+            "category" : "management",
+            "side_effects" : [
+              "motion"
+            ],
+            "source_field" : "/output/suppressed/0",
+            "target" : "device.layer"
+          }
+        ],
         "deferred" : [
 
         ],

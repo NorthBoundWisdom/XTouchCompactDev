@@ -50,6 +50,139 @@ private struct BehaviorTrace {
     }
 }
 
+/// Declarations belong to this device's test harness, never to a shared decoder.
+private enum TraceDeclaration {
+    static func elementRole(_ control: CompactControl) -> (String, String) {
+        switch control {
+        case let .fader(i): ("fader.\(i)", "position")
+        case let .faderTouch(i): ("fader.\(i)", "touch")
+        case let .encoder(i): ("encoder.\(i)", "rotation")
+        case let .encoderPush(i): ("encoder.\(i)", "press")
+        case let .button(i): ("button.\(i)", "press")
+        case .expression: ("pedal.expression", "position")
+        case .footswitch: ("pedal.switch", "press")
+        }
+    }
+
+    static func decodeBytes(_ value: Any) throws -> MIDIMessage {
+        let bytes = try #require(value as? [UInt8])
+        #expect(bytes.count == 2 || bytes.count == 3)
+        let word = UInt32(0x2000_0000) | UInt32(bytes[0]) << 16 | UInt32(bytes[1]) << 8 | UInt32(bytes.count == 3 ? bytes[2] : 0)
+        return try #require(MIDI1UMPCodec.decode(word))
+    }
+
+    static func effect(_ message: MIDIMessage, map: FactoryStandardMap) throws -> [String: Any] {
+        if case .programChange = message {
+            return ["category": "management", "target": "device.layer", "affected": (1 ... 9).map { "fader.\($0)" }, "side_effects": ["motion"]]
+        }
+        let address: MIDIAddress
+        switch message {
+        case let .controlChange(c, n, _): address = MIDIAddress(messageType: .controlChange, channel: c, number: n)
+        case let .noteOn(c, n, _), let .noteOff(c, n, _): address = MIDIAddress(messageType: .note, channel: c, number: n)
+        default: throw CompactError.invalidMIDIValue(255)
+        }
+        let controls = (1 ... 9).map(CompactControl.fader) + (1 ... 16).map(CompactControl.encoder) + (1 ... 39).map(CompactControl.button)
+        for control in controls where map.feedbackAddress(for: control) == address {
+            let element = elementRole(control).0
+            switch control {
+            case .fader: return ["category": "motion", "target": element + ".motor", "affected": [element]]
+            case .encoder: return ["category": "display", "target": element + ".ring", "affected": [element]]
+            case .button: return ["category": "display", "target": element + ".light", "affected": [element]]
+            default: break
+            }
+        }
+        for i in 1 ... 16 where map.encoderRingStyleAddress(encoder: i) == address {
+            return ["category": "display", "target": "encoder.\(i).ring.style", "affected": ["encoder.\(i)"]]
+        }
+        throw CompactError.invalidMIDIValue(address.number)
+    }
+
+    static func rows(_ original: [[String: Any]]) throws -> [[String: Any]] {
+        let map = try FactoryStandardMap()
+        var positionState = "unknown"
+        var hasTouchEvidence = false
+        return try original.map { row in
+            var row = row
+            var input = try #require(row["input"] as? [String: Any])
+            let bytes = try #require(input["raw_messages"] as? [[UInt8]])
+            let event = try bytes.first.flatMap { try map.decode(decodeBytes($0)) }
+            input["element"] = event.map { elementRole($0.control).0 } as Any? ?? NSNull()
+            input["role"] = event.map { elementRole($0.control).1 } as Any? ?? NSNull()
+            input["context"] = ["kind": "layer", "value": event?.layer.rawValue as Any? ?? NSNull()]
+            if let event {
+                if event.control == .fader(1) {
+                    positionState = "observed"
+                }
+                if case .faderTouch = event.control {
+                    hasTouchEvidence = true
+                }
+            }
+            var output = try #require(row["output"] as? [String: Any])
+            var effects: [[String: Any]] = []
+            var sentObservations: [[String: Any]] = []
+            for key in output.keys.sorted() {
+                let values = try #require(output[key] as? [Any])
+                for (index, value) in values.enumerated() {
+                    let path = "/output/\(key)/\(index)"
+                    var declared: [String: Any]
+                    if let record = value as? [String: Any], let control = record["control"] as? String {
+                        declared = ["category": "motion", "target": control + ".motor", "affected": [control]]
+                    } else if let record = value as? [String: Any], record["affected_controls"] != nil {
+                        // This is the harness's refused request_layer_b operation.
+                        declared = try effect(map.selectLayer(.b), map: map)
+                    } else {
+                        let raw = (value as? [String: Any])?["message"] ?? value
+                        declared = try effect(decodeBytes(raw), map: map)
+                    }
+                    declared["source_field"] = path
+                    effects.append(declared)
+                    if key == "sent" || key == "failed",
+                       declared["target"] as? String == "fader.1.motor" || declared["target"] as? String == "device.layer"
+                    {
+                        // These actual state operations invalidate position freshness even if delivery later fails.
+                        positionState = "stale"
+                    }
+                    if key == "sent" {
+                        sentObservations.append(["source_field": path, "state": "sent_only", "target": declared["target"]!, "value": value])
+                    }
+                }
+            }
+            output["declarations"] = effects
+            var observation = try #require(row["observation"] as? [String: Any])
+            var observations: [[String: Any]] = observation.keys.sorted().map { key in
+                let state: Any = switch key {
+                case "observed_layer": observation[key] is NSNull ? "unknown" : "observed"
+                case "fader_1_observed": observation[key] is NSNull ? "unknown" : positionState
+                case "touched": hasTouchEvidence ? "observed" : "unknown"
+                default: NSNull() // Host intent or a private/unavailable state, not physical observation.
+                }
+                return ["source_field": "/observation/\(key)", "state": state]
+            }
+            observations += sentObservations
+            observation["declarations"] = observations
+            row["input"] = input; row["output"] = output; row["observation"] = observation
+            return row
+        }
+    }
+}
+
+@Test func neutralTraceDeclarationsKeepPhysicalIdentityAndDeclareLayerMotion() throws {
+    let map = try FactoryStandardMap()
+    for layer in CompactLayer.allCases {
+        let position = try #require(map.inputAddress(for: .fader(1), layer: layer))
+        let touch = try #require(map.inputAddress(for: .faderTouch(1), layer: layer))
+        for (address, role) in [(position, "position"), (touch, "touch")] {
+            let event = try #require(map.decode(.controlChange(channel: address.channel, number: address.number, value: 127)))
+            #expect(TraceDeclaration.elementRole(event.control).0 == "fader.1")
+            #expect(TraceDeclaration.elementRole(event.control).1 == role)
+        }
+        let effect = try TraceDeclaration.effect(map.selectLayer(layer), map: map)
+        #expect(effect["category"] as? String == "management")
+        #expect(effect["side_effects"] as? [String] == ["motion"])
+        #expect(effect["affected"] as? [String] == (1 ... 9).map { "fader.\($0)" })
+    }
+}
+
 @Test func mockBehaviorTracesMatchCheckedInBytes() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Fixtures/BehaviorTraces")
@@ -107,7 +240,7 @@ private struct BehaviorTrace {
     try linked.step("write_shared_parameter") { try $0.setParameter("a.Fader.1", value: 80) }
     traces["08-shared-parameter-touch"] = linked
     for name in traces.keys.sorted() {
-        let document: [String: Any] = try ["schema_version": 1, "scenario": name, "source": "mock", "steps": #require(traces[name]?.rows)]
+        let document: [String: Any] = try ["schema_version": 1, "scenario": name, "source": "mock", "steps": TraceDeclaration.rows(#require(traces[name]?.rows))]
         let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data([10])
         let path = root.appendingPathComponent(name + ".json")
         if ProcessInfo.processInfo.environment["UPDATE_BEHAVIOR_TRACES"] == "1" {

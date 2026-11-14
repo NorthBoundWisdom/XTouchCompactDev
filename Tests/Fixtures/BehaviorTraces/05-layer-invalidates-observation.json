@@ -5,6 +5,11 @@
   "steps" : [
     {
       "input" : {
+        "context" : {
+          "kind" : "layer",
+          "value" : "a"
+        },
+        "element" : "fader.1",
         "hardware_context" : "a",
         "injected_time" : 0,
         "operation" : "receive",
@@ -14,9 +19,44 @@
             1,
             20
           ]
-        ]
+        ],
+        "role" : "position"
       },
       "observation" : {
+        "declarations" : [
+          {
+            "source_field" : "/observation/fader_1_observation_current",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/fader_1_observed",
+            "state" : "observed"
+          },
+          {
+            "source_field" : "/observation/host_layer",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/last_sent_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/layer_mismatch",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/observed_layer",
+            "state" : "observed"
+          },
+          {
+            "source_field" : "/observation/pending_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/touched",
+            "state" : "unknown"
+          }
+        ],
         "fader_1_observation_current" : null,
         "fader_1_observed" : 20,
         "host_layer" : "a",
@@ -32,6 +72,9 @@
       },
       "output" : {
         "cancelled" : [
+
+        ],
+        "declarations" : [
 
         ],
         "deferred" : [
@@ -58,14 +101,613 @@
     },
     {
       "input" : {
+        "context" : {
+          "kind" : "layer",
+          "value" : null
+        },
+        "element" : null,
         "hardware_context" : null,
         "injected_time" : 0.10000000000000001,
         "operation" : "select_layer_b",
         "raw_messages" : [
 
-        ]
+        ],
+        "role" : null
       },
       "observation" : {
+        "declarations" : [
+          {
+            "source_field" : "/observation/fader_1_observation_current",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/fader_1_observed",
+            "state" : "stale"
+          },
+          {
+            "source_field" : "/observation/host_layer",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/last_sent_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/layer_mismatch",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/observed_layer",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/observation/pending_motor",
+            "state" : null
+          },
+          {
+            "source_field" : "/observation/touched",
+            "state" : "unknown"
+          },
+          {
+            "source_field" : "/output/sent/0",
+            "state" : "sent_only",
+            "target" : "device.layer",
+            "value" : [
+              192,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/1",
+            "state" : "sent_only",
+            "target" : "encoder.1.ring",
+            "value" : [
+              176,
+              26,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/2",
+            "state" : "sent_only",
+            "target" : "encoder.2.ring",
+            "value" : [
+              176,
+              27,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/3",
+            "state" : "sent_only",
+            "target" : "encoder.3.ring",
+            "value" : [
+              176,
+              28,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/4",
+            "state" : "sent_only",
+            "target" : "encoder.4.ring",
+            "value" : [
+              176,
+              29,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/5",
+            "state" : "sent_only",
+            "target" : "encoder.5.ring",
+            "value" : [
+              176,
+              30,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/6",
+            "state" : "sent_only",
+            "target" : "encoder.6.ring",
+            "value" : [
+              176,
+              31,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/7",
+            "state" : "sent_only",
+            "target" : "encoder.7.ring",
+            "value" : [
+              176,
+              32,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/8",
+            "state" : "sent_only",
+            "target" : "encoder.8.ring",
+            "value" : [
+              176,
+              33,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/9",
+            "state" : "sent_only",
+            "target" : "encoder.9.ring",
+            "value" : [
+              176,
+              34,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/10",
+            "state" : "sent_only",
+            "target" : "encoder.10.ring",
+            "value" : [
+              176,
+              35,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/11",
+            "state" : "sent_only",
+            "target" : "encoder.11.ring",
+            "value" : [
+              176,
+              36,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/12",
+            "state" : "sent_only",
+            "target" : "encoder.12.ring",
+            "value" : [
+              176,
+              37,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/13",
+            "state" : "sent_only",
+            "target" : "encoder.13.ring",
+            "value" : [
+              176,
+              38,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/14",
+            "state" : "sent_only",
+            "target" : "encoder.14.ring",
+            "value" : [
+              176,
+              39,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/15",
+            "state" : "sent_only",
+            "target" : "encoder.15.ring",
+            "value" : [
+              176,
+              40,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/16",
+            "state" : "sent_only",
+            "target" : "encoder.16.ring",
+            "value" : [
+              176,
+              41,
+              1
+            ]
+          },
+          {
+            "source_field" : "/output/sent/17",
+            "state" : "sent_only",
+            "target" : "button.1.light",
+            "value" : [
+              144,
+              0,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/18",
+            "state" : "sent_only",
+            "target" : "button.2.light",
+            "value" : [
+              144,
+              1,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/19",
+            "state" : "sent_only",
+            "target" : "button.3.light",
+            "value" : [
+              144,
+              2,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/20",
+            "state" : "sent_only",
+            "target" : "button.4.light",
+            "value" : [
+              144,
+              3,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/21",
+            "state" : "sent_only",
+            "target" : "button.5.light",
+            "value" : [
+              144,
+              4,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/22",
+            "state" : "sent_only",
+            "target" : "button.6.light",
+            "value" : [
+              144,
+              5,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/23",
+            "state" : "sent_only",
+            "target" : "button.7.light",
+            "value" : [
+              144,
+              6,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/24",
+            "state" : "sent_only",
+            "target" : "button.8.light",
+            "value" : [
+              144,
+              7,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/25",
+            "state" : "sent_only",
+            "target" : "button.9.light",
+            "value" : [
+              144,
+              8,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/26",
+            "state" : "sent_only",
+            "target" : "button.10.light",
+            "value" : [
+              144,
+              9,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/27",
+            "state" : "sent_only",
+            "target" : "button.11.light",
+            "value" : [
+              144,
+              10,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/28",
+            "state" : "sent_only",
+            "target" : "button.12.light",
+            "value" : [
+              144,
+              11,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/29",
+            "state" : "sent_only",
+            "target" : "button.13.light",
+            "value" : [
+              144,
+              12,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/30",
+            "state" : "sent_only",
+            "target" : "button.14.light",
+            "value" : [
+              144,
+              13,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/31",
+            "state" : "sent_only",
+            "target" : "button.15.light",
+            "value" : [
+              144,
+              14,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/32",
+            "state" : "sent_only",
+            "target" : "button.16.light",
+            "value" : [
+              144,
+              15,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/33",
+            "state" : "sent_only",
+            "target" : "button.17.light",
+            "value" : [
+              144,
+              16,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/34",
+            "state" : "sent_only",
+            "target" : "button.18.light",
+            "value" : [
+              144,
+              17,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/35",
+            "state" : "sent_only",
+            "target" : "button.19.light",
+            "value" : [
+              144,
+              18,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/36",
+            "state" : "sent_only",
+            "target" : "button.20.light",
+            "value" : [
+              144,
+              19,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/37",
+            "state" : "sent_only",
+            "target" : "button.21.light",
+            "value" : [
+              144,
+              20,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/38",
+            "state" : "sent_only",
+            "target" : "button.22.light",
+            "value" : [
+              144,
+              21,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/39",
+            "state" : "sent_only",
+            "target" : "button.23.light",
+            "value" : [
+              144,
+              22,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/40",
+            "state" : "sent_only",
+            "target" : "button.24.light",
+            "value" : [
+              144,
+              23,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/41",
+            "state" : "sent_only",
+            "target" : "button.25.light",
+            "value" : [
+              144,
+              24,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/42",
+            "state" : "sent_only",
+            "target" : "button.26.light",
+            "value" : [
+              144,
+              25,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/43",
+            "state" : "sent_only",
+            "target" : "button.27.light",
+            "value" : [
+              144,
+              26,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/44",
+            "state" : "sent_only",
+            "target" : "button.28.light",
+            "value" : [
+              144,
+              27,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/45",
+            "state" : "sent_only",
+            "target" : "button.29.light",
+            "value" : [
+              144,
+              28,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/46",
+            "state" : "sent_only",
+            "target" : "button.30.light",
+            "value" : [
+              144,
+              29,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/47",
+            "state" : "sent_only",
+            "target" : "button.31.light",
+            "value" : [
+              144,
+              30,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/48",
+            "state" : "sent_only",
+            "target" : "button.32.light",
+            "value" : [
+              144,
+              31,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/49",
+            "state" : "sent_only",
+            "target" : "button.33.light",
+            "value" : [
+              144,
+              32,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/50",
+            "state" : "sent_only",
+            "target" : "button.34.light",
+            "value" : [
+              144,
+              33,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/51",
+            "state" : "sent_only",
+            "target" : "button.35.light",
+            "value" : [
+              144,
+              34,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/52",
+            "state" : "sent_only",
+            "target" : "button.36.light",
+            "value" : [
+              144,
+              35,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/53",
+            "state" : "sent_only",
+            "target" : "button.37.light",
+            "value" : [
+              144,
+              36,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/54",
+            "state" : "sent_only",
+            "target" : "button.38.light",
+            "value" : [
+              144,
+              37,
+              0
+            ]
+          },
+          {
+            "source_field" : "/output/sent/55",
+            "state" : "sent_only",
+            "target" : "button.39.light",
+            "value" : [
+              144,
+              38,
+              0
+            ]
+          }
+        ],
         "fader_1_observation_current" : null,
         "fader_1_observed" : 20,
         "host_layer" : "b",
@@ -82,6 +724,467 @@
       "output" : {
         "cancelled" : [
 
+        ],
+        "declarations" : [
+          {
+            "affected" : [
+              "fader.1",
+              "fader.2",
+              "fader.3",
+              "fader.4",
+              "fader.5",
+              "fader.6",
+              "fader.7",
+              "fader.8",
+              "fader.9"
+            ],
+            "category" : "management",
+            "side_effects" : [
+              "motion"
+            ],
+            "source_field" : "/output/sent/0",
+            "target" : "device.layer"
+          },
+          {
+            "affected" : [
+              "encoder.1"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/1",
+            "target" : "encoder.1.ring"
+          },
+          {
+            "affected" : [
+              "encoder.2"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/2",
+            "target" : "encoder.2.ring"
+          },
+          {
+            "affected" : [
+              "encoder.3"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/3",
+            "target" : "encoder.3.ring"
+          },
+          {
+            "affected" : [
+              "encoder.4"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/4",
+            "target" : "encoder.4.ring"
+          },
+          {
+            "affected" : [
+              "encoder.5"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/5",
+            "target" : "encoder.5.ring"
+          },
+          {
+            "affected" : [
+              "encoder.6"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/6",
+            "target" : "encoder.6.ring"
+          },
+          {
+            "affected" : [
+              "encoder.7"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/7",
+            "target" : "encoder.7.ring"
+          },
+          {
+            "affected" : [
+              "encoder.8"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/8",
+            "target" : "encoder.8.ring"
+          },
+          {
+            "affected" : [
+              "encoder.9"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/9",
+            "target" : "encoder.9.ring"
+          },
+          {
+            "affected" : [
+              "encoder.10"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/10",
+            "target" : "encoder.10.ring"
+          },
+          {
+            "affected" : [
+              "encoder.11"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/11",
+            "target" : "encoder.11.ring"
+          },
+          {
+            "affected" : [
+              "encoder.12"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/12",
+            "target" : "encoder.12.ring"
+          },
+          {
+            "affected" : [
+              "encoder.13"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/13",
+            "target" : "encoder.13.ring"
+          },
+          {
+            "affected" : [
+              "encoder.14"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/14",
+            "target" : "encoder.14.ring"
+          },
+          {
+            "affected" : [
+              "encoder.15"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/15",
+            "target" : "encoder.15.ring"
+          },
+          {
+            "affected" : [
+              "encoder.16"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/16",
+            "target" : "encoder.16.ring"
+          },
+          {
+            "affected" : [
+              "button.1"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/17",
+            "target" : "button.1.light"
+          },
+          {
+            "affected" : [
+              "button.2"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/18",
+            "target" : "button.2.light"
+          },
+          {
+            "affected" : [
+              "button.3"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/19",
+            "target" : "button.3.light"
+          },
+          {
+            "affected" : [
+              "button.4"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/20",
+            "target" : "button.4.light"
+          },
+          {
+            "affected" : [
+              "button.5"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/21",
+            "target" : "button.5.light"
+          },
+          {
+            "affected" : [
+              "button.6"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/22",
+            "target" : "button.6.light"
+          },
+          {
+            "affected" : [
+              "button.7"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/23",
+            "target" : "button.7.light"
+          },
+          {
+            "affected" : [
+              "button.8"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/24",
+            "target" : "button.8.light"
+          },
+          {
+            "affected" : [
+              "button.9"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/25",
+            "target" : "button.9.light"
+          },
+          {
+            "affected" : [
+              "button.10"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/26",
+            "target" : "button.10.light"
+          },
+          {
+            "affected" : [
+              "button.11"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/27",
+            "target" : "button.11.light"
+          },
+          {
+            "affected" : [
+              "button.12"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/28",
+            "target" : "button.12.light"
+          },
+          {
+            "affected" : [
+              "button.13"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/29",
+            "target" : "button.13.light"
+          },
+          {
+            "affected" : [
+              "button.14"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/30",
+            "target" : "button.14.light"
+          },
+          {
+            "affected" : [
+              "button.15"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/31",
+            "target" : "button.15.light"
+          },
+          {
+            "affected" : [
+              "button.16"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/32",
+            "target" : "button.16.light"
+          },
+          {
+            "affected" : [
+              "button.17"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/33",
+            "target" : "button.17.light"
+          },
+          {
+            "affected" : [
+              "button.18"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/34",
+            "target" : "button.18.light"
+          },
+          {
+            "affected" : [
+              "button.19"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/35",
+            "target" : "button.19.light"
+          },
+          {
+            "affected" : [
+              "button.20"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/36",
+            "target" : "button.20.light"
+          },
+          {
+            "affected" : [
+              "button.21"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/37",
+            "target" : "button.21.light"
+          },
+          {
+            "affected" : [
+              "button.22"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/38",
+            "target" : "button.22.light"
+          },
+          {
+            "affected" : [
+              "button.23"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/39",
+            "target" : "button.23.light"
+          },
+          {
+            "affected" : [
+              "button.24"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/40",
+            "target" : "button.24.light"
+          },
+          {
+            "affected" : [
+              "button.25"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/41",
+            "target" : "button.25.light"
+          },
+          {
+            "affected" : [
+              "button.26"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/42",
+            "target" : "button.26.light"
+          },
+          {
+            "affected" : [
+              "button.27"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/43",
+            "target" : "button.27.light"
+          },
+          {
+            "affected" : [
+              "button.28"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/44",
+            "target" : "button.28.light"
+          },
+          {
+            "affected" : [
+              "button.29"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/45",
+            "target" : "button.29.light"
+          },
+          {
+            "affected" : [
+              "button.30"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/46",
+            "target" : "button.30.light"
+          },
+          {
+            "affected" : [
+              "button.31"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/47",
+            "target" : "button.31.light"
+          },
+          {
+            "affected" : [
+              "button.32"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/48",
+            "target" : "button.32.light"
+          },
+          {
+            "affected" : [
+              "button.33"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/49",
+            "target" : "button.33.light"
+          },
+          {
+            "affected" : [
+              "button.34"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/50",
+            "target" : "button.34.light"
+          },
+          {
+            "affected" : [
+              "button.35"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/51",
+            "target" : "button.35.light"
+          },
+          {
+            "affected" : [
+              "button.36"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/52",
+            "target" : "button.36.light"
+          },
+          {
+            "affected" : [
+              "button.37"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/53",
+            "target" : "button.37.light"
+          },
+          {
+            "affected" : [
+              "button.38"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/54",
+            "target" : "button.38.light"
+          },
+          {
+            "affected" : [
+              "button.39"
+            ],
+            "category" : "display",
+            "source_field" : "/output/sent/55",
+            "target" : "button.39.light"
+          }
         ],
         "deferred" : [
 
