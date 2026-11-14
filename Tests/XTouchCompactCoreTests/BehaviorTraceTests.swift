@@ -247,6 +247,15 @@ private enum TraceDeclaration {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try data.write(to: path)
         }
-        #expect(try Data(contentsOf: path) == data, "Trace bytes differ: \(name)")
+        let stored = try Data(contentsOf: path)
+        // Pretty-printed separators differ between Darwin Foundation and swift-corelibs-foundation
+        // ("key" : value vs "key": value). The checked-in bytes are the Darwin form; every platform
+        // compares content by re-serializing the stored document with its own serializer.
+        let normalized = try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: stored),
+                                                    options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data([10])
+        #expect(normalized == data, "Trace content differs: \(name)")
+        #if canImport(Darwin)
+            #expect(stored == data, "Trace bytes differ: \(name)")
+        #endif
     }
 }
