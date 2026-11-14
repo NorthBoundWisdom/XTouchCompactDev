@@ -139,6 +139,18 @@
         #expect(!motorMessages(midi).isEmpty, "source=\(source.rawValue)")
     }
 
+    /// K-T25's original explicit recall is allowed: the click itself confirms this route.
+    @Test(arguments: [false, true]) @MainActor func operatorRecallAfterReconnectIsItselfConfirmation(outputOnly: Bool) {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        model.faderChanged(1, value: 80)
+        midi.connect(); model.setConsoleMode(.hardwareSend)
+        replaceMotorRoute(midi, outputOnly: outputOnly)
+        #expect(midi.sent.isEmpty)
+        model.recallMotors()
+        #expect(motorMessages(midi).contains(.controlChange(channel: 0, number: 1, value: 80)))
+    }
+
     @Test @MainActor func suppressedReconnectMotionIsVisibleAndUnchangedStatusCannotConfirmIt() {
         let midi = FakeMIDIService()
         let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
