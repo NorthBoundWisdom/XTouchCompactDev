@@ -54,9 +54,10 @@ def verify(directory):
         )
         assert discovery["profile"]["id"] == manifest["profile_id"]
         assert len(discovery["profile"]["controls"]) == 182
-        fixture = json.loads((directory / "surface-control-hardware-v1.4.json").read_text())
         roles = json.loads((directory / "conformance-roles.json").read_text())
-        validate_roles(select_roles(roles, fixture), fixture, discovery["profile"])
+        for fixture_name in ("surface-control-hardware-v1.4.json", "surface-control-hardware-independent-v1.4.json"):
+            fixture = json.loads((directory / fixture_name).read_text())
+            validate_roles(select_roles(roles, fixture), fixture, discovery["profile"])
     return {
         "scope": "outside-source-describe-only",
         "source": "hardware",

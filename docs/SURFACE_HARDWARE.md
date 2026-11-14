@@ -103,3 +103,13 @@ Outside-source verification is limited to describe, descriptor/mapping/hash vali
 and safe rejection/configuration checks without opening MIDI; it is not an HTTP or
 hardware acceptance report. The attended checklist and its fake-only rehearsal are
 prepared separately under the workspace `build/e/`.
+
+The additional `surface-control-hardware-independent-v1.4.json` fixture selects
+roles independently per scene. This host runs accepted button press/release and
+recovery, position/touch separation, and successful/invalid/rejected value display
+transactions. `button_ignored` is null because the normal observation pipeline
+has no natural ignored-button route; that independent scene is explicitly skipped.
+The original rich fixture retains its exact assertions and relative-role limitation.
+The new transport rejection is injected in a test-only display adapter, with no
+new public tool or production error code. Outside-source describe verification
+uses the delivered checker to validate both hardware role-map entries.
