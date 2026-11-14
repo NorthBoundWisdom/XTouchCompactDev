@@ -183,12 +183,50 @@ private enum TraceDeclaration {
     }
 }
 
-@Test func mockBehaviorTracesMatchCheckedInBytes() throws {
-    func normalizedJSON(_ bytes: Data) throws -> Data {
-        let object = try JSONSerialization.jsonObject(with: bytes)
-        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
-    }
+private enum TraceJSONContent: Decodable, Equatable {
+    case object([String: TraceJSONContent]), array([TraceJSONContent])
+    case number(Double), string(String), bool(Bool), null
 
+    init(from decoder: any Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if value.decodeNil() {
+            self = .null
+        } else if let bool = try? value.decode(Bool.self) {
+            self = .bool(bool)
+        } else if let string = try? value.decode(String.self) {
+            self = .string(string)
+        } else if let array = try? value.decode([TraceJSONContent].self) {
+            self = .array(array)
+        } else if let object = try? value.decode([String: TraceJSONContent].self) {
+            self = .object(object)
+        } else {
+            self = try .number(value.decode(Double.self))
+        }
+    }
+}
+
+@Test func traceJSONContentPreservesDifferencesWithoutDependingOnNumberSpelling() throws {
+    func content(_ json: String) throws -> TraceJSONContent {
+        try JSONDecoder().decode(TraceJSONContent.self, from: Data(json.utf8))
+    }
+    let baseline = try content(#"{"time":0.10000000000000001,"values":[1,true,null,"motor"]}"#)
+    #expect(try baseline == content(#"{ "values" : [1.0, true, null, "motor"], "time" : 0.1 }"#))
+    for changed in [
+        #"{"time":0.2,"values":[1,true,null,"motor"]}"#,
+        #"{"time":0.1,"values":[2,true,null,"motor"]}"#,
+        #"{"time":0.1,"values":[true,1,null,"motor"]}"#,
+        #"{"time":0.1,"values":[1,1,null,"motor"]}"#,
+        #"{"time":0.1,"values":[1,true,false,"motor"]}"#,
+        #"{"time":0.1,"values":[1,true,null,"light"]}"#,
+        #"{"time":0.1,"values":[1,true,null]}"#,
+        #"{"values":[1,true,null,"motor"]}"#,
+        #"{"time":0.1,"values":[1,true,null,"motor"],"extra":null}"#,
+    ] {
+        #expect(try baseline != content(changed))
+    }
+}
+
+@Test func mockBehaviorTracesMatchCheckedInBytes() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Fixtures/BehaviorTraces")
     var traces: [String: BehaviorTrace] = [:]
@@ -253,9 +291,12 @@ private enum TraceDeclaration {
             try data.write(to: path)
         }
         let stored = try Data(contentsOf: path)
-        // Foundation implementations differ in pretty-print spacing and parsed-number formatting.
-        // Parse and re-serialize BOTH documents so each follows the same numeric conversion path.
-        #expect(try normalizedJSON(stored) == normalizedJSON(data), "Trace content differs: \(name)")
+        // Foundation implementations differ in spacing and numeric spelling (0.1 vs 0.10000000000000001).
+        // Compare typed JSON content with exact Double equality, retaining booleans and array order.
+        let decoder = JSONDecoder()
+        let storedContent = try decoder.decode(TraceJSONContent.self, from: stored)
+        let generatedContent = try decoder.decode(TraceJSONContent.self, from: data)
+        #expect(storedContent == generatedContent, "Trace content differs: \(name)")
         #if canImport(Darwin)
             #expect(stored == data, "Trace bytes differ: \(name)")
         #endif
