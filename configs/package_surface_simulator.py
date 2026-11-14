@@ -2,6 +2,7 @@
 """Build an independent software-only delivery with hashes and exact source pins."""
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -31,7 +32,7 @@ def default_output(root=ROOT):
 
 
 SHARED = ROOT / "build/dependencies/SurfacePlugins"
-SDK_VERSION = "1.3.0"
+SDK_VERSION = "1.4.0"
 CONTRACT_VERSION = "1.3"
 SDK_ZIP = "surface-control-sdk-" + SDK_VERSION + ".zip"
 # Published shared files, copied byte for byte from the managed dependency (single source, D19-6).
@@ -62,13 +63,50 @@ def sdk_sources(shared=SHARED):
     python_root = shared / "clients/python"
     return sorted(
         str(path.relative_to(shared))
-        for package in ("surface_control", "surface_conformance")
-        for path in (python_root / package).rglob("*.py")
+        for package in ("surface_control", "surface_conformance", "surface_control_testing")
+        for path in (python_root / package).rglob("*")
+        if path.is_file() and path.suffix in (".py", ".md")
     )
+
+
+def sdk_version(source):
+    """Read only the explicit module-level string version; never execute shared code."""
+    try:
+        assignments = [
+            statement.value.value
+            for statement in ast.parse(source).body
+            if isinstance(statement, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "__version__" for target in statement.targets)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ]
+    except (SyntaxError, UnicodeError) as error:
+        raise RuntimeError("Invalid SDK version metadata") from error
+    if assignments != [SDK_VERSION]:
+        raise RuntimeError("SDK source version differs from the packaged SDK version")
+    return assignments[0]
+
+
+def validate_sdk_archive(stage, shared=SHARED):
+    """The archive filename, embedded version and every source byte must agree."""
+    sdk_version((shared / SDK_SOURCE).read_bytes())
+    if sorted(path.name for path in stage.glob("surface-control-sdk-*.zip")) != [SDK_ZIP]:
+        raise RuntimeError("SDK archive filename differs from the packaged SDK version")
+    sources = sdk_sources(shared)
+    members = [str(Path(source).relative_to("clients/python")) for source in sources]
+    with zipfile.ZipFile(stage / SDK_ZIP) as sdk:
+        if sdk.namelist() != members:
+            raise RuntimeError("SDK archive members differ from the locked SDK sources")
+        sdk_version(sdk.read("surface_control/__init__.py"))
+        if any(
+            sdk.read(member) != (shared / source).read_bytes() for member, source in zip(members, sources, strict=True)
+        ):
+            raise RuntimeError("SDK archive differs from the locked SDK source bytes")
 
 
 def stage_shared_files(stage, root=ROOT, shared=SHARED):
     """Copy host files and shared published files into a delivery stage (no binary)."""
+    sdk_version((shared / SDK_SOURCE).read_bytes())
     shutil.copy2(root / "LICENSE", stage)
     shutil.copy2(root / "examples/surface_simulator/minimal_consumer.py", stage)
     shutil.copy2(root / "docs/SURFACE_SIMULATOR.md", stage / "README.md")
@@ -95,6 +133,7 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED
     Profile identity and mapping revision are read from the staged `control-contract.json`,
     which is the delivered binary's own `--describe` output for the default configuration.
     """
+    validate_sdk_archive(stage, shared)
     discovery = json.loads((stage / "control-contract.json").read_text())["discovery"]
     if discovery["contract_version"] != CONTRACT_VERSION:
         raise RuntimeError("Binary contract version differs from the packaged contract version")
@@ -128,6 +167,7 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED
         "files_sha256": files,
         "start_protocol": "token stdin pipe/private file, ready JSON stdout/file, POST /mcp on 127.0.0.1",
         "stop_protocol": "terminate the isolated process; no persistent user state",
+        "test_artifacts": [{"artifact": "surface-control-test-only-hardware-double", "qualification": "test-only"}],
     }
     (stage / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest

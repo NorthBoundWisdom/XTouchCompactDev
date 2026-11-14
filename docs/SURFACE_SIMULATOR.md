@@ -45,7 +45,7 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 
 | Delivery file | Shared source |
 | --- | --- |
-| `surface-control-sdk-1.3.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/` Python sources |
+| `surface-control-sdk-1.4.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/`, and separate `surface_control_testing/` sources/README |
 | `control-tools.json` | `docs/surface-control-tools.json` |
 | `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
 | `surface-control-software-v1.json`, `surface-control-software-v1.1.json`, `surface-control-software-v1.2.json`, `surface-control-software-v1.3.json` | `fixtures/` |
@@ -57,7 +57,7 @@ The shared SDK tests and the Pipe integration example (`integrations/pipe/`) are
 of this generic delivery. The manifest's common fields have the same names and meanings as
 the other host's (shared `docs/surface-control-delivery.md`): `schema_version`, `artifact`
 (`surface-control-simulator`), `surface_control_contract` (`"1.3"`), `surface_control_sdk`
-(`"1.3.0"`), `source`, `source_commit`, `source_dirty`, `profile_id`, `profile_version`,
+(`"1.4.0"`), `source`, `source_commit`, `source_dirty`, `profile_id`, `profile_version`,
 `mapping_revision`, `surface_plugins_revision`, `files_sha256` (every delivered file), and
 `surface_plugins_files_sha256` (each shared source file). Profile identity and
 `mapping_revision` are taken from the delivered binary's own `--describe` output, so they
@@ -65,7 +65,12 @@ describe the default demonstration configuration; a running instance is still pi
 `surface_control_discover`. Private fields (`product`, platform, architecture, build
 configuration, start/stop notes) are not part of the convention. `examples/surface_roundtrip.py` imports the SDK only from the
 delivery zip after checking the manifest pin and every file hash. It is a local software
-delivery, without a release tag or notarization claim.
+delivery, without a release tag or notarization claim. SDK 1.4.0 also contains the separate,
+clearly marked test-only hardware double and its README; manifest `test_artifacts`
+records its test-only identity. This does not turn the simulator into a hardware
+source: discovery remains Contract 1.3/simulation and default SDK clients remain
+simulation-only. Package filename, manifest version, SDK declaration and every
+archived source byte must match the locked SDK; stale version labels are rejected.
 
 ## Start, readiness, stop
 
@@ -389,7 +394,7 @@ permissions, run from the delivery directory (use a fresh process and private to
 as described above):
 
 ```sh
-PYTHONPATH=surface-control-sdk-1.3.0.zip python3 -B -m surface_conformance \
+PYTHONPATH=surface-control-sdk-1.4.0.zip python3 -B -m surface_conformance \
   --url http://127.0.0.1:PORT/mcp --token-file /path/to/private/token \
   --instance-id INSTANCE --fixture surface-control-software-v1.3.json \
   --roles conformance-roles.json --report /path/to/evidence/conformance-v1.3.json

@@ -72,7 +72,7 @@ class DeliveryContentTests(unittest.TestCase):
         shared = package_surface_simulator.SHARED
         for name, source in package_surface_simulator.SHARED_FILES.items():
             self.assertEqual((self.stage / name).read_bytes(), (shared / source).read_bytes(), name)
-        with zipfile.ZipFile(self.stage / "surface-control-sdk-1.3.0.zip") as sdk:
+        with zipfile.ZipFile(self.stage / "surface-control-sdk-1.4.0.zip") as sdk:
             expected_members = [
                 str(Path(source).relative_to("clients/python"))
                 for source in package_surface_simulator.sdk_sources(shared)
@@ -82,7 +82,11 @@ class DeliveryContentTests(unittest.TestCase):
                 self.assertEqual(sdk.read(member), (shared / source).read_bytes())
             body = sdk.read("surface_control/__init__.py")
         self.assertEqual(body, (shared / package_surface_simulator.SDK_SOURCE).read_bytes())
-        self.assertIn(b'__version__ = "1.3.0"', body)
+        self.assertIn(b'__version__ = "1.4.0"', body)
+        self.assertIn("surface_control_testing/README.md", expected_members)
+        self.assertFalse(
+            any(member.startswith("surface_control/surface_control_testing/") for member in expected_members)
+        )
 
     def test_generic_delivery_excludes_integrations_tests_and_host_sdk_copies(self):
         names = {str(path.relative_to(self.stage)) for path in self.stage.rglob("*") if path.is_file()}
@@ -101,7 +105,7 @@ class DeliveryContentTests(unittest.TestCase):
     def test_manifest_records_contract_sdk_revision_and_every_hash(self):
         manifest = self.manifest
         lock = json.loads((package_surface_simulator.ROOT / "configs/surface_plugins.lock.json").read_text())
-        self.assertEqual((manifest["surface_control_contract"], manifest["surface_control_sdk"]), ("1.3", "1.3.0"))
+        self.assertEqual((manifest["surface_control_contract"], manifest["surface_control_sdk"]), ("1.3", "1.4.0"))
         self.assertEqual(manifest["surface_plugins_revision"], lock["revision"])
         # Common fields shared by both hosts (SurfacePlugins docs/surface-control-delivery.md).
         for field in (
@@ -127,7 +131,7 @@ class DeliveryContentTests(unittest.TestCase):
             ("xtouch.compact.standard.simulation", "1.3", "0123456789abcdef"),
         )
         self.assertIn("control-contract.json", manifest["files_sha256"])
-        self.assertIn("surface-control-sdk-1.3.0.zip", manifest["files_sha256"])
+        self.assertIn("surface-control-sdk-1.4.0.zip", manifest["files_sha256"])
         staged = {str(path.relative_to(self.stage)) for path in self.stage.rglob("*") if path.is_file()} - {
             "manifest.json"
         }
@@ -152,13 +156,25 @@ class DeliveryContentTests(unittest.TestCase):
         self.assertLessEqual(set(table), set(manifest))
         self.assertEqual(
             set(manifest) - set(table),
-            {"product", "platform", "architecture", "configuration", "start_protocol", "stop_protocol"},
+            {
+                "product",
+                "platform",
+                "architecture",
+                "configuration",
+                "start_protocol",
+                "stop_protocol",
+                "test_artifacts",
+            },
         )
         self.assertIs(type(manifest["schema_version"]), int)
         self.assertIs(manifest["source_dirty"], False)
         self.assertRegex(manifest["source_commit"], r"^[0-9a-f]{40}$")
         self.assertRegex(manifest["surface_plugins_revision"], r"^[0-9a-f]{40}$")
         self.assertRegex(manifest["mapping_revision"], r"^[0-9a-f]{16}$")
+        self.assertEqual(
+            manifest["test_artifacts"],
+            [{"artifact": "surface-control-test-only-hardware-double", "qualification": "test-only"}],
+        )
         files = manifest["files_sha256"]
         self.assertIn("surface-control-sdk-" + manifest["surface_control_sdk"] + ".zip", files)
         self.assertIn("control-contract.json", files)
@@ -172,7 +188,7 @@ class DeliveryContentTests(unittest.TestCase):
         self.assertEqual(set(manifest["surface_plugins_files_sha256"]), copied)
         for name, source in package_surface_simulator.SHARED_FILES.items():
             self.assertEqual(files[name], manifest["surface_plugins_files_sha256"][source])
-        with zipfile.ZipFile(self.stage / "surface-control-sdk-1.3.0.zip") as sdk:
+        with zipfile.ZipFile(self.stage / "surface-control-sdk-1.4.0.zip") as sdk:
             member = hashlib.sha256(sdk.read("surface_control/__init__.py")).hexdigest()
         self.assertEqual(member, manifest["surface_plugins_files_sha256"][package_surface_simulator.SDK_SOURCE])
 
@@ -214,12 +230,38 @@ class DeliveryContentTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             package_surface_simulator.write_manifest(self.stage, "0" * 40, "release")
 
+    def test_manifest_refuses_sdk_archive_with_old_filename(self):
+        (self.stage / "surface-control-sdk-1.4.0.zip").rename(self.stage / "surface-control-sdk-1.3.0.zip")
+        with self.assertRaisesRegex(RuntimeError, "SDK archive filename"):
+            package_surface_simulator.write_manifest(self.stage, "0" * 40, "release")
+
+    def test_manifest_refuses_wrong_sdk_version_and_modified_source_bytes(self):
+        archive = self.stage / "surface-control-sdk-1.4.0.zip"
+        original = archive.read_bytes()
+        with zipfile.ZipFile(archive) as sdk:
+            members = [(entry, sdk.read(entry.filename)) for entry in sdk.infolist()]
+        for old_version in (True, False):
+            with self.subTest(old_version=old_version):
+                with zipfile.ZipFile(archive, "w") as sdk:
+                    for entry, body in members:
+                        if entry.filename == "surface_control/__init__.py":
+                            body = (
+                                body.replace(b'__version__ = "1.4.0"', b'__version__ = "1.3.0"')
+                                if old_version
+                                else body + b"\n# changed SDK source bytes\n"
+                            )
+                        sdk.writestr(entry, body)
+                message = "SDK source version" if old_version else "locked SDK source bytes"
+                with self.assertRaisesRegex(RuntimeError, message):
+                    package_surface_simulator.write_manifest(self.stage, "0" * 40, "release")
+        archive.write_bytes(original)
+
     def test_sdk_zip_is_reproducible(self):
         with tempfile.TemporaryDirectory() as other:
             package_surface_simulator.stage_shared_files(Path(other))
             self.assertEqual(
-                (Path(other) / "surface-control-sdk-1.3.0.zip").read_bytes(),
-                (self.stage / "surface-control-sdk-1.3.0.zip").read_bytes(),
+                (Path(other) / "surface-control-sdk-1.4.0.zip").read_bytes(),
+                (self.stage / "surface-control-sdk-1.4.0.zip").read_bytes(),
             )
 
 
