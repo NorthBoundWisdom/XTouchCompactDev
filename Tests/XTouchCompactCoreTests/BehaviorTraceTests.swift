@@ -184,6 +184,11 @@ private enum TraceDeclaration {
 }
 
 @Test func mockBehaviorTracesMatchCheckedInBytes() throws {
+    func normalizedJSON(_ bytes: Data) throws -> Data {
+        let object = try JSONSerialization.jsonObject(with: bytes)
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Fixtures/BehaviorTraces")
     var traces: [String: BehaviorTrace] = [:]
@@ -248,12 +253,9 @@ private enum TraceDeclaration {
             try data.write(to: path)
         }
         let stored = try Data(contentsOf: path)
-        // Pretty-printed separators differ between Darwin Foundation and swift-corelibs-foundation
-        // ("key" : value vs "key": value). The checked-in bytes are the Darwin form; every platform
-        // compares content by re-serializing the stored document with its own serializer.
-        let normalized = try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: stored),
-                                                    options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data([10])
-        #expect(normalized == data, "Trace content differs: \(name)")
+        // Foundation implementations differ in pretty-print spacing and parsed-number formatting.
+        // Parse and re-serialize BOTH documents so each follows the same numeric conversion path.
+        #expect(try normalizedJSON(stored) == normalizedJSON(data), "Trace content differs: \(name)")
         #if canImport(Darwin)
             #expect(stored == data, "Trace bytes differ: \(name)")
         #endif
