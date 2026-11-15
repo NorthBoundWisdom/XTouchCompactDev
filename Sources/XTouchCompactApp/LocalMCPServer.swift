@@ -8,8 +8,10 @@
         private var peers: [UUID: MCPPeer] = [:]
         private var token = ""
         private var requests: [Date] = []
-        init(authenticationToken: String = "") {
+        private let now: () -> Date
+        init(authenticationToken: String = "", now: @escaping () -> Date = Date.init) {
             token = authenticationToken
+            self.now = now
         }
 
         var handler: (([String: Any]) throws -> [String: Any])?
@@ -79,9 +81,9 @@
             }
             // Preflight and reserve the complete batch budget before any side effects.
             guard items.allSatisfy(validEnvelope) else { return (400, Data()) }
-            requests = requests.filter { Date().timeIntervalSince($0) < 60 }
+            requests = requests.filter { now().timeIntervalSince($0) < 60 }
             guard requests.count + items.count <= 60 else { return (429, Data()) }
-            requests.append(contentsOf: Array(repeating: Date(), count: items.count))
+            requests.append(contentsOf: Array(repeating: now(), count: items.count))
             let responses = items.compactMap { execute($0) }
             guard !responses.isEmpty else { return (202, Data()) }
             let result: Any = isBatch ? responses : responses[0]

@@ -119,6 +119,20 @@ class RunningSimulator:
         }
 
 
+def wait_for_state(read, predicate, *, timeout=1):
+    """Observe a bounded predicate; never retry a mutation or swallow a transport failure."""
+    deadline = time.monotonic() + timeout
+    wake = threading.Event()
+    while True:
+        state = read()
+        if predicate(state):
+            return state
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AssertionError("Timed out waiting for the expected read-only state")
+        wake.wait(min(0.005, remaining))
+
+
 class SurfaceSimulatorHTTPTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -127,6 +141,7 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
     def tearDown(self):
         self.a.close()
         self.temporary.cleanup()
+
 
     def test_discovery_input_feedback_and_stale_cas(self):
         discovery = self.a.discover()
@@ -225,9 +240,7 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         with socket.create_connection(("127.0.0.1", self.a.ready["port"]), timeout=3) as connection:
             connection.sendall(header + body)
             # Intentionally discard the response: the caller has an unknown outcome.
-        deadline = time.monotonic() + 3
-        while self.a.snapshot()["latest_sequence"] != "1" and time.monotonic() < deadline:
-            time.sleep(0.01)
+        wait_for_state(self.a.snapshot, lambda state: state["latest_sequence"] == "1", timeout=3)
         result = self.a.request("surface_control_input", args)
         self.assertEqual(result["structuredContent"]["code"], "stale_sequence")
         self.assertEqual(self.a.snapshot()["latest_sequence"], "1")
@@ -357,8 +370,7 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(events()["holds"], {"a.touch.1": held["hold_deadline"]})
         renewed = client.renew("a.touch.1", 0.3)
         self.assertEqual(events()["holds"], {"a.touch.1": renewed["hold_deadline"]})
-        time.sleep(0.4)
-        page = events()
+        page = wait_for_state(events, lambda page: "holds" not in page)
         self.assertNotIn("holds", page)
         self.assertEqual(page["events"][-1]["reason"], "hold_expired")
 
@@ -989,9 +1001,7 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
                 request["hold_s"] = 0.05
                 pressed = simulator.request("surface_control_input", request)["structuredContent"]
                 self.assertEqual(pressed["mapped_value"], 1)
-                deadline = time.monotonic() + 1
-                while simulator.snapshot().get("holds") and time.monotonic() < deadline:
-                    time.sleep(0.01)
+                wait_for_state(simulator.snapshot, lambda state: not state.get("holds"))
                 page = simulator.request(
                     "surface_control_events",
                     {
@@ -1048,7 +1058,9 @@ class SimulationConfigurationHTTPTests(unittest.TestCase):
                     snapshot = simulator.snapshot()
                     for key in ("expected", "latest_sequence", "inputs", "feedback", "holds"):
                         self.assertEqual(snapshot.get(key), before.get(key), key)
-                time.sleep(1.05)
+                # Reading time does not spend quota; issue the renewal only once after
+                # every previously accepted write is outside the original one-second window.
+                wait_for_state(simulator.snapshot, lambda state: state["server_time"] >= shown["time"] + 1, timeout=2)
                 renewed = simulator.request(
                     "surface_control_renew", {"expected": expected, "control_id": "a.touch.1", "hold_s": 5}
                 )
@@ -1149,7 +1161,7 @@ class Contract13HTTPTests(unittest.TestCase):
                     "encoding": "scalar",
                     "value": 60,
                 }
-                time.sleep(0.08)
+                wait_for_state(simulator.snapshot, lambda state: state["latest_input_sequence"] == "3")
                 self.assertEqual(
                     simulator.request("surface_control_input", stale)["structuredContent"]["code"],
                     "stale_input_sequence",
@@ -1359,8 +1371,7 @@ class Contract13HTTPTests(unittest.TestCase):
                     running.request("surface_control_input", running.input(101))["structuredContent"]["code"],
                     "rate_limited",
                 )
-                time.sleep(0.08)
-                after = running.snapshot()
+                after = wait_for_state(running.snapshot, lambda state: not state.get("holds"))
                 self.assertFalse(after.get("holds"))
                 self.assertFalse(after["inputs"]["a.touch.1"])
                 self.assertEqual(after["latest_input_sequence"], "5")

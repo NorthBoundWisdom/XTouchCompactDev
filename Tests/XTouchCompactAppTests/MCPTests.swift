@@ -36,6 +36,20 @@
         try HTTPRequest(method: "POST", path: "/mcp", headers: ["authorization": "Bearer t", "content-type": "application/json"], body: JSONSerialization.data(withJSONObject: object))
     }
 
+    @Test @MainActor func injectedMCPClockPreservesStrictSixtySecondBudgetBoundary() throws {
+        var time = Date(timeIntervalSince1970: 100)
+        let server = LocalMCPServer(authenticationToken: "t", now: { time })
+        let ping = try request(["jsonrpc": "2.0", "id": 1, "method": "ping"])
+        for _ in 0 ..< 60 {
+            #expect(server.respond(ping).0 == 200)
+        }
+        #expect(server.respond(ping).0 == 429)
+        time = Date(timeIntervalSince1970: 159.999)
+        #expect(server.respond(ping).0 == 429)
+        time = Date(timeIntervalSince1970: 160)
+        #expect(server.respond(ping).0 == 200)
+    }
+
     @Test @MainActor func batchPreflightAndBudgetRejectBeforeAnyWriteAndReportPerItemErrors() throws {
         let server = LocalMCPServer(authenticationToken: "t")
         var writes = 0

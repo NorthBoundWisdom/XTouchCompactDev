@@ -83,7 +83,7 @@
             AgentPresentation(plugins)
         }
 
-        let mcp = LocalMCPServer()
+        let mcp: LocalMCPServer
         let mcpPort: UInt16 = 8765
         let isolated: Bool
         private let memoryToken = UUID().uuidString + UUID().uuidString
@@ -132,17 +132,22 @@
         private let store: ProtectedWorkspaceStore?
         private let now: () -> Date
         private let runtimeClock: () -> TimeInterval
+        private let runtimeSleep: @MainActor (Duration) async throws -> Void
         private let evidenceWriterFactory: (URL) throws -> any EvidenceWriting
         private(set) var session: CompactSession
         private(set) var mock: MockXTouchCompact
 
         init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: (() -> Date)? = nil, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil,
+             runtimeSleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
              evidenceWriterFactory: @escaping (URL) throws -> any EvidenceWriting = { try ExclusiveEvidenceFile(url: $0) })
         {
             self.midi = midi ?? CoreMIDIService()
             self.oscTransport = oscTransport ?? NetworkOSCTransport()
-            self.now = now ?? Date.init
+            let wallClock = now ?? Date.init
+            self.now = wallClock
+            mcp = LocalMCPServer(now: wallClock)
             runtimeClock = now.map { injected in { injected().timeIntervalSince1970 } } ?? { ProcessInfo.processInfo.systemUptime }
+            self.runtimeSleep = runtimeSleep
             self.evidenceWriterFactory = evidenceWriterFactory
             self.isolated = isolated
             store = storageRoot.map(ProtectedWorkspaceStore.init(directory:))
@@ -591,9 +596,10 @@
 
         func startRuntime() {
             guard runtimeTask == nil else { return }
+            let sleep = runtimeSleep
             runtimeTask = Task { [weak self] in
                 while !Task.isCancelled {
-                    do { try await Task.sleep(for: .milliseconds(250)) } catch { break }
+                    do { try await sleep(.milliseconds(250)) } catch { break }
                     self?.advanceAgents()
                 }
             }

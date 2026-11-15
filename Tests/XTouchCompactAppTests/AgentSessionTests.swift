@@ -6,9 +6,10 @@
     import XTouchCompactCore
     import XTouchCompactLocalization
 
-    @Test @MainActor func idleTicksDoNotPublishAndModelOwnsScheduler() async throws {
+    @Test @MainActor func idleTicksDoNotPublishAndModelOwnsScheduler() async {
         let clock = TestClock()
-        let model = ConsoleModel(startsMIDI: false, now: { clock.date })
+        let scheduler = TestRuntimeSleeper()
+        let model = ConsoleModel(startsMIDI: false, now: { clock.date }, runtimeSleep: scheduler.sleep)
         var changes = 0
         let subscription = model.objectWillChange.sink { changes += 1 }
         for _ in 0 ..< 20 {
@@ -18,11 +19,14 @@
         model.agentPrimary(1)
         clock.time += 3
         model.startRuntime() // No window or view exists in this test.
-        for _ in 0 ..< 100 where model.agents.slots[0].phase != .waitingApproval {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await scheduler.waitUntilSleeping()
+        #expect(model.agents.slots[0].phase == .queued)
+        scheduler.resume()
+        await scheduler.waitUntilSleeping() // The first tick completed before the second wait.
         #expect(model.agents.slots[0].phase == .waitingApproval)
+        #expect(scheduler.durations == [.milliseconds(250), .milliseconds(250)])
         model.stopRuntime()
+        scheduler.cancel()
         withExtendedLifetime(subscription) {}
     }
 #endif
