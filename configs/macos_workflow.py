@@ -43,7 +43,7 @@ def build(configuration: str) -> Path:
     settings = load_app_build_settings(REPO_ROOT)
     for relative in ("swiftpm", f"app/{configuration}/{PRODUCT}.app", "icons/AppIcon.iconset", "icons/AppIcon.png"):
         build_path(REPO_ROOT, relative)
-    options = ["swift", "build", "--build-path", SWIFTPM_ROOT, "--jobs", "2", "--configuration", configuration]
+    options = ["swift", "build", "--build-path", SWIFTPM_ROOT, "--configuration", configuration]
     run([*options, "--product", PRODUCT])
     executable = Path(run([*options, "--show-bin-path"], capture=True)) / PRODUCT
     bundle = BUILD_ROOT / "app" / configuration / f"{PRODUCT}.app"
@@ -210,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
     with use_build_environment(REPO_ROOT):
         ensure_dependency(REPO_ROOT)
         if args.action == "test":
-            run(["swift", "test", "--build-path", SWIFTPM_ROOT, "--jobs", "2"])
+            run(["swift", "test", "--build-path", SWIFTPM_ROOT])
         elif args.action == "core":
             run(
                 [
@@ -218,8 +218,6 @@ def main(argv: list[str] | None = None) -> int:
                     "build",
                     "--build-path",
                     SWIFTPM_ROOT,
-                    "--jobs",
-                    "2",
                     "--target",
                     "XTouchCompactCore",
                     "--configuration",

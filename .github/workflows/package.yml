@@ -1,0 +1,27 @@
+name: Package macOS app
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+jobs:
+  package-macos:
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: python3 configs/check_swift_toolchain.py
+      - run: python3 configs/setup_local_project.py
+      # Release build, ad-hoc signed ZIP/DMG with checksums and a startup smoke of the packaged app.
+      - run: python3 configs/macos_workflow.py package
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: xtouch-compact-macos-${{ github.ref_name }}
+          path: |
+            build/package/*.zip
+            build/package/*.zip.sha256
+            build/package/*.dmg
+            build/package/*.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14
