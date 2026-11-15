@@ -672,3 +672,31 @@
 "Replay stopped: invalid recorded state." = "Replay stopped: invalid recorded state.";
 
 "Offline actions send no MIDI; the live console keeps its mode. Recorded evidence is not hardware qualification." = "Offline actions send no MIDI; the live console keeps its mode. Recorded evidence is not hardware qualification.";
+
+"暂缓" = "Deferred";
+
+"未发出" = "Not sent";
+
+"实体 %@" = "Device %@";
+
+"电机指令未发出，实体推子没有被驱动" = "The motor command was not sent; the physical fader was not driven";
+
+"滑块是软件目标；设备不回报电机走位，这里只显示实体推子最近一次上报的位置" = "The cap is the software target. The device does not report motor moves, so this shows the last position the physical fader reported";
+
+"Connected · RX ch %@" = "Connected · RX ch %@";
+
+"Lights not synchronized" = "Lights not synchronized";
+
+"Manual send" = "Manual send";
+
+"Live send" = "Live send";
+
+"Send" = "Send";
+
+"Edits are staged until you press Send." = "Edits are staged until you press Send.";
+
+"Sends this layer's lights, rings and the nine fader targets once. Touched faders are not moved." = "Sends this layer's lights, rings and the nine fader targets once. Touched faders are not moved.";
+
+"待发送" = "Staged";
+
+"Staged. Press Send to push it to the device." = "Staged. Press Send to push it to the device.";

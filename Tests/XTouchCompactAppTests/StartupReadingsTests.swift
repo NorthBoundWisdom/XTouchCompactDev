@@ -142,14 +142,99 @@
         #expect(model.panelSnapshot.fader(1)?.panelValue == 20)
         #expect(model.panelSnapshot.fader(1)?.hardwareReading?.isCurrent == false)
         #expect(model.hardwareValueCache?.faders[1]?.value == 20)
+        // Send mode draws the target as the cap and the stale reading as a separate marker.
+        #expect(model.panelSnapshot.fader(1)?.capPosition == 60)
+        #expect(model.panelSnapshot.fader(1)?.deviceMarker?.value == 20)
+        #expect(model.panelSnapshot.fader(1)?.deviceMarker?.isCurrent == false)
+        #expect(model.panelSnapshot.fader(1)?.motorDelivery == .sent)
         #expect(model.panelSnapshot.encoder(1)?.panelValue == nil)
         #expect(model.hardwareValueCache?.encoders[.a]?[1] == nil)
+        // The cell draws the host value the operator just wrote; no reading is invented.
+        #expect(model.panelSnapshot.encoder(1)?.cellValue == 80)
         midi.onMessages?([.controlChange(channel: 0, number: 1, value: 30)])
         #expect(model.panelSnapshot.fader(1)?.hardwareReading?.isCurrent == true)
+        #expect(model.panelSnapshot.fader(1)?.motorDelivery == nil) // A new input supersedes the old command.
         midi.fails = true
         model.faderChanged(1, value: 70)
         #expect(model.panelSnapshot.fader(1)?.hardwareReading?.isCurrent == false)
         #expect(model.panelSnapshot.fader(1)?.panelValue == 30)
+        #expect(model.panelSnapshot.fader(1)?.capPosition == 70)
+        #expect(model.panelSnapshot.fader(1)?.motorDelivery == .failed)
+    }
+
+    @Test @MainActor func hardwareConsoleAlwaysDrawsTheTargetCapAndKeepsTheReadingSeparate() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.useHardware(true)
+        let unknown = model.panelSnapshot.fader(2)
+        #expect(unknown?.capFollowsTarget == true && unknown?.hasCapPosition == true)
+        #expect(unknown?.capPosition == unknown?.target)
+        #expect(unknown?.hardwareReading == nil && unknown?.deviceMarker == nil && unknown?.motorDelivery == nil)
+        model.enableHardwareWriteback()
+        // A reading equal to the target coincides with the cap instead of drawing a second marker.
+        model.faderChanged(2, value: 50)
+        midi.onMessages?([.controlChange(channel: 0, number: 2, value: 50)])
+        #expect(model.panelSnapshot.fader(2)?.hardwareReading?.value == 50)
+        #expect(model.panelSnapshot.fader(2)?.deviceMarker == nil)
+    }
+
+    @Test @MainActor func manualSendStagesEditsAndTransmitsOnlyOnExplicitSend() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.useHardware(true)
+        midi.onMessages?([.controlChange(channel: 0, number: 102, value: 127)]) // F2 is held.
+        model.faderChanged(1, value: 60)
+        model.faderChanged(2, value: 70)
+        #expect(midi.sent.isEmpty)
+        #expect(model.panelSnapshot.fader(1)?.capPosition == 60)
+        #expect(model.panelSnapshot.fader(1)?.motorDelivery == .staged)
+
+        model.panelIntents.sendStaged?()
+        #expect(midi.sent.contains(.controlChange(channel: 0, number: 1, value: 60)))
+        #expect(model.panelSnapshot.fader(1)?.motorDelivery == .sent)
+        // Never a motor command for a touched fader, and nothing queued for later.
+        #expect(!midi.sent.contains { if case .controlChange(_, 2, _) = $0 { true } else { false } })
+        #expect(!model.session.state.isMotorPending(2))
+        // No Program Change: the firmware cycles all motors on a layer assertion.
+        #expect(!midi.sent.contains { if case .programChange = $0 { true } else { false } })
+        #expect(model.listenOnly)
+
+        let count = midi.sent.count
+        model.faderChanged(1, value: 80)
+        #expect(midi.sent.count == count)
+        #expect(model.panelSnapshot.fader(1)?.motorDelivery == .staged)
+    }
+
+    @Test @MainActor func deliveryOutcomeDoesNotSurviveALayerChange() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.useHardware(true)
+        model.enableHardwareWriteback()
+        midi.fails = true
+        model.faderChanged(1, value: 60)
+        #expect(model.panelSnapshot.fader(1)?.motorDelivery == .failed)
+        midi.fails = false
+        model.setConsoleMode(.hardwareListen)
+        model.setLayer(.b)
+        #expect(model.layer == .b)
+        model.setConsoleMode(.hardwareSend)
+        #expect(model.panelSnapshot.fader(1)?.motorDelivery == nil)
+    }
+
+    @Test @MainActor func inputArrivingDuringASendOutranksThatSendsOutcome() {
+        let midi = FakeMIDIService()
+        let model = ConsoleModel(startsMIDI: false, midi: midi, isolated: true)
+        midi.connect(); model.useHardware(true)
+        model.enableHardwareWriteback()
+        midi.afterPinnedSend = { [weak midi] in
+            midi?.afterPinnedSend = nil
+            midi?.onMessages?([.controlChange(channel: 0, number: 1, value: 33)])
+        }
+        model.faderChanged(1, value: 60)
+        #expect(midi.sent.contains(.controlChange(channel: 0, number: 1, value: 60)))
+        #expect(model.panelSnapshot.fader(1)?.hardwareReading?.value == 33)
+        #expect(model.panelSnapshot.fader(1)?.hardwareReading?.isCurrent == true)
+        #expect(model.panelSnapshot.fader(1)?.motorDelivery == nil)
     }
 
     @Test @MainActor func physicalPressesRemainIndependentOfTheActiveMockSession() {

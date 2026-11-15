@@ -672,3 +672,31 @@
 "Replay stopped: invalid recorded state." = "重播已停止：录制状态无效。";
 
 "Offline actions send no MIDI; the live console keeps its mode. Recorded evidence is not hardware qualification." = "离线操作不发送 MIDI，主控台保持当前模式；录制证据不等于实机验收。";
+
+"暂缓" = "暂缓";
+
+"未发出" = "未发出";
+
+"实体 %@" = "实体 %@";
+
+"电机指令未发出，实体推子没有被驱动" = "电机指令未发出，实体推子没有被驱动";
+
+"滑块是软件目标；设备不回报电机走位，这里只显示实体推子最近一次上报的位置" = "滑块是软件目标；设备不回报电机走位，这里只显示实体推子最近一次上报的位置";
+
+"Connected · RX ch %@" = "已连接 · 接收通道 %@";
+
+"Lights not synchronized" = "灯光未同步";
+
+"Manual send" = "手动发送";
+
+"Live send" = "实时发送";
+
+"Send" = "发送";
+
+"Edits are staged until you press Send." = "改动暂存，点「发送」后才到达设备。";
+
+"Sends this layer's lights, rings and the nine fader targets once. Touched faders are not moved." = "把当前层的灯光、灯环和九个推子目标发送一次；被触摸的推子不会移动。";
+
+"待发送" = "待发送";
+
+"Staged. Press Send to push it to the device." = "已暂存，点「发送」后推送到设备。";

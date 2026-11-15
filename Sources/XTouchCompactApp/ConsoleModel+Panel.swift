@@ -223,6 +223,8 @@
                 if hardwareMode {
                     result.mirrorsHardware = true
                     result.hardwareReading = hardwareReading(.fader(index))
+                    result.capFollowsTarget = true
+                    result.motorDelivery = faderMotorDelivery[index]
                     result.observed = matchingLiveValues?.faders[index]?.value
                     result.isTouched = reportedHardwarePresses[.faderTouch(index)]
                 }
@@ -255,7 +257,7 @@
                 // Operator reports: top encoders sometimes light adjacent pairs; side encoders
                 // empty the left half before filling the right. Keep protocol style nil unless
                 // the host has explicitly selected one; do not rewrite any hardware profile.
-                if let value = result.panelValue {
+                if let value = result.cellValue {
                     result.localRingAppearance = PanelLayout.sideEncoders.contains(index)
                         ? .bipolar(value: value) : .interpolated(value: value)
                 }
@@ -291,6 +293,7 @@
                 selectLayer: { [weak self] in self?.setLayer($0) },
                 useHardware: { [weak self] in self?.useHardware($0) },
                 recallMotors: { [weak self] in self?.recallMotors() },
+                sendStaged: { [weak self] in self?.sendStagedState() },
                 retrySave: { [weak self] in self?.retryWorkspaceSave() },
                 dismissNotification: { [weak self] in self?.dismissNotification($0) },
                 clearMonitor: { [weak self] in self?.clearMonitor() },

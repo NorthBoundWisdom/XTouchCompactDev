@@ -31,6 +31,9 @@
         @Published private(set) var hardwareValueCache: HardwareValueCache?
         @Published private(set) var liveHardwareValues: HardwareValueCache?
         @Published private(set) var reportedHardwarePresses: [CompactControl: Bool] = [:]
+        /// Outcome of the last motor command per fader since its last position input.
+        /// Transport delivery only; never evidence that the cap arrived.
+        @Published private(set) var faderMotorDelivery: [Int: MotorDeliveryPresentation] = [:]
         private var hardwareValuesDirty = false
         /// Parameter values last written to disk; differences are flushed with the runtime tick.
         private var savedParameterValues: [String: Double]?
@@ -163,6 +166,7 @@
                     }
                     liveHardwareValues = nil
                     reportedHardwarePresses = [:]
+                    faderMotorDelivery = [:]
                 }
                 if nonMotorTests.approval != nil {
                     lockNonMotorTests("Connection changed; test output locked.")
@@ -673,6 +677,13 @@
 
         func setLayer(_ next: CompactLayer) {
             lockNonMotorTests()
+            let previous = session.state.layer
+            defer {
+                // Delivery outcomes describe the previous layer's targets, not this bank's.
+                if session.state.layer != previous {
+                    faderMotorDelivery = [:]
+                }
+            }
             apply { session in
                 guard hardwareMode else { return try session.selectLayer(next) }
                 var messages = try session.selectHostLayer(next)
@@ -688,6 +699,20 @@
         func recallMotors() {
             confirmCurrentMotorAction()
             apply { try $0.recallFaders() }
+        }
+
+        /// Manual send: one explicit push of the current layer's lights, rings and fader
+        /// targets, then passive again. No Program Change, so the firmware does not cycle the
+        /// motors. A touched fader is not commanded and its target stays staged.
+        func sendStagedState() {
+            guard hardwareMode, listenOnly, !isObservingHardware, connection.isConnected else { return }
+            setListenOnly(false)
+            let current = layer
+            apply { session in
+                let feedback = try session.selectHostLayer(current)
+                return try feedback + session.recallFaders()
+            }
+            setListenOnly(true)
         }
 
         func faderChanged(_ index: Int, value: Double) {
@@ -789,6 +814,9 @@
             if let pressed = input.isPressed {
                 reportedHardwarePresses[input.control] = pressed
             }
+            if case let .fader(index) = input.control {
+                faderMotorDelivery[index] = nil
+            }
         }
 
         private func receive(_ messages: [MIDIMessage], fromMock: Bool = false) {
@@ -880,6 +908,9 @@
                 }
                 session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
                 for message in messages {
+                    if hardwareMode, case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
+                        faderMotorDelivery[Int(number)] = .staged
+                    }
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
                            nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control)
                 }
@@ -901,6 +932,9 @@
                     withheldMotor = true
                     hardwareFeedbackNeedsSync = true
                     error = ConsoleError.motorActionRequired
+                    if case let .controlChange(_, number, _) = message {
+                        faderMotorDelivery[Int(number)] = .refused
+                    }
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed)
                     continue
@@ -927,6 +961,9 @@
                 }
                 if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
                     liveHardwareValues?.invalidateFader(Int(number))
+                    // Recorded before the transport call: an input delivered synchronously
+                    // during the send is newer than this command and must be able to clear it.
+                    faderMotorDelivery[Int(number)] = .sent
                 }
                 do {
                     if let authorizedTest {
@@ -940,11 +977,17 @@
                         session.didTransmitLayerAssertion()
                         liveHardwareValues = nil
                         reportedHardwarePresses = [:]
+                        faderMotorDelivery = [:]
                     }
                     record(message, direction: .output, source: source, delivery: .sent,
                            nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control)
                 } catch {
                     self.error = error
+                    if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number),
+                       faderMotorDelivery[Int(number)] == .sent
+                    {
+                        faderMotorDelivery[Int(number)] = .failed
+                    }
                     record(message, direction: .output, source: source, ignored: true, delivery: .failed,
                            nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control)
                     hardwareFeedbackNeedsSync = true

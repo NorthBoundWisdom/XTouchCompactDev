@@ -258,14 +258,14 @@
         @State private var isDragging = false
 
         private static let slotLength: CGFloat = 196
-        private static let capHeight: CGFloat = 30
+        private static let capHeight: CGFloat = 38
 
         private var isTouched: Bool {
             fader.isTouched ?? isDragging
         }
 
         private var displayedValue: String {
-            if fader.mirrorsHardware {
+            if fader.mirrorsHardware, !fader.capFollowsTarget {
                 guard let reading = fader.hardwareReading else { return "—" }
                 return (reading.isCurrent ? "" : "≈") + String(reading.value)
             }
@@ -275,10 +275,31 @@
             return fader.detail ?? String(fader.target)
         }
 
+        /// Send mode only: what is known about the physical cap, kept apart from the target above it.
+        private var deviceStatus: (text: String, color: Color)? {
+            guard fader.capFollowsTarget else { return nil }
+            if fader.isMotorPending == true {
+                return (l.text("暂缓"), Theme.touch)
+            }
+            if fader.motorDelivery == .failed || fader.motorDelivery == .refused {
+                return (l.text("未发出"), Theme.led)
+            }
+            if fader.motorDelivery == .staged {
+                return (l.text("待发送"), Theme.touch)
+            }
+            guard let reading = fader.hardwareReading else { return (l.text("实体 %@", "?"), .secondary) }
+            return (l.text("实体 %@", (reading.isCurrent ? "" : "≈") + String(reading.value)), Theme.observed)
+        }
+
+        private var isUndelivered: Bool {
+            fader.motorDelivery == .failed || fader.motorDelivery == .refused
+        }
+
         private var accessibleValue: String {
             if fader.mirrorsHardware {
-                return fader.hardwareReading.map { String($0.value) + " " + l.text($0.isCurrent ? "Last received input" : "Last input · awaiting confirmation") }
+                let reading = fader.hardwareReading.map { String($0.value) + " " + l.text($0.isCurrent ? "Last received input" : "Last input · awaiting confirmation") }
                     ?? l.text("Not reported")
+                return fader.capFollowsTarget ? String(fader.target) + ", " + (deviceStatus?.text ?? "") + ", " + reading : reading
             }
             if fader.followsObservedPosition {
                 let position = fader.observed.map { String($0) } ?? l.text("Not reported")
@@ -301,6 +322,15 @@
                     .font(.system(size: m(10), design: .monospaced))
                     .foregroundStyle(.primary.opacity(0.85))
                     .lineLimit(1)
+                if fader.mirrorsHardware {
+                    // Fixed height in both hardware modes so strips do not jump on a mode switch.
+                    Text(deviceStatus?.text ?? " ")
+                        .font(.system(size: m(8), design: .monospaced))
+                        .foregroundStyle(deviceStatus?.color ?? .clear)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .help(deviceStatusHelp)
+                }
             }
             .padding(.vertical, m(5))
             .frame(maxWidth: .infinity)
@@ -321,6 +351,20 @@
                 onMove(UInt8(nextValue))
             }
             .help(l.text("拖动 %@", String(CompactControl.fader(fader.index).shortName)))
+        }
+
+        private var deviceStatusHelp: String {
+            guard fader.capFollowsTarget else { return "" }
+            if fader.isMotorPending == true {
+                return l.text("触摸期间电机指令已暂缓，松开后再对位")
+            }
+            if isUndelivered {
+                return l.text("电机指令未发出，实体推子没有被驱动")
+            }
+            if fader.motorDelivery == .staged {
+                return l.text("Staged. Press Send to push it to the device.")
+            }
+            return l.text("滑块是软件目标；设备不回报电机走位，这里只显示实体推子最近一次上报的位置")
         }
 
         /// Leader shows ⛓ name; members show → name. Empty space keeps strips aligned.
@@ -354,32 +398,51 @@
             let cap = m(Self.capHeight)
             let travel = length - cap
             return ZStack(alignment: .top) {
-                RoundedRectangle(cornerRadius: m(3))
-                    .fill(Theme.slot)
-                    .frame(width: m(7), height: length)
-                // Scale marks every quarter of the travel.
-                ForEach(0 ... 4, id: \.self) { mark in
+                RoundedRectangle(cornerRadius: m(1.5))
+                    .fill(Color.black.opacity(0.85))
+                    .frame(width: m(4), height: length)
+                // Printed legend of the unit. Cosmetic: MIDI 0...127 stays linear over the travel.
+                ForEach(0 ... 40, id: \.self) { tick in
                     Rectangle()
-                        .fill(Color.white.opacity(0.18))
-                        .frame(width: m(26), height: 1)
-                        .offset(y: cap / 2 + travel * CGFloat(mark) / 4)
+                        .fill(Color.white.opacity(0.14))
+                        .frame(width: m(8), height: 1)
+                        .offset(x: m(10), y: cap / 2 + travel * CGFloat(tick) / 40)
                 }
-                if !fader.mirrorsHardware, !fader.followsObservedPosition, let observed = fader.observed, observed != fader.target {
-                    // Where the device last reported the fader: the motor has not arrived yet.
+                ForEach(PanelLayout.faderScale, id: \.label) { mark in
+                    Rectangle()
+                        .fill(Color.white.opacity(0.32))
+                        .frame(width: m(8), height: 1)
+                        .offset(x: -m(8), y: cap / 2 + travel * mark.fromTop)
+                    Text(mark.label)
+                        .font(.system(size: m(6.5)))
+                        .foregroundStyle(Color.white.opacity(0.45))
+                        .frame(width: m(16), alignment: .trailing)
+                        .offset(x: -m(21), y: cap / 2 + travel * mark.fromTop - m(4))
+                }
+                if fader.hasCapPosition {
+                    capView
+                        .opacity(fader.mirrorsHardware && !fader.capFollowsTarget && fader.hardwareReading?.isCurrent == false ? 0.5 : isUndelivered ? 0.6 : 1)
+                        .frame(width: m(26), height: cap)
+                        .offset(y: travel * (1 - FaderTravel.fraction(for: fader.capPosition)))
+                } else {
+                    // Position unknown: keep a fader on screen without claiming where it is.
+                    RoundedRectangle(cornerRadius: m(4))
+                        .stroke(isTouched ? Theme.touch : Color.secondary, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        .overlay {
+                            Image(systemName: isTouched ? "hand.point.up.left.fill" : "questionmark")
+                                .font(.system(size: m(10)))
+                                .foregroundStyle(isTouched ? Theme.touch : Color.secondary)
+                        }
+                        .frame(width: m(26), height: cap)
+                        .offset(y: travel / 2)
+                }
+                if let marker = fader.deviceMarker {
+                    // Where the device last reported the fader. Drawn over the cap so it stays readable.
                     Capsule()
                         .fill(Theme.observed)
                         .frame(width: m(34), height: m(3))
-                        .offset(y: cap / 2 + travel * (1 - FaderTravel.fraction(for: observed)) - m(1.5))
-                }
-                if fader.mirrorsHardware ? fader.hardwareReading != nil : (!fader.followsObservedPosition || fader.observed != nil) {
-                    capView
-                        .opacity(fader.mirrorsHardware && fader.hardwareReading?.isCurrent == false ? 0.5 : 1)
-                        .frame(width: m(36), height: cap)
-                        .offset(y: travel * (1 - FaderTravel.fraction(for: fader.capPosition)))
-                } else {
-                    Image(systemName: isTouched ? "hand.point.up.left.fill" : "minus")
-                        .foregroundStyle(isTouched ? Theme.touch : Color.secondary)
-                        .offset(y: length / 2)
+                        .opacity(marker.isCurrent ? 1 : 0.55)
+                        .offset(y: cap / 2 + travel * (1 - FaderTravel.fraction(for: marker.value)) - m(1.5))
                 }
             }
             .frame(maxWidth: .infinity)
@@ -394,7 +457,8 @@
                             onTouch?(true)
                         }
                         let value = FaderTravel.value(at: gesture.location.y, length: length, cap: cap)
-                        if value != fader.capPosition {
+                        // Compare with what a drag changes: in send mode that is the target.
+                        if value != (fader.capFollowsTarget ? fader.target : fader.capPosition) {
                             onMove(value)
                         }
                     }
@@ -406,12 +470,21 @@
         }
 
         private var capView: some View {
+            // Silver cap with a finger dip, like the unit's.
             RoundedRectangle(cornerRadius: m(4))
-                .fill(LinearGradient(colors: [Color(white: 0.42), Color(white: 0.2)], startPoint: .top, endPoint: .bottom))
-                .overlay { Rectangle().fill(Color.white.opacity(0.75)).frame(height: m(2)) }
+                .fill(LinearGradient(stops: [
+                    .init(color: Color(white: 0.9), location: 0),
+                    .init(color: Color(white: 0.62), location: 0.18),
+                    .init(color: Color(white: 0.4), location: 0.48),
+                    .init(color: Color(white: 0.78), location: 0.56),
+                    .init(color: Color(white: 0.5), location: 0.86),
+                    .init(color: Color(white: 0.72), location: 1),
+                ], startPoint: .top, endPoint: .bottom))
+                .overlay { Rectangle().fill(Color.black.opacity(0.55)).frame(height: m(1.5)) }
                 .overlay {
                     RoundedRectangle(cornerRadius: m(4))
-                        .stroke(isTouched ? Theme.touch : Color.black.opacity(0.6), lineWidth: isTouched ? 2 : 1)
+                        .stroke(isTouched ? Theme.touch : isUndelivered ? Theme.led : Color.black.opacity(0.6),
+                                lineWidth: isTouched || isUndelivered ? 2 : 1)
                 }
                 .shadow(color: isTouched ? Theme.touch.opacity(0.7) : .clear, radius: 5)
                 .overlay(alignment: .trailing) {
@@ -449,10 +522,6 @@
         private static let pointsPerStep: CGFloat = 3
 
         private var displayedValue: String {
-            if encoder.mirrorsHardware {
-                guard let reading = encoder.hardwareReading else { return "—" }
-                return (reading.isCurrent ? "" : "≈") + String(reading.value)
-            }
             return encoder.observesInput ? encoder.observedValue.map { String($0) } ?? "—" : encoder.detail ?? "\(encoder.value)"
         }
 
@@ -461,7 +530,7 @@
             framedBody
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(accessibilityName)
-                .accessibilityValue(encoder.panelValue.map { String($0) } ?? l.text("Not reported"))
+                .accessibilityValue(encoder.cellValue.map { String($0) } ?? l.text("Not reported"))
                 .accessibilityAdjustableAction { (direction: AccessibilityAdjustmentDirection) in
                     turn(direction)
                 }
@@ -511,20 +580,18 @@
         private var knob: some View {
             let lit = RingLEDs.lit(encoder.ring, style: encoder.style, localAppearance: encoder.localRingAppearance)
             return ZStack {
-                RingView(lit: encoder.observesInput || encoder.mirrorsHardware && encoder.hardwareReading == nil ? RingLEDs.lit(.off, style: nil) : lit)
-                    .opacity(encoder.mirrorsHardware && encoder.hardwareReading?.isCurrent == false ? 0.4 : 1)
+                RingView(lit: encoder.observesInput ? RingLEDs.lit(.off, style: nil) : lit)
                 Circle()
                     .fill(RadialGradient(colors: [Color(white: 0.3), Color(white: 0.1)],
                                          center: .topLeading, startRadius: 1, endRadius: m(26)))
                     .frame(width: m(26), height: m(26))
                     .overlay {
-                        if let value = encoder.panelValue {
+                        if let value = encoder.cellValue {
                             Capsule()
                                 .fill(Color.white.opacity(0.85))
                                 .frame(width: m(2), height: m(8))
                                 .offset(y: -m(8))
                                 .rotationEffect(.degrees(-135 + 270 * Double(value) / 127))
-                                .opacity(encoder.mirrorsHardware && encoder.hardwareReading?.isCurrent == false ? 0.4 : 1)
                         }
                     }
                     .scaleEffect((encoder.isPushed ?? isPushing) ? 0.92 : 1)

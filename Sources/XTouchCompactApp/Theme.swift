@@ -34,6 +34,32 @@
         }
     }
 
+    /// One size for every control in the mode strip and the header, so they share a baseline.
+    enum BarMetrics {
+        static let height: CGFloat = 28
+        static let radius: CGFloat = 7
+        /// Inset of a segment inside its segmented group; the group is still `height` tall.
+        static let segmentInset: CGFloat = 3
+    }
+
+    /// Flat button for the mode strip and header. A tint marks the one action that matters now.
+    struct BarButtonStyle: ButtonStyle {
+        var tint: Color?
+        @Environment(\.isEnabled) private var isEnabled
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .font(.callout)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .frame(height: BarMetrics.height)
+                .foregroundStyle(tint == nil ? Color.primary.opacity(0.9) : Color.black)
+                .background(tint ?? Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: BarMetrics.radius))
+                .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.7 : 1)
+                .contentShape(Rectangle())
+        }
+    }
+
     struct PanelStyle: ViewModifier {
         var padding: CGFloat = 14
 

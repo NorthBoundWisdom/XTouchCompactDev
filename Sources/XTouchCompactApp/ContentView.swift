@@ -182,7 +182,7 @@
                 Button { confirmsRecall = true } label: {
                     Label(l.text("电机归位…"), systemImage: "arrow.up.and.down.and.sparkles")
                 }
-                .controlSize(.small)
+                .buttonStyle(BarButtonStyle())
                 .disabled(snapshot.isMock || snapshot.listenOnly || !snapshot.connection.isConnected)
                 .help(l.text("把九个电动推子移动到当前层的软件数值；只在你确认后执行"))
                 .confirmationDialog(l.text("移动全部九个实体推子？"), isPresented: $confirmsRecall) {
@@ -193,7 +193,7 @@
                 }
 
                 SettingsLink { Label(l.text("Settings"), systemImage: "gearshape") }
-                    .labelStyle(.iconOnly).help(l.text("Settings"))
+                    .labelStyle(.iconOnly).buttonStyle(BarButtonStyle()).help(l.text("Settings"))
                 DeviceStatus(snapshot: snapshot)
             }
             .padding(.horizontal, 18)
@@ -213,20 +213,19 @@
         var body: some View {
             let connected = snapshot.connection.isConnected
             let color: Color = !snapshot.isMock ? (connected ? .green : .orange) : Theme.value
-            HStack(spacing: 10) {
+            // One line at the shared bar height; the port names are in the tooltip.
+            HStack(spacing: 8) {
                 Image(systemName: !snapshot.isMock
                     ? (connected ? "cable.connector.horizontal" : "cable.connector.slash") : "cpu")
                     .foregroundStyle(color)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.callout.bold()).foregroundStyle(color)
-                    Text(detail).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
-                }
+                Text(title).font(.callout.bold()).foregroundStyle(color).lineLimit(1)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-            .frame(maxWidth: 360, alignment: .trailing)
+            .padding(.horizontal, 10)
+            .frame(height: BarMetrics.height)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: BarMetrics.radius))
+            .help(detail)
             .accessibilityElement(children: .combine)
+            .accessibilityValue(detail)
         }
 
         private var title: String {

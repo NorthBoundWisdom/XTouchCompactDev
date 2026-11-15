@@ -48,6 +48,16 @@
         var isCurrent: Bool
     }
 
+    /// What happened to the last motor command for a fader. `sent` is transport delivery:
+    /// the device does not echo motor moves, so it is never a position observation.
+    enum MotorDeliveryPresentation: Equatable, Sendable {
+        case sent, failed
+        /// Manual send: the target changed but nothing was transmitted yet.
+        case staged
+        /// Withheld until the operator explicitly confirms motor output for this attachment.
+        case refused
+    }
+
     struct FaderPresentation: Equatable, Identifiable, Sendable {
         let index: Int
         /// Host-desired position (the application parameter), 0...127.
@@ -68,9 +78,30 @@
         var followsObservedPosition = false
         var mirrorsHardware = false
         var hardwareReading: HardwareValuePresentation?
+        /// Hardware console (manual or live send): the cap is the software target the operator
+        /// drags, and `hardwareReading` is drawn as a separate marker.
+        var capFollowsTarget = false
+        /// Nil when no motor command was attempted since the last position input.
+        var motorDelivery: MotorDeliveryPresentation?
 
         var panelValue: UInt8? {
             mirrorsHardware ? hardwareReading?.value : followsObservedPosition ? observed : target
+        }
+
+        /// Device-side position drawn beside the cap when it differs from the cap.
+        /// Nil means either unknown or coincident; never substituted with the target.
+        var deviceMarker: (value: UInt8, isCurrent: Bool)? {
+            if mirrorsHardware {
+                guard capFollowsTarget, let hardwareReading, hardwareReading.value != target else { return nil }
+                return (hardwareReading.value, hardwareReading.isCurrent)
+            }
+            guard !followsObservedPosition, let observed, observed != target else { return nil }
+            return (observed, true)
+        }
+
+        /// False when the panel has no position to draw a solid cap at.
+        var hasCapPosition: Bool {
+            mirrorsHardware ? capFollowsTarget || hardwareReading != nil : !followsObservedPosition || observed != nil
         }
 
         var id: Int {
@@ -84,7 +115,7 @@
         /// A host write may change target while a hand still owns the physical cap.
         var capPosition: UInt8 {
             if mirrorsHardware {
-                return hardwareReading?.value ?? target
+                return capFollowsTarget ? target : hardwareReading?.value ?? target
             }
             return followsObservedPosition || isTouched == true ? observed ?? target : target
         }
@@ -122,6 +153,12 @@
 
         var panelValue: UInt8? {
             mirrorsHardware ? hardwareReading?.value : observesInput ? observedValue : value
+        }
+
+        /// What the panel cell draws. On the hardware console that is the host value the
+        /// operator edits; the device reading stays a separate fact in the inspector.
+        var cellValue: UInt8? {
+            mirrorsHardware ? value : panelValue
         }
 
         var id: Int {
@@ -357,8 +394,9 @@
         var footswitchDown = false
     }
 
-    /// The three operating modes. The input-check tool is a view on top of `hardwareListen`,
-    /// not a fourth mode.
+    /// The three operating modes. `hardwareListen` is presented as "manual send": edits are
+    /// staged and reach the device only on an explicit send; `hardwareSend` is "live send".
+    /// The input-check tool is a view on top of `hardwareListen`, not a fourth mode.
     enum ConsoleMode: String, CaseIterable, Sendable {
         case mock, hardwareListen, hardwareSend
     }
@@ -502,6 +540,8 @@
         var selectLayer: ((CompactLayer) -> Void)?
         var useHardware: ((Bool) -> Void)?
         var recallMotors: (() -> Void)?
+        /// Manual send: push the current layer's lights, rings and fader targets once.
+        var sendStaged: (() -> Void)?
         var retrySave: (() -> Void)?
         var dismissNotification: ((String) -> Void)?
         var clearMonitor: (() -> Void)?
@@ -609,6 +649,13 @@
         static let topEncoders = Array(1 ... 8)
         /// Right-hand encoder block, two columns by four rows, in reading order.
         static let sideEncoders = Array(9 ... 16)
+
+        /// Legend printed beside each fader slot, with its distance from the top of the travel.
+        /// Read off a product photo for appearance only; it is not a MIDI-to-dB mapping.
+        static let faderScale: [(label: String, fromTop: Double)] = [
+            ("10", 0), ("5", 0.11), ("0", 0.23), ("-5", 0.35), ("-10", 0.46), ("-20", 0.6),
+            ("-30", 0.73), ("-40", 0.79), ("-50", 0.86), ("-60", 0.93), ("∞", 1),
+        ]
 
         /// The three buttons between a strip's encoder and its fader, top to bottom.
         static func stripButtons(strip: Int) -> [Int] {
