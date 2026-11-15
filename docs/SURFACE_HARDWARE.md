@@ -218,6 +218,6 @@ then captures and verifies bounded read-only simulation diagnostics. The latter 
 cover hardware static/read-only diagnostics and explicitly labeled rejection probes, with
 zero CoreMIDI access. Evidence stays outside the immutable delivery. The manifests record
 `source_commit`, `source_dirty: false`, the distinct `source_origin_main` base and
-`source_ahead`/`source_behind` counts, plus `delivery_status: unreleased-candidate`. They
+`source_ahead`/`source_behind` counts, plus `delivery_status: local-unpushed-candidate` when ahead (otherwise `remote-head-unreleased-candidate`). They
 do not claim a push or release. Fast-forwarding those exact SHAs preserves this artifact;
 rebasing to different SHAs requires rebuilding and updating consumer pins.

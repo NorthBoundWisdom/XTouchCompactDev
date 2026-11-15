@@ -159,11 +159,12 @@ def source_provenance(root=ROOT):
     def git(*args):
         return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
 
+    ahead = int(git("rev-list", "--count", "origin/main..HEAD"))
     return {
         "source_origin_main": git("rev-parse", "origin/main"),
-        "source_ahead": int(git("rev-list", "--count", "origin/main..HEAD")),
+        "source_ahead": ahead,
         "source_behind": int(git("rev-list", "--count", "HEAD..origin/main")),
-        "delivery_status": "unreleased-candidate",
+        "delivery_status": "local-unpushed-candidate" if ahead else "remote-head-unreleased-candidate",
     }
 
 

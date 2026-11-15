@@ -60,7 +60,7 @@ class DeliveryNamingTests(unittest.TestCase):
                     "source_origin_main": base,
                     "source_ahead": 1,
                     "source_behind": 0,
-                    "delivery_status": "unreleased-candidate",
+                    "delivery_status": "local-unpushed-candidate",
                 },
             )
             self.assertNotEqual(provenance["source_origin_main"], git(root, "rev-parse", "HEAD"))
