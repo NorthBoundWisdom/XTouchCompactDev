@@ -522,7 +522,7 @@
         private static let pointsPerStep: CGFloat = 3
 
         private var displayedValue: String {
-            return encoder.observesInput ? encoder.observedValue.map { String($0) } ?? "—" : encoder.detail ?? "\(encoder.value)"
+            encoder.observesInput ? encoder.observedValue.map { String($0) } ?? "—" : encoder.detail ?? "\(encoder.value)"
         }
 
         /// Split for the type checker: one long modifier chain timed out on CI's Swift 6.3.

@@ -193,10 +193,22 @@
         #expect(midi.sent.contains(.controlChange(channel: 0, number: 1, value: 60)))
         #expect(model.panelSnapshot.fader(1)?.motorDelivery == .sent)
         // Never a motor command for a touched fader, and nothing queued for later.
-        #expect(!midi.sent.contains { if case .controlChange(_, 2, _) = $0 { true } else { false } })
+        #expect(!midi.sent.contains {
+            if case .controlChange(_, 2, _) = $0 {
+                true
+            } else {
+                false
+            }
+        })
         #expect(!model.session.state.isMotorPending(2))
         // No Program Change: the firmware cycles all motors on a layer assertion.
-        #expect(!midi.sent.contains { if case .programChange = $0 { true } else { false } })
+        #expect(!midi.sent.contains {
+            if case .programChange = $0 {
+                true
+            } else {
+                false
+            }
+        })
         #expect(model.listenOnly)
 
         let count = midi.sent.count
