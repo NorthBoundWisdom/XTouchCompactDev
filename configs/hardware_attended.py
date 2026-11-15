@@ -13,8 +13,18 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve()
-ROOT = HERE.parents[1] if HERE.parent.name == "configs" else HERE.parents[3] / "XTouchCompactDev"
-OUT = ROOT.parent / "build/e"
+if HERE.parent.name == "configs":
+    ROOT = HERE.parents[1]
+    DEFAULT_OUT = ROOT / "build/e"
+else:
+    # Prepared field runners carry explicit local paths rather than guessing the checkout's
+    # parent/name. This file has no credentials and is generated only in the chosen build area.
+    context = json.loads(HERE.with_name("field-context.json").read_text())
+    if context.get("schema_version") != 1:
+        raise ValueError("Unsupported field runner context")
+    ROOT = Path(context["repository_root"])
+    DEFAULT_OUT = Path(context["output_root"])
+OUT = DEFAULT_OUT
 WORK = OUT / "xtouch"
 RUNTIME = WORK / "runtime"
 sys.dont_write_bytecode = True
@@ -24,6 +34,14 @@ if not __debug__:
     raise SystemExit("Run without -O: these checks rely on assert")
 sys.path.insert(0, str(ROOT / "build/dependencies/SurfacePlugins/clients/python"))
 from surface_control import Client
+
+
+def configure_workspace(workspace_root=None):
+    """Default to this checkout; the historical workspace location must be explicit."""
+    global OUT, WORK, RUNTIME
+    OUT = Path(workspace_root).resolve() / "build/e" if workspace_root is not None else DEFAULT_OUT
+    WORK = OUT / "xtouch"
+    RUNTIME = WORK / "runtime"
 
 
 def steps():
@@ -147,6 +165,9 @@ def prepare():
     destination = WORK / "field.py"
     if destination != HERE:
         shutil.copy2(HERE, destination)
+    (WORK / "field-context.json").write_text(
+        json.dumps({"schema_version": 1, "repository_root": str(ROOT), "output_root": str(OUT)}, indent=2) + "\n"
+    )
     return {
         "steps": len(document["steps"]),
         "sends": sum(row["sends_to_device"] for row in document["steps"]),
@@ -419,7 +440,11 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument("--confirmed", action="store_true")
+    parser.add_argument(
+        "--workspace-root", type=Path, help="Explicit workspace root for build/e output; default is this repository"
+    )
     args = parser.parse_args()
+    configure_workspace(args.workspace_root)
     if args.action == "prepare":
         result = prepare()
     elif args.action == "rehearse":

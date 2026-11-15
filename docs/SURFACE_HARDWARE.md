@@ -181,9 +181,12 @@ endpoints and matching layer evidence. Secondary credentials never gain reset or
 Scopes do not grant process permissions or extra write budgets. Use SDK 1.4.0's explicit
 `accepted_sources=("hardware",)` for both hardware clients; input must come from the device.
 
-The current workspace checklist is
-`/Users/ethan/Documents/AstroController/build/e/xtouch-attended.json` and its same-content
-`xtouch-attended.md`; generator/operator entry is `XTouchCompactDev/configs/hardware_attended.py`.
+The default checklist is this repository's `build/e/xtouch-attended.json` and its same-content
+`xtouch-attended.md`; generator/operator entry is `configs/hardware_attended.py`.
+To use a workspace-level `build/e/` location instead, explicitly pass `--workspace-root PATH`.
+The prepared field runner records the repository and output paths in a local, credential-free
+`field-context.json`, so copying the runner never guesses a sibling checkout name. Standalone
+preparation and rehearsal do not write outside this repository unless that option is supplied.
 It has nine stages: read-only startup; observe position/touch/encoder/button inputs on the
 user-confirmed bank; save epoch; physically disconnect/reconnect and verify unknown/no replay;
 restart with display permission; explicitly confirm one button light; explicitly confirm ring
@@ -197,6 +200,10 @@ Prepare/rehearse without devices, after a Debug build (paths resolve from this c
 python3 configs/hardware_attended.py prepare
 XTOUCH_HARDWARE_BINARY=build/swiftpm/debug/XTouchSurfaceHardware python3 configs/hardware_attended.py rehearse
 ```
+
+For the historical workspace layout, run the same commands with `--workspace-root ..`.
+The checklist JSON/Markdown contents and all nine step commands remain byte-identical;
+run those relative commands from the selected repository or workspace root respectively.
 
 The combined candidate root is hardware Contract 1.4; `simulation/` is a separate explicit
 simulation Contract 1.3 executable, profile, schema, four fixtures and SDK/checker. The root
