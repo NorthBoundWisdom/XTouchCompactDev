@@ -15,7 +15,8 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "build/dependencies/SurfacePlugins/clients/python"))
 from surface_control import Client, EventCursor, SurfaceError
 
-BINARY = Path(os.environ.get("XTOUCH_HARDWARE_BINARY", ROOT / ".build/debug/XTouchSurfaceHardware"))
+# Resolved at import: the service runs with each test's temporary directory as cwd.
+BINARY = Path(os.environ.get("XTOUCH_HARDWARE_BINARY", ROOT / ".build/debug/XTouchSurfaceHardware")).resolve()
 
 
 class RunningHardware:

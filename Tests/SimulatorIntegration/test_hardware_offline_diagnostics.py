@@ -17,7 +17,8 @@ sys.path.insert(0, str(ROOT / "build/dependencies/SurfacePlugins/clients/python"
 from configs.verify_hardware_http import RunningOfflineHardware
 from surface_control import Client, SurfaceError
 
-BINARY = Path(os.environ.get("XTOUCH_HARDWARE_BINARY", ROOT / ".build/debug/XTouchSurfaceHardware"))
+# Resolved at import: the service runs with each test's temporary directory as cwd.
+BINARY = Path(os.environ.get("XTOUCH_HARDWARE_BINARY", ROOT / ".build/debug/XTouchSurfaceHardware")).resolve()
 
 
 @unittest.skipUnless(sys.platform == "darwin", "XTouchSurfaceHardware target is macOS-only")
