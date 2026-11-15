@@ -153,6 +153,20 @@ def stage_shared_files(stage, root=ROOT, shared=SHARED):
     shutil.copy2(root / "examples/surface_simulator/CHASSIS.md", stage / "examples/CHASSIS.md")
 
 
+def source_provenance(root=ROOT):
+    """Record remote base separately from the clean local candidate; never claim a push."""
+
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
+
+    return {
+        "source_origin_main": git("rev-parse", "origin/main"),
+        "source_ahead": int(git("rev-list", "--count", "origin/main..HEAD")),
+        "source_behind": int(git("rev-list", "--count", "HEAD..origin/main")),
+        "delivery_status": "unreleased-candidate",
+    }
+
+
 def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED):
     """Hash every staged file and record exact host/shared revisions and shared source hashes.
 
@@ -175,6 +189,7 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED
     }
     manifest = {
         "schema_version": 1,
+        **source_provenance(root),
         "artifact": ARTIFACT,
         "product": "XTouchSurfaceSimulator",
         "source": "simulation",

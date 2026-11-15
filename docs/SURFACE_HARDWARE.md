@@ -96,12 +96,10 @@ All such tests run isolated; production launches omit these variables. Ready met
 sets test_only true. Scripts are never sent through HTTP.
 
 `python3 configs/package_surface_hardware.py --output-root ../deliveries` packages
-only the hardware service; it does not rebuild or replace old simulator deliveries.
+a hardware root plus a separate complete `simulation/` artifact from the same clean host HEAD; it never replaces any previous delivery.
 The manifest records host/shared pins, Contract 1.4, SDK 1.4.0, profile/mapping and
 file hashes. Runtime SDK includes runtime, checker and read-only diagnostics packages. The fake hardware double is confined to a separate `surface-control-test-support-1.4.0.zip`, explicitly test-only and hashed in the manifest; it never enters the runtime SDK ZIP.
-Outside-source verification is limited to describe, descriptor/mapping/hash validation
-and safe rejection/configuration checks without opening MIDI; it is not an HTTP or
-hardware acceptance report. The attended checklist and its fake-only rehearsal are
+The static hardware verifier is limited to describe, descriptor/mapping/hash validation without opening MIDI. The separate HTTP verifier uses permanently disabled device access. Neither is connected hardware acceptance. The attended checklist and its fake-only rehearsal are
 prepared separately under the workspace `build/e/`.
 
 The additional `surface-control-hardware-independent-v1.4.json` fixture selects
@@ -206,3 +204,20 @@ manifest hashes that entire subdirectory, including its own manifest. Neither pr
 instance/mapping identity may be substituted for the other. Root offline `--device-access disabled`
 remains permanent disconnected read-only diagnostics with zero MIDI access; it is not simulation
 and is not connected hardware acceptance. Physical qualification awaits joint attended acceptance.
+
+Source-independent checks (run from a directory outside this checkout and the delivery):
+
+```sh
+python3 "$DELIVERY/verify_simulation_delivery.py" "$DELIVERY" --evidence "$OUT/simulation"
+python3 "$DELIVERY/verify_hardware_delivery.py" "$DELIVERY"
+python3 "$DELIVERY/verify_hardware_http.py" "$DELIVERY" --evidence "$OUT/hardware"
+```
+
+The first command runs all four delivered simulation fixtures with the delivered checker,
+then captures and verifies bounded read-only simulation diagnostics. The latter commands
+cover hardware static/read-only diagnostics and explicitly labeled rejection probes, with
+zero CoreMIDI access. Evidence stays outside the immutable delivery. The manifests record
+`source_commit`, `source_dirty: false`, the distinct `source_origin_main` base and
+`source_ahead`/`source_behind` counts, plus `delivery_status: unreleased-candidate`. They
+do not claim a push or release. Fast-forwarding those exact SHAs preserves this artifact;
+rebasing to different SHAs requires rebuilding and updating consumer pins.

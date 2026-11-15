@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package a clean macOS display-only hardware service; never rebuild simulator deliveries."""
+"""Package a clean hardware root and distinct simulation artifact; preserve all old deliveries."""
 
 import argparse
 import hashlib
@@ -18,8 +18,13 @@ try:
         SHARED,
         TEST_SUPPORT_ZIP,
         command,
+        source_provenance,
+        stage_shared_files,
         stage_test_support,
         test_support_sources,
+    )
+    from .package_surface_simulator import (
+        write_manifest as write_simulator_manifest,
     )
 except ImportError:
     from delivery_index import publish
@@ -28,8 +33,13 @@ except ImportError:
         SHARED,
         TEST_SUPPORT_ZIP,
         command,
+        source_provenance,
+        stage_shared_files,
         stage_test_support,
         test_support_sources,
+    )
+    from package_surface_simulator import (
+        write_manifest as write_simulator_manifest,
     )
 
 SHARED_FILES = {
@@ -79,6 +89,7 @@ def stage_files(stage):
         ("examples/surface_hardware/conformance-roles.json", "conformance-roles.json"),
         ("configs/verify_hardware_delivery.py", "verify_hardware_delivery.py"),
         ("configs/verify_hardware_http.py", "verify_hardware_http.py"),
+        ("configs/verify_simulation_delivery.py", "verify_simulation_delivery.py"),
     ):
         shutil.copy2(ROOT / source, stage / name)
     with zipfile.ZipFile(stage / SDK_ZIP, "w") as sdk:
@@ -106,8 +117,6 @@ def package(output_root, configuration="release"):
             configuration,
             "--scratch-path",
             str(scratch),
-            "--product",
-            "XTouchSurfaceHardware",
         ],
         cwd=ROOT,
         check=True,
@@ -121,6 +130,14 @@ def package(output_root, configuration="release"):
     try:
         shutil.copy2(binaries / "XTouchSurfaceHardware", stage)
         stage_files(stage)
+        simulation = stage / "simulation"
+        simulation.mkdir()
+        shutil.copy2(binaries / "XTouchSurfaceSimulator", simulation)
+        stage_shared_files(simulation)
+        (simulation / "control-contract.json").write_bytes(
+            subprocess.check_output([str(simulation / "XTouchSurfaceSimulator"), "--describe"])
+        )
+        write_simulator_manifest(simulation, command("git", "rev-parse", "HEAD"), configuration)
         described = subprocess.check_output(
             [
                 str(stage / "XTouchSurfaceHardware"),
@@ -138,6 +155,7 @@ def package(output_root, configuration="release"):
             raise RuntimeError("Hardware binary discovery mismatch")
         manifest = {
             "schema_version": 1,
+            **source_provenance(),
             "artifact": "surface-control-hardware",
             "product": "XTouchSurfaceHardware",
             "source": "hardware",
@@ -171,6 +189,13 @@ def package(output_root, configuration="release"):
                     "path": TEST_SUPPORT_ZIP,
                 }
             ],
+            "simulation_artifact": {
+                "directory": "simulation",
+                "manifest": "simulation/manifest.json",
+                "source": "simulation",
+                "contract": "1.3",
+                "qualification": "software-only",
+            },
             "offline_diagnostic_mode": {
                 "argument": "--device-access disabled",
                 "device_access": "disabled",

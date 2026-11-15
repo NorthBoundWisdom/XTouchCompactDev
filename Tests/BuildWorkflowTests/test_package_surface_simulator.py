@@ -39,6 +39,32 @@ class DeliveryNamingTests(unittest.TestCase):
             output = package_surface_simulator.default_output(root)
             self.assertEqual(output, root / "build" / "deliveries" / ("xtouch-surface-simulator-" + short))
 
+    def test_candidate_provenance_keeps_remote_base_and_local_ahead_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git(root, "init", "-q")
+            git(root, "config", "user.name", "t")
+            git(root, "config", "user.email", "t@example.invalid")
+            (root / "file").write_text("base")
+            git(root, "add", "file")
+            git(root, "-c", "commit.gpgsign=false", "commit", "-qm", "base")
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "update-ref", "refs/remotes/origin/main", base)
+            (root / "file").write_text("candidate")
+            git(root, "add", "file")
+            git(root, "-c", "commit.gpgsign=false", "commit", "-qm", "candidate")
+            provenance = package_surface_simulator.source_provenance(root)
+            self.assertEqual(
+                provenance,
+                {
+                    "source_origin_main": base,
+                    "source_ahead": 1,
+                    "source_behind": 0,
+                    "delivery_status": "unreleased-candidate",
+                },
+            )
+            self.assertNotEqual(provenance["source_origin_main"], git(root, "rev-parse", "HEAD"))
+
     def test_default_output_for_checkout_matches_its_head(self):
         root = package_surface_simulator.ROOT
         output = package_surface_simulator.default_output()
@@ -170,6 +196,10 @@ class DeliveryContentTests(unittest.TestCase):
                 "start_protocol",
                 "stop_protocol",
                 "test_artifacts",
+                "source_origin_main",
+                "source_ahead",
+                "source_behind",
+                "delivery_status",
             },
         )
         self.assertIs(type(manifest["schema_version"]), int)
