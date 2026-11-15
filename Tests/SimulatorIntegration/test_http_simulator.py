@@ -528,6 +528,79 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
             # reader stays occupied for about three seconds. Expected lateness is a few milliseconds.
             self.assertLess(value, 0.5)
 
+    def test_lease_expiry_bound_with_concurrent_slow_connections(self):
+        """Four simultaneously connected slow peers cannot delay independent hold timers."""
+        client = Client(self.a.ready["url"], TOKEN, "car.a")
+        client.discover()
+        controls = ("a.touch.4", "a.touch.5", "a.touch.6")
+        held = []
+        local_deadline_bounds = []
+        for control in controls:
+            sent_at = time.monotonic()
+            held.append(client.input(control, "boolean", True, hold_s=1.0))
+            received_at = time.monotonic()
+            local_deadline_bounds.append((sent_at + 1.0, received_at + 1.0))
+        peers = []
+        writers = []
+        stopped = threading.Event()
+        sent_times = [[] for _ in range(4)]
+        try:
+            for index in range(4):
+                peer = socket.create_connection(("127.0.0.1", self.a.ready["port"]), timeout=5)
+                peers.append(peer)
+                peer.sendall(b"P")
+                sent_times[index].append(time.monotonic())
+                def drip(connection=peer, samples=sent_times[index]):
+                    while not stopped.wait(0.05):
+                        try:
+                            connection.sendall(b"x")
+                            samples.append(time.monotonic())
+                        except OSError:
+                            break
+                writer = threading.Thread(target=drip, daemon=True)
+                writers.append(writer)
+                writer.start()
+            occupied_from = time.monotonic()
+            reply = peers[0].recv(4096)
+            occupied_s = time.monotonic() - occupied_from
+            self.assertTrue(reply.startswith(b"HTTP/1.1 400"))
+            self.assertGreater(occupied_s, 2.0)
+            self.assertLess(occupied_s, 4.2)
+            # Every peer remained active, sending repeatedly on both sides of the deadline.
+            for samples in sent_times:
+                self.assertGreater(len(samples), 10)
+                self.assertGreater(samples[-1] - samples[0], 0.5)
+                self.assertLess(samples[0], min(pair[0] for pair in local_deadline_bounds))
+                self.assertGreater(samples[-1], max(pair[1] for pair in local_deadline_bounds))
+        finally:
+            stopped.set()
+            for peer in peers:
+                peer.close()
+            for writer in writers:
+                writer.join(timeout=1)
+        page = self.a.request("surface_control_events", {
+            "instance_id": "car.a", "epoch": client.expected["epoch"],
+            "after_sequence": held[-1]["sequence"], "limit": 100,
+        })["structuredContent"]
+        events = page["events"]
+        self.assertEqual({event["control_id"] for event in events}, set(controls))
+        lateness = []
+        for acquired in held:
+            event = next(event for event in events if event["control_id"] == acquired["control_id"])
+            self.assertEqual((event["kind"], event["reason"], event["value"]), ("input", "hold_expired", False))
+            delay = event["time"] - acquired["hold_deadline"]
+            self.assertGreaterEqual(delay, 0)
+            self.assertLess(delay, 0.5)
+            lateness.append(delay)
+        report = ROOT / "build/f/concurrent-slow-expiry.json"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps({"condition": "four concurrent slow-drip TCP connections", "peers": 4,
+                                     "holds": 3, "hard_limit_s": 0.5, "lateness_s": lateness,
+                                     "reader_occupied_s": occupied_s, "sent_samples_per_peer": [len(v) for v in sent_times],
+                                     "local_deadline_bounds": local_deadline_bounds,
+                                     "peer_first_last_send": [[v[0], v[-1]] for v in sent_times]}) + "\n")
+        print("\nSC-R01 concurrent slow peers lateness_s=" + json.dumps(lateness), file=sys.stderr)
+
     def test_lease_due_before_a_request_is_processed_first_never_pending(self):
         client = Client(self.a.ready["url"], TOKEN, "car.a")
         client.discover()

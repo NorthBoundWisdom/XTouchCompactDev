@@ -120,6 +120,24 @@ class HardwareHTTPTests(unittest.TestCase):
                 host.close()
             self.assertFalse(host.ready_file.exists())
 
+    def test_start_connect_reconnect_and_both_exit_signals_send_nothing(self):
+        import signal
+        for stop_signal in (signal.SIGTERM, signal.SIGINT):
+            with self.subTest(signal=stop_signal), tempfile.TemporaryDirectory() as directory:
+                host = RunningHardware(directory)
+                try:
+                    self.assertEqual(host.output()["sent_count"], 0)
+                    host.append({"bytes": [176, 37, 64]}, {"connected": False}, {"connected": True})
+                    self.assertEqual(host.output()["sent_count"], 0)
+                    host.process.send_signal(stop_signal)
+                    host.process.wait(timeout=5)
+                    # Read the persisted fake transport capture *after* process exit.
+                    self.assertEqual(host.output()["sent_count"], 0)
+                    self.assertEqual(host.output()["words"], [])
+                    self.assertFalse(host.ready_file.exists())
+                finally:
+                    host.close()
+
     def test_invalidating_error_recovers_with_a_new_epoch_after_backoff(self):
         with tempfile.TemporaryDirectory() as directory:
             host = RunningHardware(directory)
