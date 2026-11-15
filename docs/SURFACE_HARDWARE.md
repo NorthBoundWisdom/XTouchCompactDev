@@ -214,7 +214,7 @@ python3 "$DELIVERY/verify_hardware_http.py" "$DELIVERY" --evidence "$OUT/hardwar
 ```
 
 The first command runs all four delivered simulation fixtures with the delivered checker,
-then captures and verifies bounded read-only simulation diagnostics. The latter commands
+then captures and verifies bounded read-only simulation diagnostics. The full-profile capture honestly reports incomplete/exit 1 for the two unknown optional expression-pedal controls; a separately pinned four-observed-control capture completes/exit 0. Both reports retain their scope and do not fill unknown values. The latter commands
 cover hardware static/read-only diagnostics and explicitly labeled rejection probes, with
 zero CoreMIDI access. Evidence stays outside the immutable delivery. The manifests record
 `source_commit`, `source_dirty: false`, the distinct `source_origin_main` base and

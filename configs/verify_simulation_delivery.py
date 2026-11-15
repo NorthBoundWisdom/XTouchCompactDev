@@ -89,8 +89,31 @@ def verify(directory, evidence):
             serialized = json.dumps({"capture": capture, "verification": checked}, indent=2, sort_keys=True) + "\n"
             assert token not in serialized
             (evidence / "simulation-diagnostics.json").write_text(serialized)
-            assert capture["end"]["exit_code"] == 0
+            # The factory optional expression pedals have no observations in the default
+            # simulator. A full-profile diagnostic must preserve those unknowns and report
+            # incomplete, rather than fabricate values or silently narrow its scope.
+            assert capture["end"]["exit_code"] == 1
+            assert capture["end"]["reason"] == "unknown_inputs"
+            assert capture["end"]["unknown_controls"] == ["a.expression.1", "b.expression.1"]
+            assert checked["capture_integrity"] == "verified_recorded_invariants"
+            assert checked["diagnostic_status"] == "incomplete_or_failed"
             assert checked["physical_qualification"] is False
+            observed = diagnostics.capture(
+                reader,
+                manifest["profile_id"],
+                manifest["profile_version"],
+                required_controls=["a.fader.1", "a.touch.1", "a.encoder.1", "a.button.1"],
+                limits={"max_polls": 1},
+            )
+            observed_checked = diagnostics.verify(observed)
+            serialized = (
+                json.dumps({"capture": observed, "verification": observed_checked}, indent=2, sort_keys=True) + "\n"
+            )
+            assert token not in serialized
+            (evidence / "simulation-observed-controls-diagnostics.json").write_text(serialized)
+            assert observed["end"]["exit_code"] == observed_checked["exit_code"] == 0
+            assert observed_checked["diagnostic_status"] == "bounded_complete"
+            assert observed_checked["physical_qualification"] is False
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -100,7 +123,8 @@ def verify(directory, evidence):
     result = {
         "scope": "outside-source-packaged-simulation-full",
         "fixtures": results,
-        "diagnostics": checked,
+        "all_profile_diagnostics": checked,
+        "observed_control_diagnostics": observed_checked,
         "hardware_connected": False,
         "physical_qualification": False,
     }
