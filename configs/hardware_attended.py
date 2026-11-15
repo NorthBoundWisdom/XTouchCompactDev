@@ -18,6 +18,10 @@ OUT = ROOT.parent / "build/e"
 WORK = OUT / "xtouch"
 RUNTIME = WORK / "runtime"
 sys.dont_write_bytecode = True
+
+# Checks below rely on assert; refuse to run where python -O would strip them.
+if not __debug__:
+    raise SystemExit("Run without -O: these checks rely on assert")
 sys.path.insert(0, str(ROOT / "build/dependencies/SurfacePlugins/clients/python"))
 from surface_control import Client
 
@@ -359,7 +363,9 @@ def operate(action, confirmed):
         save(record)
         return {"observed_layer": layers[0], "inputs": values}
     if action in ("button", "ring"):
-        assert confirmed and record["displays"]
+        # The send gate is an explicit check, never an assert (python -O must not remove it).
+        if not confirmed or not record["displays"]:
+            raise RuntimeError("Display sends need --confirmed and a start-displays session")
         # Re-observe bank from latest input event; never guess from the starting device state.
         page = connection.call(
             "surface_control_events",

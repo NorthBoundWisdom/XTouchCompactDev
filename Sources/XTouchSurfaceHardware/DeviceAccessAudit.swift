@@ -51,5 +51,8 @@ final class DisabledHardwareMIDI: HardwareMIDI {
         throw DeviceAccessDisabledError.outputForbidden
     }
 
+    /// Permanently disconnected: there is no link to re-establish.
+    func invalidate() {}
+
     enum DeviceAccessDisabledError: Error { case outputForbidden }
 }

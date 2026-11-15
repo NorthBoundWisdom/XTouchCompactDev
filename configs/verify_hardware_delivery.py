@@ -10,6 +10,10 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+# Checks below rely on assert; refuse to run where python -O would strip them.
+if not __debug__:
+    raise SystemExit("Run without -O: these checks rely on assert")
+
 
 def verify(directory):
     directory = Path(directory).resolve()

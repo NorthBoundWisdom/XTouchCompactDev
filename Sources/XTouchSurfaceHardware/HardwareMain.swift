@@ -10,7 +10,7 @@ import XTouchCompactCore
     import Glibc
 #endif
 
-private enum StartupError: Error { case invalidArguments, invalidInstanceID, tokenRequired, tokenStdinNotPipe, tokenFileNotPrivate, readyFileExists, readyFile }
+private enum StartupError: Error { case invalidArguments, invalidInstanceID, tokenRequired, tokenStdinNotPipe, tokenFileNotPrivate, readyFileExists, readyFile, testMIDIRequiresDebugBuild }
 
 /// JSON-RPC 2.0 failures. Tool failures remain MCP results with `isError: true`.
 private struct RPCError: Error {
@@ -208,15 +208,28 @@ private func removeOwnedReadyFile() {
         let midi: any HardwareMIDI = try deviceAccess.make(testInjectionRequested: injectionRequested, disabled: {
             DisabledHardwareMIDI()
         }, enabled: {
-            if let path = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] {
-                audit.increment("scripted_factory_calls")
-                FileHandle.standardError.write(Data("TEST ONLY MIDI: not an entity device; no physical qualification.\n".utf8))
-                return ScriptedHardwareMIDI(path: path, report: environment["XTOUCH_HARDWARE_TEST_REPORT"], configuration: configuration)
+            if injectionRequested {
+                #if DEBUG
+                    guard let path = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] else { throw StartupError.invalidArguments }
+                    audit.increment("scripted_factory_calls")
+                    FileHandle.standardError.write(Data("TEST ONLY MIDI: not an entity device; no physical qualification.\n".utf8))
+                    return ScriptedHardwareMIDI(path: path, report: environment["XTOUCH_HARDWARE_TEST_REPORT"], configuration: configuration)
+                #else
+                    // A release service must never swap its device for a local script.
+                    throw StartupError.testMIDIRequiresDebugBuild
+                #endif
             }
             audit.increment("coremidi_factory_calls")
             return try CoreHardwareMIDI(deviceName: deviceName, configuration: configuration, audit: audit)
         })
+        // After an invalidating error, ask the transport to re-establish the link (a new epoch)
+        // instead of staying disconnected until the endpoint happens to change.
+        var recoverAfter: Double?
         func drainMIDI() {
+            if let deadline = recoverAfter, ProcessInfo.processInfo.systemUptime >= deadline {
+                recoverAfter = nil
+                midi.invalidate()
+            }
             do {
                 for event in try midi.drain() {
                     let time = ProcessInfo.processInfo.systemUptime
@@ -227,7 +240,9 @@ private func removeOwnedReadyFile() {
                     }
                 }
             } catch {
-                try? surface.transition(epoch: UUID().uuidString, connected: false, at: ProcessInfo.processInfo.systemUptime)
+                let now = ProcessInfo.processInfo.systemUptime
+                try? surface.transition(epoch: UUID().uuidString, connected: false, at: now)
+                recoverAfter = now + 1
                 FileHandle.standardError.write(Data("Hardware input invalidated; rediscover and prepare again.\n".utf8))
             }
         }
@@ -310,12 +325,13 @@ private func removeOwnedReadyFile() {
                             let plan = try surface.displayPlan(feedback, allowed: allowFeedback, at: time)
                             var candidate = surface
                             let event = try candidate.recordFeedback(feedback, at: time)
-                            var candidateBudget = budget
-                            guard candidateBudget.consume(.feedback, at: time) else { throw ControlContractError("rate_limited") }
+                            guard budget.consume(.feedback, at: time) else { throw ControlContractError("rate_limited") }
+                            // Spent before any send: a partly delivered or failing request is still
+                            // rate limited. The event commits only after every message was accepted.
                             for message in plan {
                                 try midi.send(message)
                             }
-                            surface = candidate; budget = candidateBudget
+                            surface = candidate
                             value = try .encoded(event)
                         case let .renew(request):
                             try surface.controls.validateRenew(request, at: time)

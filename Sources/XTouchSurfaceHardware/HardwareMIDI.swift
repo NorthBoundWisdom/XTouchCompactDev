@@ -13,6 +13,8 @@ enum HardwareMIDIEvent {
 protocol HardwareMIDI: AnyObject {
     func drain() throws -> [HardwareMIDIEvent]
     func send(_ message: HardwareDisplayMessage) throws
+    /// Forget the current link so the next drain re-establishes it and reports a link event.
+    func invalidate()
 }
 
 final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
@@ -97,6 +99,10 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         return (source, destination)
     }
 
+    func invalidate() {
+        lock.lock(); initialized = false; lock.unlock()
+    }
+
     func drain() throws -> [HardwareMIDIEvent] {
         let (newSource, newDestination) = endpoints()
         lock.lock()
@@ -141,56 +147,64 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     }
 }
 
-/// Test-only local file adapter. No public RPC can create hardware input or change this script.
-/// The production adapter is never initialized when this explicit test environment is selected.
-final class ScriptedHardwareMIDI: HardwareMIDI {
-    private let path: String
-    private let report: String?
-    private let configuration: CompactHardwareConfiguration
-    private var consumed = 0
-    private var words: [String] = []
-    private var failSend = false
-    private var connected = false
-    init(path: String, report: String?, configuration: CompactHardwareConfiguration) {
-        self.path = path; self.report = report; self.configuration = configuration
-    }
+#if DEBUG
+    /// Test-only local file adapter (Debug builds only). No public RPC can create hardware input or
+    /// change this script. The production adapter is never initialized when it is selected.
+    final class ScriptedHardwareMIDI: HardwareMIDI {
+        private let path: String
+        private let report: String?
+        private let configuration: CompactHardwareConfiguration
+        private var consumed = 0
+        private var words: [String] = []
+        private var failSend = false
+        private var connected = false
+        private var relink = false
+        init(path: String, report: String?, configuration: CompactHardwareConfiguration) {
+            self.path = path; self.report = report; self.configuration = configuration
+        }
 
-    func drain() throws -> [HardwareMIDIEvent] {
-        let rows = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as? [[String: Any]] ?? []
-        guard rows.count >= consumed else { throw ControlContractError("invalid_transition") }
-        var result: [HardwareMIDIEvent] = []
-        for row in rows.dropFirst(consumed) {
-            if let connected = row["connected"] as? Bool {
-                self.connected = connected
-                result.append(.link(connected: connected))
-            }
-            if let failure = row["fail_send"] as? Bool {
-                failSend = failure
-            }
-            if connected, let bytes = row["bytes"] as? [UInt8], bytes.count == 3, bytes[1] < 128, bytes[2] < 128 {
-                switch bytes[0] & 0xF0 {
-                case 0xB0: result.append(.message(.controlChange(channel: bytes[0] & 15, number: bytes[1], value: bytes[2])))
-                case 0x90: result.append(.message(.noteOn(channel: bytes[0] & 15, number: bytes[1], velocity: bytes[2])))
-                case 0x80: result.append(.message(.noteOff(channel: bytes[0] & 15, number: bytes[1], velocity: bytes[2])))
-                default: result.append(.undecoded)
+        func drain() throws -> [HardwareMIDIEvent] {
+            let rows = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as? [[String: Any]] ?? []
+            guard rows.count >= consumed else { throw ControlContractError("invalid_transition") }
+            var result: [HardwareMIDIEvent] = relink ? [.link(connected: connected)] : []
+            relink = false
+            for row in rows.dropFirst(consumed) {
+                if let connected = row["connected"] as? Bool {
+                    self.connected = connected
+                    result.append(.link(connected: connected))
+                }
+                if let failure = row["fail_send"] as? Bool {
+                    failSend = failure
+                }
+                if connected, let bytes = row["bytes"] as? [UInt8], bytes.count == 3, bytes[1] < 128, bytes[2] < 128 {
+                    switch bytes[0] & 0xF0 {
+                    case 0xB0: result.append(.message(.controlChange(channel: bytes[0] & 15, number: bytes[1], value: bytes[2])))
+                    case 0x90: result.append(.message(.noteOn(channel: bytes[0] & 15, number: bytes[1], velocity: bytes[2])))
+                    case 0x80: result.append(.message(.noteOff(channel: bytes[0] & 15, number: bytes[1], velocity: bytes[2])))
+                    default: result.append(.undecoded)
+                    }
                 }
             }
+            consumed = rows.count
+            try writeReport()
+            return result
         }
-        consumed = rows.count
-        try writeReport()
-        return result
-    }
 
-    func send(_ message: HardwareDisplayMessage) throws {
-        guard !failSend else { throw ControlContractError("transport_error") }
-        try words.append(String(format: "%08X", message.word(configuration: configuration)))
-        try writeReport()
-    }
+        func invalidate() {
+            relink = true
+        }
 
-    private func writeReport() throws {
-        if let report {
-            let data = try JSONSerialization.data(withJSONObject: ["artifact": "test-only-midi", "words": words, "sent_count": words.count, "moves_motors": 0], options: [.sortedKeys])
-            try data.write(to: URL(fileURLWithPath: report), options: .atomic)
+        func send(_ message: HardwareDisplayMessage) throws {
+            guard !failSend else { throw ControlContractError("transport_error") }
+            try words.append(String(format: "%08X", message.word(configuration: configuration)))
+            try writeReport()
+        }
+
+        private func writeReport() throws {
+            if let report {
+                let data = try JSONSerialization.data(withJSONObject: ["artifact": "test-only-midi", "words": words, "sent_count": words.count, "moves_motors": 0], options: [.sortedKeys])
+                try data.write(to: URL(fileURLWithPath: report), options: .atomic)
+            }
         }
     }
-}
+#endif

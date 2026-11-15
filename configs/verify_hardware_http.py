@@ -20,6 +20,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# Checks below rely on assert; refuse to run where python -O would strip them.
+if not __debug__:
+    raise SystemExit("Run without -O: these checks rely on assert")
+
 
 class RunningOfflineHardware:
     def __init__(self, binary, directory, instance="offline.hardware", feedback=True):

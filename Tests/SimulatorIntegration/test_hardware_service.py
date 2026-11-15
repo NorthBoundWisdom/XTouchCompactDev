@@ -119,6 +119,32 @@ class HardwareHTTPTests(unittest.TestCase):
                 host.close()
             self.assertFalse(host.ready_file.exists())
 
+    def test_invalidating_error_recovers_with_a_new_epoch_after_backoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            host = RunningHardware(directory)
+            try:
+                first = dict(host.client.expected)
+                host.script.write_text("{not json")
+                broken = host.raw("surface_control_snapshot", {"instance_id": "hardware.test"})["structuredContent"]
+                self.assertEqual(broken["link"]["state"], "disconnected")
+                self.assertNotEqual(broken["discovery"]["expected"]["epoch"], first["epoch"])
+                staging = host.script.with_suffix(".next")
+                staging.write_text(json.dumps(host.rows))
+                staging.replace(host.script)
+                deadline = time.monotonic() + 5
+                while True:
+                    current = host.raw("surface_control_snapshot", {"instance_id": "hardware.test"})["structuredContent"]
+                    if current["link"]["state"] == "connected" or time.monotonic() > deadline:
+                        break
+                    time.sleep(0.05)
+                # Re-established on its own as a new epoch: no stale identity, values unknown, nothing sent.
+                self.assertEqual(current["link"]["state"], "connected")
+                self.assertNotEqual(current["discovery"]["expected"]["epoch"], broken["discovery"]["expected"]["epoch"])
+                self.assertEqual(current["inputs"], {})
+                self.assertEqual(host.output()["sent_count"], 0)
+            finally:
+                host.close()
+
     def test_fixed_remote_rejections_and_failure_are_atomic(self):
         with tempfile.TemporaryDirectory() as directory:
             host = RunningHardware(directory)

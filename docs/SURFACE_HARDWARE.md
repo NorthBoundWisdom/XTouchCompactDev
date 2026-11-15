@@ -87,8 +87,8 @@ Consumer scaling, deadman policy and centered arming remain in Pipe.
 
 ## Development tests and delivery
 
-`XTOUCH_HARDWARE_TEST_SCRIPT` selects a clearly labelled test-only local file MIDI
-adapter instead of CoreMIDI, and `XTOUCH_HARDWARE_TEST_REPORT` receives its output
+In Debug builds only, `XTOUCH_HARDWARE_TEST_SCRIPT` selects a clearly labelled test-only local
+file MIDI adapter instead of CoreMIDI (a release service refuses to start when it is set), and `XTOUCH_HARDWARE_TEST_REPORT` receives its output
 capture. This is not a remote input feature and never qualifies physical hardware.
 The JSON array is append-only by row count: `{"connected":true|false}`,
 `{"bytes":[176,28,64]}`, and test failure injection `{"fail_send":true|false}`.
