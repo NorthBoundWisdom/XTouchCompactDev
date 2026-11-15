@@ -98,7 +98,7 @@ sets test_only true. Scripts are never sent through HTTP.
 `python3 configs/package_surface_hardware.py --output-root ../deliveries` packages
 only the hardware service; it does not rebuild or replace old simulator deliveries.
 The manifest records host/shared pins, Contract 1.4, SDK 1.4.0, profile/mapping and
-file hashes. SDK includes separate runtime, checker and test-only double directories.
+file hashes. Runtime SDK includes runtime, checker and read-only diagnostics packages. The fake hardware double is confined to a separate `surface-control-test-support-1.4.0.zip`, explicitly test-only and hashed in the manifest; it never enters the runtime SDK ZIP.
 Outside-source verification is limited to describe, descriptor/mapping/hash validation
 and safe rejection/configuration checks without opening MIDI; it is not an HTTP or
 hardware acceptance report. The attended checklist and its fake-only rehearsal are

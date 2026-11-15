@@ -83,7 +83,9 @@ class DeliveryContentTests(unittest.TestCase):
             body = sdk.read("surface_control/__init__.py")
         self.assertEqual(body, (shared / package_surface_simulator.SDK_SOURCE).read_bytes())
         self.assertIn(b'__version__ = "1.4.0"', body)
-        self.assertIn("surface_control_testing/README.md", expected_members)
+        self.assertNotIn("surface_control_testing/README.md", expected_members)
+        with zipfile.ZipFile(self.stage / package_surface_simulator.TEST_SUPPORT_ZIP) as support:
+            self.assertIn("surface_control_testing/README.md", support.namelist())
         self.assertIn("surface_control_diagnostics/README.md", expected_members)
         self.assertFalse(
             any(member.startswith("surface_control/surface_control_diagnostics/") for member in expected_members)
@@ -177,7 +179,13 @@ class DeliveryContentTests(unittest.TestCase):
         self.assertRegex(manifest["mapping_revision"], r"^[0-9a-f]{16}$")
         self.assertEqual(
             manifest["test_artifacts"],
-            [{"artifact": "surface-control-test-only-hardware-double", "qualification": "test-only"}],
+            [
+                {
+                    "artifact": "surface-control-test-only-hardware-double",
+                    "qualification": "test-only",
+                    "path": package_surface_simulator.TEST_SUPPORT_ZIP,
+                }
+            ],
         )
         files = manifest["files_sha256"]
         self.assertIn("surface-control-sdk-" + manifest["surface_control_sdk"] + ".zip", files)
@@ -187,7 +195,7 @@ class DeliveryContentTests(unittest.TestCase):
             self.assertFalse(name.startswith("/") or "\\" in name or ".." in Path(name).parts, name)
         # Every copied shared file is covered, by its path inside the shared package, and identical.
         copied = set(package_surface_simulator.SHARED_FILES.values()) | set(
-            package_surface_simulator.sdk_sources(shared)
+            [*package_surface_simulator.sdk_sources(shared), *package_surface_simulator.test_support_sources(shared)]
         )
         self.assertEqual(set(manifest["surface_plugins_files_sha256"]), copied)
         for name, source in package_surface_simulator.SHARED_FILES.items():

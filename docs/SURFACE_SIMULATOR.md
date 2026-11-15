@@ -45,7 +45,8 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 
 | Delivery file | Shared source |
 | --- | --- |
-| `surface-control-sdk-1.4.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/`, and separate `surface_control_testing/` / `surface_control_diagnostics/` sources/README |
+| `surface-control-sdk-1.4.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/`, and `surface_control_diagnostics/` sources/README |
+| `surface-control-test-support-1.4.0.zip` (test-only; no hardware qualification) | separate `surface_control_testing/` sources/README |
 | `control-tools.json` | `docs/surface-control-tools.json` |
 | `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
 | `surface-control-software-v1.json`, `surface-control-software-v1.1.json`, `surface-control-software-v1.2.json`, `surface-control-software-v1.3.json` | `fixtures/` |

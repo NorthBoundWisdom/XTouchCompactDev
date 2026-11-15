@@ -35,6 +35,7 @@ SHARED = ROOT / "build/dependencies/SurfacePlugins"
 SDK_VERSION = "1.4.0"
 CONTRACT_VERSION = "1.3"
 SDK_ZIP = "surface-control-sdk-" + SDK_VERSION + ".zip"
+TEST_SUPPORT_ZIP = "surface-control-test-support-" + SDK_VERSION + ".zip"
 # Published shared files, copied byte for byte from the managed dependency (single source, D19-6).
 # integrations/ and clients/python/tests are deliberately not part of a generic delivery.
 SHARED_FILES = {
@@ -68,12 +69,29 @@ def sdk_sources(shared=SHARED):
         for package in (
             "surface_control",
             "surface_conformance",
-            "surface_control_testing",
             "surface_control_diagnostics",
         )
         for path in (python_root / package).rglob("*")
         if path.is_file() and path.suffix in (".py", ".md")
     )
+
+
+def test_support_sources(shared=SHARED):
+    """Separate, explicitly test-only distribution; excluded from runtime imports."""
+    return sorted(
+        str(path.relative_to(shared))
+        for path in (shared / "clients/python/surface_control_testing").rglob("*")
+        if path.is_file() and path.suffix in (".py", ".md")
+    )
+
+
+def stage_test_support(stage, shared=SHARED):
+    with zipfile.ZipFile(stage / TEST_SUPPORT_ZIP, "w") as support:
+        for source in test_support_sources(shared):
+            entry = zipfile.ZipInfo(str(Path(source).relative_to("clients/python")), date_time=(1980, 1, 1, 0, 0, 0))
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.external_attr = 0o644 << 16
+            support.writestr(entry, (shared / source).read_bytes())
 
 
 def sdk_version(source):
@@ -128,6 +146,7 @@ def stage_shared_files(stage, root=ROOT, shared=SHARED):
             entry.compress_type = zipfile.ZIP_DEFLATED
             entry.external_attr = 0o644 << 16
             sdk.writestr(entry, (shared / source).read_bytes())
+    stage_test_support(stage, shared)
     (stage / "examples").mkdir()
     shutil.copy2(root / "Clients/Python/examples/surface_roundtrip.py", stage / "examples" / "surface_roundtrip.py")
     shutil.copy2(root / "examples/surface_simulator/chassis.json", stage / "examples/chassis.json")
@@ -152,7 +171,7 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED
     revision = json.loads((root / "configs/surface_plugins.lock.json").read_text())["revision"]
     shared_sources = {
         source: hashlib.sha256((shared / source).read_bytes()).hexdigest()
-        for source in [*SHARED_FILES.values(), *sdk_sources(shared)]
+        for source in [*SHARED_FILES.values(), *sdk_sources(shared), *test_support_sources(shared)]
     }
     manifest = {
         "schema_version": 1,
@@ -174,7 +193,13 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED
         "files_sha256": files,
         "start_protocol": "token stdin pipe/private file, ready JSON stdout/file, POST /mcp on 127.0.0.1",
         "stop_protocol": "terminate the isolated process; no persistent user state",
-        "test_artifacts": [{"artifact": "surface-control-test-only-hardware-double", "qualification": "test-only"}],
+        "test_artifacts": [
+            {
+                "artifact": "surface-control-test-only-hardware-double",
+                "qualification": "test-only",
+                "path": TEST_SUPPORT_ZIP,
+            }
+        ],
     }
     (stage / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest

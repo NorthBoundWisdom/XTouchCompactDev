@@ -13,10 +13,24 @@ from pathlib import Path
 
 try:
     from .delivery_index import publish
-    from .package_surface_simulator import ROOT, SHARED, command
+    from .package_surface_simulator import (
+        ROOT,
+        SHARED,
+        TEST_SUPPORT_ZIP,
+        command,
+        stage_test_support,
+        test_support_sources,
+    )
 except ImportError:
     from delivery_index import publish
-    from package_surface_simulator import ROOT, SHARED, command
+    from package_surface_simulator import (
+        ROOT,
+        SHARED,
+        TEST_SUPPORT_ZIP,
+        command,
+        stage_test_support,
+        test_support_sources,
+    )
 
 SHARED_FILES = {
     "surface-control-diagnostic-capture.schema.json": "docs/surface-control-diagnostic-capture.schema.json",
@@ -48,7 +62,6 @@ def sdk_sources():
         for package in (
             "surface_control",
             "surface_conformance",
-            "surface_control_testing",
             "surface_control_diagnostics",
         )
         for path in (python / package).rglob("*")
@@ -74,6 +87,8 @@ def stage_files(stage):
             entry.compress_type = zipfile.ZIP_DEFLATED
             entry.external_attr = 0o644 << 16
             sdk.writestr(entry, source.read_bytes())
+
+    stage_test_support(stage)
 
 
 def package(output_root, configuration="release"):
@@ -138,14 +153,24 @@ def package(output_root, configuration="release"):
             ],
             "surface_plugins_files_sha256": {
                 str(path.relative_to(SHARED)): hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in [*(SHARED / source for source in SHARED_FILES.values()), *sdk_sources()]
+                for path in [
+                    *(SHARED / source for source in SHARED_FILES.values()),
+                    *sdk_sources(),
+                    *(SHARED / source for source in test_support_sources()),
+                ]
             },
             "files_sha256": {
                 str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
                 for path in sorted(stage.rglob("*"))
                 if path.is_file()
             },
-            "test_artifacts": [{"artifact": "surface-control-test-only-hardware-double", "qualification": "test-only"}],
+            "test_artifacts": [
+                {
+                    "artifact": "surface-control-test-only-hardware-double",
+                    "qualification": "test-only",
+                    "path": TEST_SUPPORT_ZIP,
+                }
+            ],
             "offline_diagnostic_mode": {
                 "argument": "--device-access disabled",
                 "device_access": "disabled",
