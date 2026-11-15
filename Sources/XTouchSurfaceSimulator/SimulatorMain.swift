@@ -105,6 +105,7 @@ private func removeOwnedReadyFile() {
         var port: UInt16 = 0
         var tokenPath: String?
         var tokenStdin = false
+        var clientTokensStdin = false
         var readyPath: String?
         var configurationPath: String?
         var describe = false
@@ -145,6 +146,7 @@ private func removeOwnedReadyFile() {
             case "--port": guard let parsed = try UInt16(value()) else { throw StartupError.invalidArguments }; port = parsed
             case "--token-file": tokenPath = try value()
             case "--token-stdin": tokenStdin = true
+            case "--surface-client-tokens-stdin": clientTokensStdin = true
             case "--ready-file": readyPath = try value()
             case "--allow-surface-input": allowInput = true
             case "--allow-surface-feedback": allowFeedback = true
@@ -154,6 +156,7 @@ private func removeOwnedReadyFile() {
         }
         guard !explicitWriteLimit || writeLimits == nil else { throw StartupError.invalidArguments }
         let configuration = try configurationPath.map { try SimulationConfiguration.decode(Data(contentsOf: URL(fileURLWithPath: $0))) } ?? CompactSurfaceSimulator.demonstrationConfiguration
+        guard !clientTokensStdin || (!tokenStdin && tokenPath == nil) else { throw StartupError.invalidArguments }
         if describe {
             let simulator = try CompactSurfaceSimulator(instanceID: "example.simulation", epoch: "discovery-only", configuration: configuration, writeLimits: writeLimits)
             let value: JSONValue = try .object(["discovery": .encoded(simulator.controls.discovery()),
@@ -162,8 +165,11 @@ private func removeOwnedReadyFile() {
             return
         }
         guard tokenPath == nil || !tokenStdin else { throw StartupError.invalidArguments }
+        var credentials = try clientTokensStdin ? SurfaceClientCredentials.readStdin() : nil
         let token: String
-        if let tokenPath {
+        if let credentials {
+            token = credentials.ownerToken
+        } else if let tokenPath {
             token = try readPrivateToken(tokenPath)
         } else if tokenStdin {
             // Same rule as the BCR Provider: stdin must be a dedicated pipe. A redirected file
@@ -179,9 +185,10 @@ private func removeOwnedReadyFile() {
             throw StartupError.readyFileExists
         }
         let principals = try SurfacePrincipals.loadOrCreate(path: principalPath)
+        credentials = credentials?.reservingWriterIDs([principals.remote_writer_id, principals.interface_writer_id, principals.system_writer_id])
         var simulator = try CompactSurfaceSimulator(instanceID: instance, epoch: UUID().uuidString, configuration: configuration,
                                                     remoteWriterID: principals.remote_writer_id, systemWriterID: principals.system_writer_id, writeLimits: writeLimits)
-        let server = try LoopbackHTTPServer(port: port, token: token)
+        let server = try LoopbackHTTPServer(port: port, token: token, credentials: credentials)
         let discovery = simulator.controls.discovery()
         let ready: JSONValue = try .object(["expected": .encoded(discovery.expected), "latest_sequence": .string(discovery.latest_sequence),
                                             "source": .string("simulation"), "contract_version": .string(discovery.contract_version)])
@@ -201,9 +208,9 @@ private func removeOwnedReadyFile() {
             do { try simulator.processHoldExpiries(at: time) }
             catch { FileHandle.standardError.write(Data("XTouchSurfaceSimulator hold expiry failed: \(error)\n".utf8)) }
         }
-        try server.run(nextDeadline: { simulator.nextHoldDeadline },
-                       maintenance: { advanceHolds(to: ProcessInfo.processInfo.systemUptime) })
-        { body in
+        try server.runAuthenticated(nextDeadline: { simulator.nextHoldDeadline },
+                                    maintenance: { advanceHolds(to: ProcessInfo.processInfo.systemUptime) })
+        { body, client in
             var id: JSONValue = .null
             do {
                 guard let request = try? JSONDecoder().decode(JSONValue.self, from: body) else { throw RPCError.parse }
@@ -230,6 +237,7 @@ private func removeOwnedReadyFile() {
                 case "tools/call":
                     guard let params = object["params"]?.objectValue, let name = params["name"]?.stringValue else { throw RPCError.invalidParams }
                     do {
+                        guard client.permits(name) else { throw ControlContractError("permission_denied") }
                         let operation = try SurfaceControlTools.parse(name, arguments: params["arguments"] ?? .object([:]))
                         let time = ProcessInfo.processInfo.systemUptime
                         advanceHolds(to: time)
@@ -248,13 +256,13 @@ private func removeOwnedReadyFile() {
                         case let .input(input):
                             guard allowInput else { throw ControlContractError("permission_denied") }
                             var candidate = simulator
-                            let event = try candidate.input(input, at: time)
+                            let event = try candidate.input(input, at: time, writerID: client.writerID)
                             try commit(candidate, category: .input)
                             value = try .encoded(event)
                         case let .feedback(feedback):
                             guard allowFeedback else { throw ControlContractError("permission_denied") }
                             var candidate = simulator
-                            let event = try candidate.feedback(feedback, at: time)
+                            let event = try candidate.feedback(feedback, at: time, writerID: client.writerID)
                             try commit(candidate, category: .feedback)
                             value = try .encoded(event)
                         case let .renew(request):

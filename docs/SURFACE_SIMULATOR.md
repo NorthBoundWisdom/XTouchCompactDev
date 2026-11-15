@@ -573,3 +573,68 @@ for bounded discovery/snapshot/events capture and completely offline verificatio
 Its README and `surface-control-diagnostic-capture.schema.json` describe scope and
 nonzero incomplete results; the simulator remains simulation Contract 1.3 and
 the tool does not grant hardware access or emit inputs/displays.
+
+## Separate operator and display credentials (SC-R05)
+
+`--surface-principal-file` alone does **not** issue credentials: its v1 private record
+stores the owner's remote writer plus interface/system writers. Every connection using
+the old single bearer token still shares that one remote writer. This default is unchanged.
+
+Explicit `--surface-client-tokens-stdin` reads one strict JSON object from a dedicated
+anonymous pipe/FIFO, through EOF, at most 512 bytes. Its only keys are `owner`, `operator`
+and `display`; each value is a distinct 64-character lowercase-hex token. It conflicts
+with `--token-stdin` and `--token-file`. Tokens stay in memory; do not write or print the
+JSON. Missing/duplicate/unknown keys, duplicate tokens, malformed tokens, excessive
+input and non-pipe stdin fail startup. `--describe` neither reads credentials nor writes
+principal files, in either mode. Three tokens do not enable any mutation permissions:
+retain the explicit input/feedback/reset process options needed by the owner.
+
+| Credential | Permitted tools (in addition to initialize, ping, tools/list) |
+|---|---|
+| owner | Original tool permissions and original process flags |
+| operator | surface_control_discover, surface_control_snapshot, surface_control_events, surface_control_input, surface_control_renew |
+| display | surface_control_discover, surface_control_snapshot, surface_control_events, surface_control_feedback |
+
+Both secondary credentials refuse reset and every other tool with `permission_denied`.
+All normal contract validation, process permission flags and aggregate/independent
+budgets still apply. The host generates a distinct opaque random writer for each secondary
+credential. It never accepts a writer from the request and never derives writers from tokens.
+Their input/feedback events have different `writer_id`s in the same unified journal;
+automatic hold expiry remains attributed to the system. IDs stay stable within the process
+and rotate at restart. The optional v1 principal file still preserves **only** its original
+three writers; it may be used in either credential mode without changing its schema.
+
+An in-memory Python supervisor can launch the isolated simulator and pass different
+client objects to the operator and display components; the tokens never enter a shell
+argument, file or printed result (replace `BINARY` and `SDK_DIRECTORY` with package paths):
+
+```python
+import json, secrets, subprocess, sys
+sys.path.insert(0, SDK_DIRECTORY)
+from surface_control import Client
+secrets_by_role = {role: secrets.token_hex(32) for role in ("owner", "operator", "display")}
+process = subprocess.Popen(
+    [BINARY, "--surface-client-tokens-stdin", "--surface-instance-id", "pipe.simulation",
+     "--allow-surface-input", "--allow-surface-feedback"],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+process.stdin.write(json.dumps(secrets_by_role))
+process.stdin.close()  # EOF is required; do not log the object.
+ready = json.loads(process.stdout.readline())
+operator = Client(ready["url"], secrets_by_role["operator"], "pipe.simulation")
+display = Client(ready["url"], secrets_by_role["display"], "pipe.simulation")
+operator.discover(); display.discover()
+pressed = operator.input("a.touch.1", "boolean", True, hold_s=1)
+shown = display.feedback("a.encoder.1", "value", 13)
+assert pressed["writer_id"] != shown["writer_id"]
+# Pass only the appropriate client to each component. Keep owner private to the supervisor.
+# Finally: stop consumers, terminate/wait the process, and discard all three tokens.
+```
+
+Real-process tests: `test_scoped_credentials.ScopedCredentialTests` exercises the
+permissions, distinct event writers, owner-only reset, original aggregate quota, v1
+principal persistence, malformed startup records and the hardware fixed rejections.
+No physical device is needed: the hardware positive case uses the explicitly marked
+local fake MIDI adapter. Concurrent slow-connection expiry is separately asserted by
+`SurfaceSimulatorHTTPTests.test_lease_expiry_bound_with_concurrent_slow_connections`;
+its report is `build/f/concurrent-slow-expiry.json`, with four peers active before and
+after three hold deadlines and an unchanged 0.5-second upper bound.

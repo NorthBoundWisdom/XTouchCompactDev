@@ -12,10 +12,10 @@ public enum SimulatorHTTPError: Error { case socket, bind, listen, read, request
 public final class LoopbackHTTPServer {
     private let descriptor: Int32
     public let port: UInt16
-    private let token: String
-    public init(port: UInt16, token: String) throws {
+    private let clients: [String: SurfaceClientContext]
+    public init(port: UInt16, token: String, credentials: SurfaceClientCredentials? = nil) throws {
         guard !token.isEmpty, !token.contains("\r"), !token.contains("\n") else { throw SimulatorHTTPError.request }
-        self.token = token
+        clients = credentials?.clients ?? [token: .owner]
         #if canImport(Darwin)
             let socketFD = socket(AF_INET, SOCK_STREAM, 0)
         #else
@@ -102,6 +102,12 @@ public final class LoopbackHTTPServer {
     /// maintenance never run concurrently, so host state keeps one serial mutation order.
     /// The handler is expected to run due maintenance itself before using host state.
     public func run(nextDeadline: @escaping () -> Double?, maintenance: @escaping () -> Void, handler: (Data) -> Data) throws -> Never {
+        try runAuthenticated(nextDeadline: nextDeadline, maintenance: maintenance) { body, _ in handler(body) }
+    }
+
+    public func runAuthenticated(nextDeadline: @escaping () -> Double?, maintenance: @escaping () -> Void,
+                                 handler: (Data, SurfaceClientContext) -> Data) throws -> Never
+    {
         signal(SIGPIPE, SIG_IGN)
         let timers = Timers(nextDeadline: nextDeadline, maintenance: maintenance)
         Self.setNonBlocking(descriptor)
@@ -118,11 +124,13 @@ public final class LoopbackHTTPServer {
             let response: (Int, Data)
             do {
                 let request = try readRequest(peer, timers: timers)
+                let authorization = request.headers["authorization"] ?? ""
+                let client = authorization.hasPrefix("Bearer ") ? clients[String(authorization.dropFirst(7))] : nil
                 if request.path != "/mcp" {
                     response = (404, Data())
                 } else if request.headers["origin"] != nil {
                     response = (403, Data())
-                } else if request.headers["authorization"] != "Bearer \(token)" {
+                } else if client == nil {
                     response = (401, Data())
                 } else if let version = request.headers["mcp-protocol-version"], !["2025-11-25", "2026-07-28"].contains(version) {
                     response = (400, Data())
@@ -131,7 +139,7 @@ public final class LoopbackHTTPServer {
                 } else if request.headers["content-type"]?.hasPrefix("application/json") != true {
                     response = (400, Data())
                 } else {
-                    let body = handler(request.body); response = (body.isEmpty ? 202 : 200, body)
+                    let body = handler(request.body, client!); response = (body.isEmpty ? 202 : 200, body)
                 }
             } catch { response = (400, Data()) }
             let head = "HTTP/1.1 \(response.0) Response\r\nContent-Type: application/json\r\nContent-Length: \(response.1.count)\r\nConnection: close\r\n\r\n"

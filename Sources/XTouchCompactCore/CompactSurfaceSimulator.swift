@@ -108,8 +108,9 @@ public struct CompactSurfaceSimulator: Sendable {
         return definition.agentWritable && definition.externallyProtected != true
     }
 
-    @discardableResult public mutating func input(_ input: ControlInput, at time: Double) throws -> ControlEvent {
-        _ = try controls.validateInput(input, at: time, writerID: remoteWriterID)
+    @discardableResult public mutating func input(_ input: ControlInput, at time: Double, writerID: String? = nil) throws -> ControlEvent {
+        let writer = writerID ?? remoteWriterID
+        _ = try controls.validateInput(input, at: time, writerID: writer)
         var next = self
         var disposition: ControlDisposition = .accepted
         var reason: String?
@@ -165,7 +166,7 @@ public struct CompactSurfaceSimulator: Sendable {
                 mapped = next.mappedValue(kind: kind, index: index, layer: layer)
             }
         }
-        let event = try next.controls.recordInput(input, disposition: disposition, mappedValue: mapped, reason: reason, origin: .remote, at: time, writerID: remoteWriterID)
+        let event = try next.controls.recordInput(input, disposition: disposition, mappedValue: mapped, reason: reason, origin: .remote, at: time, writerID: writer)
         self = next
         return event
     }
@@ -267,8 +268,9 @@ public struct CompactSurfaceSimulator: Sendable {
         }
     }
 
-    @discardableResult public mutating func feedback(_ feedback: ControlFeedback, at time: Double) throws -> ControlEvent {
-        _ = try controls.validateFeedback(feedback, at: time, writerID: remoteWriterID)
+    @discardableResult public mutating func feedback(_ feedback: ControlFeedback, at time: Double, writerID: String? = nil) throws -> ControlEvent {
+        let writer = writerID ?? remoteWriterID
+        _ = try controls.validateFeedback(feedback, at: time, writerID: writer)
         var next = self
         let (layer, _, _) = try Self.address(feedback.control_id)
         let active = layer == next.session.state.layer
@@ -277,7 +279,7 @@ public struct CompactSurfaceSimulator: Sendable {
             try next.applyDisplay(feedback)
         }
         let event = try next.controls.recordFeedback(feedback, disposition: active ? .accepted : .ignored,
-                                                     reason: active ? nil : "inactive_layer", origin: .remote, at: time, writerID: remoteWriterID)
+                                                     reason: active ? nil : "inactive_layer", origin: .remote, at: time, writerID: writer)
         self = next
         return event
     }

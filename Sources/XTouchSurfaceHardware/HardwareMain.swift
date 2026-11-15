@@ -112,6 +112,7 @@ private func removeOwnedReadyFile() {
         var port: UInt16 = 0
         var tokenPath: String?
         var tokenStdin = false
+        var clientTokensStdin = false
         var readyPath: String?
         var deviceName = "X-TOUCH COMPACT"
         var deviceAccess: HardwareDeviceAccess = .enabled
@@ -158,7 +159,7 @@ private func removeOwnedReadyFile() {
             case "--transmit-channel": guard let channel = try UInt8(value()), (1 ... 16).contains(channel) else { throw StartupError.invalidArguments }; transmitChannel = channel - 1
             case "--light-protocol": guard let parsed = try ButtonLightProtocol(rawValue: value()) else { throw StartupError.invalidArguments }; lights = parsed
             case "--help":
-                print("XTouchSurfaceHardware --receive-channel 1..16 --light-protocol manual|observed114 [--transmit-channel 1..16] [--device NAME] [--device-access enabled|disabled] [--token-file PATH|--token-stdin] [--port 0] [--ready-file PATH] [--surface-instance-id ID] [--surface-principal-file PATH] [--write-limit N|--write-limits input=N,feedback=N,renew=N,admin=N] [--allow-surface-feedback] [--describe]\nDisplay only; no motor, layer or mode output. Display feedback defaults off.\n--device-access disabled is immutable offline diagnostics: no MIDI creation/enumeration/connection or scripted inputs; permanently disconnected, no physical qualification.")
+                print("XTouchSurfaceHardware --receive-channel 1..16 --light-protocol manual|observed114 [--transmit-channel 1..16] [--device NAME] [--device-access enabled|disabled] [--token-file PATH|--token-stdin] [--port 0] [--ready-file PATH] [--surface-instance-id ID] [--surface-principal-file PATH] [--surface-client-tokens-stdin] [--write-limit N|--write-limits input=N,feedback=N,renew=N,admin=N] [--allow-surface-feedback] [--describe]\nDisplay only; no motor, layer or mode output. Display feedback defaults off.\n--device-access disabled is immutable offline diagnostics: no MIDI creation/enumeration/connection or scripted inputs; permanently disconnected, no physical qualification.")
                 return
             case "--surface-instance-id":
                 instance = try value()
@@ -166,6 +167,7 @@ private func removeOwnedReadyFile() {
             case "--port": guard let parsed = try UInt16(value()) else { throw StartupError.invalidArguments }; port = parsed
             case "--token-file": tokenPath = try value()
             case "--token-stdin": tokenStdin = true
+            case "--surface-client-tokens-stdin": clientTokensStdin = true
             case "--ready-file": readyPath = try value()
             case "--allow-surface-feedback": allowFeedback = true
             default: throw StartupError.invalidArguments
@@ -176,6 +178,7 @@ private func removeOwnedReadyFile() {
         let injectionRequested = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] != nil || environment["XTOUCH_HARDWARE_TEST_REPORT"] != nil
         guard deviceAccess != .disabled || !injectionRequested else { throw HardwareDeviceAccess.SelectionError.disabledRejectsTestInjection }
         let configuration = try CompactHardwareConfiguration(transmitChannel: transmitChannel, receiveChannel: receiveChannel, lightProtocol: lights)
+        guard !clientTokensStdin || (!tokenStdin && tokenPath == nil) else { throw StartupError.invalidArguments }
         if describe {
             let surface = try CompactHardwareSurface(instanceID: "example.hardware", epoch: "discovery-only", configuration: configuration, hardwareWriterID: "hardware.example", remoteWriterID: "remote.example", writeLimits: writeLimits)
             let value: JSONValue = try .object(["device_access": .string(deviceAccess.rawValue), "diagnostic_only": .bool(deviceAccess == .disabled), "discovery": .encoded(surface.controls.discovery()), "tools": .array(SurfaceControlTools.descriptors(source: .hardware).map { try .encoded($0) })])
@@ -184,8 +187,11 @@ private func removeOwnedReadyFile() {
             return
         }
         guard tokenPath == nil || !tokenStdin else { throw StartupError.invalidArguments }
+        var credentials = try clientTokensStdin ? SurfaceClientCredentials.readStdin() : nil
         let token: String
-        if let tokenPath {
+        if let credentials {
+            token = credentials.ownerToken
+        } else if let tokenPath {
             token = try readPrivateToken(tokenPath)
         } else if tokenStdin {
             // Same rule as the BCR Provider: stdin must be a dedicated pipe. A redirected file
@@ -201,6 +207,7 @@ private func removeOwnedReadyFile() {
             throw StartupError.readyFileExists
         }
         let principals = try SurfacePrincipals.loadOrCreate(path: principalPath)
+        credentials = credentials?.reservingWriterIDs([principals.remote_writer_id, principals.interface_writer_id, principals.system_writer_id])
         var surface = try CompactHardwareSurface(instanceID: instance, epoch: UUID().uuidString, configuration: configuration,
                                                  hardwareWriterID: principals.interface_writer_id, remoteWriterID: principals.remote_writer_id, writeLimits: writeLimits)
         let audit = DeviceAccessAudit(access: deviceAccess)
@@ -254,7 +261,7 @@ private func removeOwnedReadyFile() {
             bytes.copyBytes(to: disabledCleanupBytes!, count: bytes.count)
         }
         audit.emit("device_access_startup")
-        let server = try LoopbackHTTPServer(port: port, token: token)
+        let server = try LoopbackHTTPServer(port: port, token: token, credentials: credentials)
         let discovery = surface.controls.discovery()
         let ready: JSONValue = try .object(["expected": .encoded(discovery.expected), "latest_sequence": .string(discovery.latest_sequence),
                                             "source": .string("hardware"), "contract_version": .string(discovery.contract_version)])
@@ -269,10 +276,10 @@ private func removeOwnedReadyFile() {
         var budget = writeLimits.map { SurfaceWriteBudgets(input: $0.input_per_window, feedback: $0.feedback_per_window, renew: $0.renew_per_window, admin: $0.admin_per_window) }
             ?? SurfaceWriteBudgets(aggregateLimit: writeLimit)
         var nextPoll = ProcessInfo.processInfo.systemUptime + 0.02
-        try server.run(nextDeadline: { nextPoll }, maintenance: {
+        try server.runAuthenticated(nextDeadline: { nextPoll }, maintenance: {
             drainMIDI()
             nextPoll = ProcessInfo.processInfo.systemUptime + 0.02
-        }) { body in
+        }) { body, client in
             var auditOperation = "unparsed"
             defer {
                 if deviceAccess == .disabled {
@@ -309,6 +316,7 @@ private func removeOwnedReadyFile() {
                         auditOperation = name
                     }
                     do {
+                        guard client.permits(name) else { throw ControlContractError("permission_denied") }
                         let operation = try SurfaceControlTools.parse(name, arguments: params["arguments"] ?? .object([:]))
                         drainMIDI()
                         let time = ProcessInfo.processInfo.systemUptime
@@ -322,9 +330,9 @@ private func removeOwnedReadyFile() {
                             try surface.controls.validateInput(input, at: time, writerID: principals.remote_writer_id)
                             throw ControlContractError("permission_denied")
                         case let .feedback(feedback):
-                            let plan = try surface.displayPlan(feedback, allowed: allowFeedback, at: time)
+                            let plan = try surface.displayPlan(feedback, allowed: allowFeedback, at: time, writerID: client.writerID)
                             var candidate = surface
-                            let event = try candidate.recordFeedback(feedback, at: time)
+                            let event = try candidate.recordFeedback(feedback, at: time, writerID: client.writerID)
                             guard budget.consume(.feedback, at: time) else { throw ControlContractError("rate_limited") }
                             // Spent before any send: a partly delivered or failing request is still
                             // rate limited. The event commits only after every message was accepted.

@@ -59,8 +59,8 @@ public struct CompactHardwareSurface: Sendable {
 
     /// Validate before any transport side effects. The caller then sends this typed plan,
     /// and commits `recordFeedback` only after every message was accepted by the transport.
-    public func displayPlan(_ update: ControlFeedback, allowed: Bool, at time: Double) throws -> [HardwareDisplayMessage] {
-        try controls.validateFeedback(update, at: time, writerID: remoteWriterID)
+    public func displayPlan(_ update: ControlFeedback, allowed: Bool, at time: Double, writerID: String? = nil) throws -> [HardwareDisplayMessage] {
+        try controls.validateFeedback(update, at: time, writerID: writerID ?? remoteWriterID)
         guard allowed else { throw ControlContractError("permission_denied") }
         guard try controls.snapshot(at: time).link?.state == .connected else { throw ControlContractError("invalid_transition") }
         let parts = update.control_id.split(separator: ".")
@@ -84,7 +84,7 @@ public struct CompactHardwareSurface: Sendable {
         }
     }
 
-    @discardableResult public mutating func recordFeedback(_ update: ControlFeedback, at time: Double) throws -> ControlEvent {
-        try controls.recordFeedback(update, origin: .remote, at: time, writerID: remoteWriterID)
+    @discardableResult public mutating func recordFeedback(_ update: ControlFeedback, at time: Double, writerID: String? = nil) throws -> ControlEvent {
+        try controls.recordFeedback(update, origin: .remote, at: time, writerID: writerID ?? remoteWriterID)
     }
 }

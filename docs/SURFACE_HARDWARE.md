@@ -167,3 +167,42 @@ record of a disconnected service, not successful hardware diagnostics. The share
 capture schema is shipped separately and hashed. Source-independent verification
 checks its read-only request allowlist and verifies that offline validation adds
 no service request.
+
+## Separate feedback credentials and attended checklist (F)
+
+The explicit three-token pipe mode `--surface-client-tokens-stdin` is shared with the
+simulator (see `simulation/README.md` in the combined delivery, section SC-R05).
+It reads strict JSON `{owner, operator, display}` through EOF, <=512 bytes; values are
+distinct 64-character lowercase hexadecimal tokens, never files or command arguments.
+It conflicts with the legacy `--token-file` / `--token-stdin`; the legacy mode is unchanged.
+Secondary writers are host-issued opaque IDs, distinct per client for this process,
+rotating at restart; `--surface-principal-file` v1 still preserves only owner/interface/system.
+Operator can read and invoke input/renew, which **remain refused** in hardware sessions.
+Display can read and invoke feedback, still requiring `--allow-surface-feedback`, connected
+endpoints and matching layer evidence. Secondary credentials never gain reset or other tools.
+Scopes do not grant process permissions or extra write budgets. Use SDK 1.4.0's explicit
+`accepted_sources=("hardware",)` for both hardware clients; input must come from the device.
+
+The current workspace checklist is
+`/Users/ethan/Documents/AstroController/build/e/xtouch-attended.json` and its same-content
+`xtouch-attended.md`; generator/operator entry is `XTouchCompactDev/configs/hardware_attended.py`.
+It has nine stages: read-only startup; observe position/touch/encoder/button inputs on the
+user-confirmed bank; save epoch; physically disconnect/reconnect and verify unknown/no replay;
+restart with display permission; explicitly confirm one button light; explicitly confirm ring
+value/style; reject fader feedback; stop and check no motor/Program Change output. Agent runs
+software, user observes/acts; sending stages require fresh in-person confirmation. The fake-only
+rehearsal exercises the software sequence and confers no physical qualification.
+
+Prepare/rehearse without devices, after a Debug build (paths resolve from this checkout):
+
+```sh
+python3 configs/hardware_attended.py prepare
+XTOUCH_HARDWARE_BINARY=build/swiftpm/debug/XTouchSurfaceHardware python3 configs/hardware_attended.py rehearse
+```
+
+The combined candidate root is hardware Contract 1.4; `simulation/` is a separate explicit
+simulation Contract 1.3 executable, profile, schema, four fixtures and SDK/checker. The root
+manifest hashes that entire subdirectory, including its own manifest. Neither profile nor
+instance/mapping identity may be substituted for the other. Root offline `--device-access disabled`
+remains permanent disconnected read-only diagnostics with zero MIDI access; it is not simulation
+and is not connected hardware acceptance. Physical qualification awaits joint attended acceptance.
