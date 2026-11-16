@@ -419,7 +419,9 @@
     }
 
     struct PanelSnapshot: Equatable, Sendable {
-        var integrationSummary: [String: String] = [:]
+        #if DEBUG
+            var integrationSummary: [String: String] = [:]
+        #endif
         var mode: ConsoleMode {
             isMock ? .mock : listenOnly ? .hardwareListen : .hardwareSend
         }
@@ -563,12 +565,14 @@
         var requestLibraryDelete: ((UUID) -> Void)?
         var confirmLibraryAction: (() -> Void)?
         var cancelLibraryAction: (() -> Void)?
-        // Explicit isolated Mock fixtures; never populated by a normal GUI session.
-        var integrationCapture: (() -> Void)?
-        var integrationAdvance: (() -> Void)?
-        var integrationAgentWrite: ((Double) -> Void)?
-        var integrationPhysicalLayer: ((CompactLayer) -> Void)?
-        var integrationFlushValues: (() -> Void)?
+        #if DEBUG
+            // Explicit isolated Mock fixtures; never populated by a normal GUI session.
+            var integrationCapture: (() -> Void)?
+            var integrationAdvance: (() -> Void)?
+            var integrationAgentWrite: ((Double) -> Void)?
+            var integrationPhysicalLayer: ((CompactLayer) -> Void)?
+            var integrationFlushValues: (() -> Void)?
+        #endif
         var setMCPEnabled: ((Bool) -> Void)?
         var setMCPWritesAllowed: ((Bool) -> Void)?
         var setMCPSimulationControlAllowed: ((Bool) -> Void)?

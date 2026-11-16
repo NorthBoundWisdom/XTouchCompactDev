@@ -86,12 +86,14 @@
 
         let mcp: LocalMCPServer
         let mcpPort: UInt16
-        @Published var integrationUIActive = false
-        var integrationCaptureAction: (() -> Void)?
-        var integrationAdvanceAction: (() -> Void)?
-        @Published var integrationCaptureCount = 0
-        var integrationMotorLedger: [[String: Any]] = []
-        @Published private(set) var mcpTokenCopyCount = 0
+        #if DEBUG
+            @Published var integrationUIActive = false
+            var integrationCaptureAction: (() -> Void)?
+            var integrationAdvanceAction: (() -> Void)?
+            @Published var integrationCaptureCount = 0
+            var integrationMotorLedger: [[String: Any]] = []
+            @Published private(set) var mcpTokenCopyCount = 0
+        #endif
         @Published private(set) var mcpTokenCopyStatus: String?
         let isolated: Bool
         private let memoryToken = UUID().uuidString + UUID().uuidString
@@ -1117,7 +1119,9 @@
         }
 
         func didCopyMCPToken() {
-            mcpTokenCopyCount += 1
+            #if DEBUG
+                mcpTokenCopyCount += 1
+            #endif
             mcpTokenCopyStatus = "Access token copied."
         }
 
@@ -1507,12 +1511,14 @@
         }
 
         private func appendEvent(_ event: MonitorEvent) {
-            if isolated, integrationUIActive, event.direction == .output, event.delivery == .sent,
-               case let .fader(index) = event.control, let message = event.message
-            {
-                integrationMotorLedger.append(["fader": index, "bytes": message.midi1Bytes,
-                                               "source": event.source.rawValue, "touched": session.state.isTouched(index)])
-            }
+            #if DEBUG
+                if isolated, integrationUIActive, event.direction == .output, event.delivery == .sent,
+                   case let .fader(index) = event.control, let message = event.message
+                {
+                    integrationMotorLedger.append(["fader": index, "bytes": message.midi1Bytes,
+                                                   "source": event.source.rawValue, "touched": session.state.isTouched(index)])
+                }
+            #endif
 
             events.insert(event, at: 0); trimEvents()
             do {

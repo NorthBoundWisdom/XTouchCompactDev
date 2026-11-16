@@ -1,4 +1,4 @@
-#if os(macOS)
+#if os(macOS) && DEBUG
     import Foundation
     import Testing
     @testable import XTouchCompactApp

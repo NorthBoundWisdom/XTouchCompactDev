@@ -40,8 +40,7 @@
 
         var panelSnapshot: PanelSnapshot {
             let observation = observationPresentation
-            return PanelSnapshot(
-                integrationSummary: isolated && integrationUIActive ? integrationSummary : [:],
+            let result = PanelSnapshot(
                 surfaceStatus: surfaceStatusPresentation,
                 mockPedals: hardwareMode ? nil : MockPedalPresentation(expression: mock.expression, footswitchDown: mock.footswitchDown),
                 hardwareDisplayLayer: matchingLiveValues?.lastInputLayer ?? matchingCachedValues?.lastInputLayer,
@@ -93,6 +92,13 @@
                 canUndo: session.canUndo, canRedo: session.canRedo,
                 highlightedGroup: highlightedGroup
             )
+            #if DEBUG
+                var inspected = result
+                inspected.integrationSummary = isolated && integrationUIActive ? integrationSummary : [:]
+                return inspected
+            #else
+                return result
+            #endif
         }
 
         private var offlineReplayPresentation: OfflineReplayPresentation? {
@@ -289,7 +295,7 @@
         }
 
         var panelIntents: PanelIntents {
-            PanelIntents(
+            let result = PanelIntents(
                 armNonMotorTests: { [weak self] in self?.armNonMotorTests($0) },
                 lockNonMotorTests: { [weak self] in self?.lockNonMotorTests() },
                 previewNonMotorTest: { [weak self] in self?.previewNonMotorTest($0, receiveChannel: $1) },
@@ -346,15 +352,6 @@
                 requestLibraryDelete: { [weak self] in self?.requestLibraryAction($0, kind: .delete) },
                 confirmLibraryAction: { [weak self] in self?.confirmLibraryAction() },
                 cancelLibraryAction: { [weak self] in self?.cancelLibraryAction() },
-                integrationCapture: isolated && integrationUIActive ? integrationCaptureAction : nil,
-                integrationAdvance: isolated && integrationUIActive ? integrationAdvanceAction : nil,
-                integrationAgentWrite: isolated && !hardwareMode ? { [weak self] value in
-                    guard let self, !hardwareMode else { return }
-                    do { _ = try routeMCP(["method": "tools/call", "params": ["name": "set_parameter", "arguments": ["id": "a.Fader.1", "value": value]]]) }
-                    catch { serviceError(error) }
-                } : nil,
-                integrationPhysicalLayer: isolated && !hardwareMode ? { [weak self] layer in self?.setMockPhysicalLayerForPreview(layer) } : nil,
-                integrationFlushValues: isolated ? { [weak self] in self?.flushHardwareValues() } : nil,
                 setMCPEnabled: { [weak self] in self?.setMCPEnabled($0) },
                 setMCPWritesAllowed: { [weak self] in self?.mcpWritesAllowed = $0 },
                 setMCPSimulationControlAllowed: { [weak self] in self?.mcpSimulationControlAllowed = $0 },
@@ -402,6 +399,21 @@
                 moveExpression: hardwareMode ? nil : { [weak self] value in self?.moveExpression(value) },
                 pressFootswitch: hardwareMode ? nil : { [weak self] down in self?.pressFootswitch(isDown: down) }
             )
+            #if DEBUG
+                var intents = result
+                intents.integrationCapture = isolated && integrationUIActive ? integrationCaptureAction : nil
+                intents.integrationAdvance = isolated && integrationUIActive ? integrationAdvanceAction : nil
+                intents.integrationAgentWrite = isolated && !hardwareMode ? { [weak self] value in
+                    guard let self, !hardwareMode else { return }
+                    do { _ = try routeMCP(["method": "tools/call", "params": ["name": "set_parameter", "arguments": ["id": "a.Fader.1", "value": value]]]) }
+                    catch { serviceError(error) }
+                } : nil
+                intents.integrationPhysicalLayer = isolated && !hardwareMode ? { [weak self] layer in self?.setMockPhysicalLayerForPreview(layer) } : nil
+                intents.integrationFlushValues = isolated ? { [weak self] in self?.flushHardwareValues() } : nil
+                return intents
+            #else
+                return result
+            #endif
         }
     }
 #endif

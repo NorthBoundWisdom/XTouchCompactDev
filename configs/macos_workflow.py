@@ -156,6 +156,8 @@ def build(configuration: str, architecture: str = "native", prebuilt_slices: Pat
     for relative in ("swiftpm", f"app/{configuration}/{PRODUCT}.app", "icons/AppIcon.iconset", "icons/AppIcon.png"):
         build_path(REPO_ROOT, relative)
     executable = swift_executable(configuration, architecture, prebuilt_slices)
+    if configuration == "release":
+        verify_release_test_hooks(executable)
     bundle = BUILD_ROOT / "app" / configuration / f"{PRODUCT}.app"
     if bundle.is_symlink():
         raise ValueError(f"Refusing to overwrite a symlinked app bundle: {bundle}")
@@ -234,6 +236,29 @@ def source_metadata() -> dict[str, str | bool]:
         return {"XTouchSourceRevision": revision, "XTouchSourceTreeDirty": bool(status.strip())}
     except (OSError, subprocess.SubprocessError):
         return {}
+
+
+RELEASE_FORBIDDEN_HOOKS = (
+    "integrationAgentWrite",
+    "integrationPhysicalLayer",
+    "integrationFlushValues",
+    "integrationCapture",
+    "integrationAdvance",
+    "readIntegrationState",
+    "integrationSummary",
+    "integrationMotorLedger",
+    "integration_read_state",
+    "OffscreenContext",
+    "OffscreenAcceptanceView",
+    "fixture.capture",
+)
+
+
+def verify_release_test_hooks(executable: Path) -> None:
+    data = executable.read_bytes()
+    found = [name for name in RELEASE_FORBIDDEN_HOOKS if name.encode() in data]
+    if found:
+        raise ValueError("Release executable contains Debug acceptance hooks: " + ", ".join(found))
 
 
 def verify_bundle(bundle: Path) -> None:
@@ -429,6 +454,7 @@ def check_package(
 
 def verify_packaged_payload(bundle: Path, record: dict) -> None:
     verify_bundle(bundle)
+    verify_release_test_hooks(bundle / "Contents/MacOS" / PRODUCT)
     info = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
     if (
         info.get("CFBundleShortVersionString") != record["version"]

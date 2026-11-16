@@ -1,4 +1,4 @@
-#if os(macOS)
+#if os(macOS) && DEBUG
     import SwiftUI
     import XTouchCompactCore
 

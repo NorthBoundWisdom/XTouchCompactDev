@@ -12,7 +12,12 @@
                 exit(2)
             }
             if ProcessInfo.processInfo.arguments.contains("--offscreen") {
-                OffscreenIntegrationCommand.run()
+                #if DEBUG
+                    OffscreenIntegrationCommand.run()
+                #else
+                    FileHandle.standardError.write(Data("Offscreen acceptance is available only in Debug integration mode.\n".utf8))
+                    exit(2)
+                #endif
             } else if ProcessInfo.processInfo.arguments.contains("--startup-smoke=headless") {
                 NativeStartupSmoke.run()
             } else if ProcessInfo.processInfo.arguments.contains("--mcp-test-server") {

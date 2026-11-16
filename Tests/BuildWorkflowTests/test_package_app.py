@@ -109,6 +109,16 @@ class AppPackageTests(unittest.TestCase):
         self.assertIn("os: [macos-26, macos-15-intel]", text)
         self.assertIn("if len(assets) != 2:", text)
 
+    def test_release_payload_rejects_each_debug_acceptance_identifier(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "app"
+            binary.write_bytes(b"release payload")
+            workflow.verify_release_test_hooks(binary)
+            for marker in workflow.RELEASE_FORBIDDEN_HOOKS:
+                binary.write_bytes(b"MachO-prefix" + marker.encode() + b"suffix")
+                with self.assertRaisesRegex(ValueError, "Debug acceptance hooks"):
+                    workflow.verify_release_test_hooks(binary)
+
     def test_build_records_pin_source_dependency_architectures_and_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -249,6 +259,8 @@ class AppPackageTests(unittest.TestCase):
                     }
                 )
             )
+            (contents / "MacOS").mkdir()
+            (contents / "MacOS" / workflow.PRODUCT).write_bytes(b"release executable")
             calls = []
 
             def run(argv, **kwargs):
