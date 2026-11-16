@@ -46,7 +46,7 @@ jobs:
         with:
           name: xtouch-compact-universal
           path: build/package
-      - name: Verify and launch extracted ZIP and DMG payloads without AppKit or user data
+      - name: Verify final ZIP and DMG with isolated GUI and headless startup
         run: |
           python3 - <<'PY'
           from pathlib import Path

@@ -9,14 +9,17 @@ from a local AI agent over MCP.
 
 *App-rendered UI with synthetic Mock values. The capture process opens no MIDI ports.*
 
-## Project status (2026-11-13)
+## Project status (2026-11-16)
 
 | Area | State |
 | --- | --- |
 | Software in Mock mode | Runs end to end: panel, parameters, organization, agents, MCP, monitor, capture and offline review. Covered by deterministic tests on macOS and Linux. |
 | Physical bring-up | **Partial.** Inputs, LEDs, rings, layer selection and a limited set of motor checks were sampled on one unit on 2026-11-12/13. Full control coverage is not signed off. |
 | Latest safety changes (U1–U18) | Software-tested only. **Not yet rechecked on hardware (未在实机复核).** |
-| Distribution | Build from source. Local packages are ad-hoc signed only; no Developer ID signing or notarization. |
+| MCP and configuration | Two GUI protocol versions, read-only client tools, guarded parameter/Agent tools, named configuration library and bounded macros are available. Remote permission switches default off. |
+| Optional presentation | Panels → Arm preview is hidden by default; display choices persist separately. Stable IDs cover the 89 built-in physical identities; native AX/mouse acceptance is pending. |
+| Cross-device capture | Common-field inspection and foreign replay refusal are tested; the real BCR recorder fixture is still awaited, with a labelled placeholder in the meantime. |
+| CI and packaging | Linux Core/macOS checks passed; final universal ZIP/DMG passed both GUI/headless startup on ARM and Intel. [Run evidence](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43814655110). Packages remain ad-hoc only, without Developer ID/notarization or publication. |
 
 The next attended hardware session starts with **H1** (layer button highlight) and **H6** (touch
 gate and silent reconnect). Open work is tracked in [TODO.md](TODO.md); evidence and its limits are
@@ -28,10 +31,16 @@ indexed in [experiment records](docs/EXPERIMENT_RECORDS.md).
   encoders with LED rings, 39 illuminated buttons, and both A/B layers. The panel shows the last
   received physical value separately from the software target.
 - **Parameters** with names, groups, units, ranges and steps. Assign them to faders and encoders,
-  and assign toggle, step, set, cycle and group-reset actions to buttons, per layer.
+  and assign toggle, step, set, cycle, group-reset and macro actions to buttons, per layer.
 - **Organization.** Rename controls, color-tag and group them, link faders (VCA style), save and
   recall named scenes, and undo value changes. Metadata edits and scene recall send no motor
   command; value changes, linked movement and undo go through the motor safety gates.
+- **Named configuration library and macros.** Save/load/delete configuration entries in Settings,
+  with confirmation before replacement/deletion. Device profiles and runtime values stay out of
+  the library. Build up to 64 ordered set/step/toggle/group-reset operations; the whole macro is
+  one undo and every step reports its result. Loading configuration never recalls motors.
+- **Optional arm preview.** Enable it from **Panels** after explicitly loading the reference-arm
+  example. Side/top views render software values only; missing parameters show an empty state.
 - **Touch-aware motor policy.** A touched fader is never commanded. Startup, reconnect and layer
   selection never recall motor positions; recall needs an explicit **Recall motors…**.
 - **Mock mode** that models the Standard MIDI input/feedback paths, including the silent firmware
@@ -39,16 +48,26 @@ indexed in [experiment records](docs/EXPERIMENT_RECORDS.md).
 - **Agent slots and optional modules.** Eight demonstration Agent slots (start, wait for approval,
   complete) shown on button LEDs. Reference robot, chassis and parameter-output modules can be
   added with launch flags. All are simulations; no external agent process is launched.
-- **Local MCP endpoint** (off by default) for an agent on the same Mac, with legacy tools and the
-  shared `surface_` tool set.
+- **Local MCP endpoint** (off by default), with `2026-07-28` discovery and `2025-11-25` sessions.
+  Parameter/control/status/endpoint reads, atomic parameter batches, group reset and Mock Agent
+  lifecycle tools join the three original tools and unchanged `surface_` set. Separate default-off
+  write, motor, Agent-task and simulation-administration switches apply. Settings shows limits
+  and the last 100 calls. A standard-library stdio bridge is available; smoke probes default to
+  read-only and require an explicit Mock-only write flag.
 - **OSC output** (off by default) behind the shared output gate. It stays closed until a trusted
   actual-state and heartbeat source exists.
 - **MIDI monitor, capture and offline review.** Record traffic to JSONL, then audit motor safety
-  and replay recorded inputs into an isolated Mock without sending MIDI.
+  and replay native recorded inputs into an isolated Mock without sending MIDI. Other-device
+  records expose common fields/counts but explicitly refuse replay and receive a not-applicable
+  motor audit; see [capture format](docs/CAPTURE_FORMAT.md).
 - **Hardware observation.** A/B input coverage review with fingerprinted export, and a locked
   nonmotor test workbench for single LED/ring/layer commands.
 - **Software Surface simulator.** A hardware-free executable that exposes the shared control
   contract over authenticated loopback HTTP.
+- **Stable accessibility identifiers** for panel controls, workspaces, settings, inspector fields
+  and confirmation buttons, checked for source coverage and unique identity. See [the convention](docs/UI_IDENTIFIERS.md).
+- **Universal packaging** with checksums, source/dependency/toolchain build records and final
+  ZIP/DMG verification on ARM and Intel. Signing is ad-hoc; no notarized distribution is claimed.
 - Interface in **English, Simplified Chinese and Traditional Chinese**.
 
 ## Requirements
@@ -90,8 +109,11 @@ Packaging supports native, arm64, x86_64 and universal ad-hoc builds, with final
 | `--hardware-observe` | Open hardware observation with output locked and no saved workspace. Add `--capture-path <file>` to record. |
 | `--hardware-control` | Start on hardware with fresh writes allowed. No motor is recalled. |
 | `--robot-sim`, `--chassis-sim`, `--output-sim` | Install the optional simulated modules. |
-| `--reference-arm-example` | Load the version-2 reference-arm parameter set, with no assignments. |
-| `--startup-smoke`, `--integration-test` | Isolated checks: no CoreMIDI, no user workspace, no Keychain. |
+| `--reference-arm-example` | Load the version-2 reference-arm parameter set without assignments or output enable. Panels → Arm preview can display it. |
+| `--startup-smoke` | Isolated real SwiftUI scene; exit after the first rendered frame (`mode=gui`). |
+| `--startup-smoke=headless` | Isolated model-only startup (`mode=headless`), without a window. Final packages test both modes. |
+| `--integration-test` | Keep an isolated Mock GUI running, without CoreMIDI, user workspace or Keychain. |
+| `--integration-test --mcp-test-server` | Debug-only process harness with an ephemeral port and in-memory environment token; no window. |
 
 The GUI rejects the retired `--robot-plugin`, `--chassis-plugin` and `--output-plugin` flags with an error and replacement name before startup. Headless service flags are unchanged.
 
@@ -100,15 +122,16 @@ The GUI rejects the retired `--robot-plugin`, `--chassis-plugin` and `--output-p
 | Workspace | What you do there |
 | --- | --- |
 | Values | See and adjust every control's value on the active layer. |
-| Parameters | Define parameters, bulk-assign them, load presets, import and export configurations. |
+| Parameters | Define parameters, bulk-assign them, build/manage macros, load presets, import and export configurations. |
 | Organize | Names, colors, groups, linked faders, scenes, undo and redo. |
 | Agents | Start, interrupt and approve Agent slots; view optional module states. |
 | MIDI monitor | Watch incoming and outgoing messages; capture to a JSONL file. |
-| Offline capture | Import JSONL read-only, review motor safety evidence, and step or run inputs through an isolated Mock. |
+| Offline capture | Inspect JSONL read-only; native inputs can run in an isolated Mock. Other-device records are inspection-only, with no Compact motor assessment. |
+| Arm preview (optional) | Panels → Arm preview enables software-only side/top pose from the reference parameter set. |
 | Connection | MIDI ports, TX and Global RX channels, LED encoding, listen-only mode and layer realignment. |
 
 Select any control to open the inspector with its assignment, value, physical reading and MIDI
-addresses. **Settings** (⌘,) holds the language, MCP and OSC options. **Hardware observation** in
+addresses. **Settings** (⌘,) holds the language, named configuration library, MCP permissions/call history and OSC options. **Hardware observation** in
 the header opens the live panel, A/B input review and nonmotor tests.
 
 The configuration and device profile are saved to
@@ -125,6 +148,10 @@ controllers, including the BCR2000, are rejected on import. Details:
    permission.
 4. Agent writes move motors only with **Allow Agent motor moves** on. It is off by default and never
    restored at launch.
+5. The aligned Agent lifecycle tools additionally need **Allow Agent task control**; this never
+   grants remote approval. Simulation reset separately needs **Allow simulation administration**.
+   These settings default off and cannot be granted remotely. The original three tools retain
+   their established policies.
 
 The GUI supports MCP `2026-07-28` and the `2025-11-25` handshake; see [protocol and migration](docs/MCP.md).
 Legacy tools are `get_state`, `set_parameter` and `agent_primary`. Aligned console tools add parameter reads, guarded batches/group reset, control/status/endpoint reads and Mock Agent lifecycle; [schemas and differences](docs/MCP.md#aligned-console-tools) are documented. The shared `surface_` tools add

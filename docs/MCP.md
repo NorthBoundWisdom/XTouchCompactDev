@@ -1,5 +1,11 @@
 # Local GUI MCP
 
+## 从旧版本升级 / Upgrading from the previous GUI
+
+- `2025-03-26` is no longer served. Use stateless `2026-07-28` discovery with mirrored metadata/headers, or the `2025-11-25` initialize → initialized → session handshake below. A legacy initialize proposing an older version receives the supported `2025-11-25` proposal; accept it and use its session/version headers, or disconnect.
+- JSON-RPC arrays/batches are rejected as a whole before tool execution. Send one JSON-RPC object per HTTP request. For parameter batches, call `set_parameters` once with its `values` array; its validation/permissions/quota apply atomically, with motor deferral/withholding reported separately.
+- GUI optional modules now use `--robot-sim`, `--chassis-sim`, `--output-sim` instead of `--robot-plugin`, `--chassis-plugin`, `--output-plugin`. Update launch commands; retired names fail with an explicit replacement message. Headless service flags are unchanged.
+
 The GUI endpoint is `http://127.0.0.1:8765/mcp`. MCP defaults off. Enable it explicitly in Settings and pass the token through the local client environment. Authentication, Origin rejection, the request budget, Agent write permissions and motor authorization are unchanged. No transport action enables writes or changes MIDI connections. The two headless services retain their own protocol and launch contracts.
 
 ## Protocol and migration
@@ -12,7 +18,7 @@ This is an incompatible change from the former `2025-03-26` endpoint, including 
 
 Requests are single JSON-RPC 2.0 objects. IDs must be strings or finite numbers (not null or booleans). Malformed JSON returns HTTP 400/-32700; invalid envelopes/batches return HTTP 400/-32600; invalid params return -32602; mismatched mirrored metadata returns HTTP 400/-32020. Unknown methods return -32601 (modern HTTP 404, legacy HTTP 200). Valid notifications return HTTP 202 without a body and never execute tool mutations. Missing/wrong tokens return 401 before protocol processing; any Origin remains rejected with 403. GET remains 405.
 
-`tools/list` returns tools and their schemas. `tools/call` returns content/isError and structuredContent where supplied by the tool. Shared `surface_` schemas and raw result/error shapes remain unchanged; see [shared tools](SHARED_REMOTE.md). The three original GUI tools (`get_state`, `set_parameter`, `agent_primary`) retain their text result and permission/error behavior. Future aligned console tools use BCR's `{data: ...}` in text and structuredContent; tool errors use `isError: true`, `{data: {error: reason}}`. Transport/JSON-RPC errors remain distinct.
+`tools/list` returns tools and their schemas. `tools/call` returns content/isError and structuredContent where supplied by the tool. Shared `surface_` schemas and raw result/error shapes remain unchanged; see [shared tools](SHARED_REMOTE.md). The three original GUI tools (`get_state`, `set_parameter`, `agent_primary`) retain their text result and permission/error behavior. The aligned console tools use BCR's `{data: ...}` in text and structuredContent; tool errors use `isError: true`, `{data: {error: reason}}`. Transport/JSON-RPC errors remain distinct.
 
 The core `MCPRouter` owns typed requests, response/error envelopes, negotiation and sessions with injected time. `LocalMCPServer` owns loopback HTTP, bearer authentication, connection bounds and the existing 60 requests/minute limit. No external runtime dependency is added.
 

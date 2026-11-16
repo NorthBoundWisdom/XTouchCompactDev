@@ -1,5 +1,9 @@
 # Native accessibility identifiers
 
+The BCR host is adopting this same naming convention and adding its own checker
+in this alignment step. The convention is shared; each host keeps its own
+physical-control catalog and MIDI mapping. BCR controls do not inherit XTouch IDs.
+
 Identifiers are an interaction contract, following BCR's dot-separated names and
 stable entity suffixes. They are literal source constants, independent of translated
 labels. Keep an existing ID when moving a control or renaming its label; add a new

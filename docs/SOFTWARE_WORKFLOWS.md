@@ -216,16 +216,22 @@ implicitly enabled by this data preset.
 
 ## Isolated native checks and screenshots
 
-`--startup-smoke` opens a real native window, prints
-`{"type":"xtouch.native_startup","hardwareAccessed":false}` and exits.
+`--startup-smoke` opens the real SwiftUI scene/ContentView and exits after its first
+AppKit draw/window-update cycle, without a fixed sleep. Its marker requires
+`mode=gui`, `hardwareAccessed=false`, `windowCreated=true`, `firstFramePresented=true`.
+The separate `--startup-smoke=headless` constructs only the isolated model, requiring
+`mode=headless` and both frame/window flags false. Validators reject either marker
+in the other mode.
 `--integration-test` keeps the isolated Mock app running. Both skip CoreMIDI,
 user workspace loading and persistent credentials, using memory tokens instead.
 `python3 tools/capture_readme_screenshots.py` renders app-owned offscreen SwiftUI
 hosting views in English, Simplified and Traditional Chinese, plus settings and
 parameter previews. It never captures the desktop or another application.
 
-The package workflow builds native Release app/ZIP/DMG with icon, ad-hoc
-signature and SHA-256 sidecars, then runs the isolated native smoke check.
+The package workflow builds universal Release app/ZIP/DMG with icon, ad-hoc
+signature, SHA-256 sidecars and source/dependency/toolchain records, then runs both
+startup levels from final ZIP and DMG payloads on ARM and Intel. The direct CLI
+also supports native/arm64/x86_64; see [packaging](PACKAGING.md).
 Developer ID signing, notarization and all physical HW checklist items remain
 out of scope. Generated packages and previews are under ignored `build/`.
 
@@ -625,3 +631,7 @@ Showing, hiding and rendering the panel cannot write parameters, change layers,
 connect MIDI, recall motors or enable output.
 
 The GUI `--startup-smoke` now waits for the real scene first draw/window-update callback instead of a fixed delay. Its marker has `mode=gui`, `windowCreated=true`, `firstFramePresented=true`. The separate `--startup-smoke=headless` validates only the isolated model, with both frame/window flags false. Final package checks run both on native macOS runners; validators reject either marker in the other mode.
+
+## Capture interchange
+
+The unchanged JSONL v1 fields, audit wall-clock domain and XTouch extensions are specified in [capture format](CAPTURE_FORMAT.md). Another device is imported only for common-field/integrity inspection: replay is refused with its device name, the motor audit is not-applicable, and no Compact address/profile is inferred. Fixture provenance states whether the other host supplied a committed recorder sample or a handwritten placeholder is still awaiting replacement.
