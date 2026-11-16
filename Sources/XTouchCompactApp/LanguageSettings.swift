@@ -37,6 +37,7 @@
                     Text("简体中文").tag(AppLanguage.simplifiedChinese)
                     Text("繁體中文").tag(AppLanguage.traditionalChinese)
                 }
+                ConfigurationLibraryView(snapshot: snapshot, intents: intents)
                 ExternalServicesSettings(snapshot: snapshot, intents: intents)
                 Text(l.text("Language changes apply immediately and are saved automatically."))
                     .font(.caption).foregroundStyle(.secondary)

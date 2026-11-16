@@ -133,6 +133,10 @@
         private var appliedInputID: Int32?
         private var appliedOutputID: Int32?
         private let store: ProtectedWorkspaceStore?
+        private let libraryStore: ConfigurationLibraryStore?
+        @Published private(set) var libraryEntries: [SavedConfiguration] = []
+        @Published private(set) var libraryWarning: LocalizedMessage?
+        @Published private(set) var pendingLibraryAction: ConfigurationLibraryRequest?
         private let now: () -> Date
         private let runtimeClock: () -> TimeInterval
         private let runtimeSleep: @MainActor (Duration) async throws -> Void
@@ -153,7 +157,8 @@
             self.runtimeSleep = runtimeSleep
             self.evidenceWriterFactory = evidenceWriterFactory
             self.isolated = isolated
-            store = storageRoot.map(ProtectedWorkspaceStore.init(directory:))
+            store = storageRoot.map { ProtectedWorkspaceStore(directory: $0) }
+            libraryStore = storageRoot.map(ConfigurationLibraryStore.init(directory:))
             let map = try! FactoryStandardMap() // Constant channels are valid by construction.
             session = CompactSession(map: map, lightProtocol: .manual)
             mock = MockXTouchCompact(map: map, lightProtocol: .manual)
@@ -226,6 +231,10 @@
                 if savedParameterValues == nil {
                     savedParameterValues = session.parameters.values
                 }
+            }
+            if let libraryStore {
+                do { libraryEntries = try libraryStore.load() }
+                catch { libraryWarning = LocalizedMessage("Configuration library is protected: %@", error.localizedDescription) }
             }
             if startsMIDI {
                 do { try self.midi.start() } catch { self.error = error }
@@ -664,6 +673,43 @@
                 pendingPreset = nil
                 send(messages); updateBank(); saveWorkspace()
             } catch { self.error = error }
+        }
+
+        func saveLibraryConfiguration(name: String) {
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { libraryWarning = LocalizedMessage("Configuration name cannot be empty."); return }
+            guard !libraryEntries.contains(where: { $0.name == name }) else { libraryWarning = LocalizedMessage("Configuration name already exists."); return }
+            persistLibrary(libraryEntries + [.init(name: name, configuration: session.parameters.configuration)])
+        }
+
+        func requestLibraryAction(_ id: UUID, kind: ConfigurationLibraryRequest.Kind) {
+            guard let entry = libraryEntries.first(where: { $0.id == id }) else { return }
+            pendingLibraryAction = .init(id: id, name: entry.name, kind: kind)
+        }
+
+        func cancelLibraryAction() {
+            pendingLibraryAction = nil
+        }
+
+        func confirmLibraryAction() {
+            guard let request = pendingLibraryAction,
+                  let entry = libraryEntries.first(where: { $0.id == request.id }) else { return }
+            pendingLibraryAction = nil
+            switch request.kind {
+            case .load:
+                // Same configuration validation/load machinery as import, preserving live values
+                // for matching parameters. Loading is never a motor recall or profile change.
+                applyConfiguration(entry.configuration)
+            case .delete: persistLibrary(libraryEntries.filter { $0.id != request.id })
+            }
+        }
+
+        private func persistLibrary(_ candidate: [SavedConfiguration]) {
+            do {
+                try ConfigurationLibraryStore.validate(candidate)
+                try libraryStore?.save(candidate)
+                libraryEntries = candidate; libraryWarning = nil
+            } catch { libraryWarning = LocalizedMessage("Configuration library is protected: %@", error.localizedDescription) }
         }
 
         func resetParameterValues() {
@@ -1270,6 +1316,9 @@
                 switch failure {
                 case let .protectedCorruptFile(url): return l.text("Invalid workspace preserved; repair the original before saving. Backup: %@", url.path)
                 case .symbolicLink: return l.text("Workspace storage refuses symbolic links.")
+                case .backupConflict: return l.text("Backup verification failed; original file preserved.")
+                case let .newerWorkspaceVersion(version): return l.text("Workspace version %@ is newer than this application; original file preserved.", String(version))
+                case let .migrationUnavailable(version): return l.text("No valid migration from workspace version %@; original file preserved.", String(version))
                 }
             case let error as CompactError:
                 switch error {

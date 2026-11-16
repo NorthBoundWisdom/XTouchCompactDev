@@ -457,6 +457,9 @@
         var encoders: [EncoderPresentation]
         var buttons: [ButtonPresentation]
         var pendingPreset: SurfaceConfiguration?
+        var libraryEntries: [SavedConfiguration] = []
+        var libraryWarning: LocalizedMessage?
+        var pendingLibraryAction: ConfigurationLibraryRequest?
         var configuration: SurfaceConfiguration = .neutral
         var mcpPort: UInt16 = 8765
         var mcpEnabled = false
@@ -540,6 +543,11 @@
         var setEncoder: (_ index: Int, _ value: UInt8) -> Void
 
         /// Nil until the backend can describe MIDI addresses per control and layer.
+        var saveLibraryConfiguration: ((String) -> Void)?
+        var requestLibraryLoad: ((UUID) -> Void)?
+        var requestLibraryDelete: ((UUID) -> Void)?
+        var confirmLibraryAction: (() -> Void)?
+        var cancelLibraryAction: (() -> Void)?
         var setMCPEnabled: ((Bool) -> Void)?
         var setMCPWritesAllowed: ((Bool) -> Void)?
         var setMCPSimulationControlAllowed: ((Bool) -> Void)?

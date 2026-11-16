@@ -176,6 +176,11 @@
             width = 1600; height = 1000
             model.setOSCEnabled(true) // No trusted actual/heartbeat: refused with a visible notice.
             content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents))
+        case "configuration-library":
+            width = 680; height = 1000
+            model.saveLibraryConfiguration(name: "Studio")
+            model.saveLibraryConfiguration(name: "Reference")
+            content = AnyView(LanguageSettingsView(snapshot: model.panelSnapshot, intents: model.panelIntents))
         case "n5-mcp":
             width = 650; height = 1100
             model.mcpWritesAllowed = true

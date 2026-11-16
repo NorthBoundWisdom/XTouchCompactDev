@@ -708,3 +708,29 @@
 "Recent MCP calls" = "Recent MCP calls";
 
 "Rejected" = "Rejected";
+
+"Configuration library" = "Configuration library";
+
+"Configuration name" = "Configuration name";
+
+"Save configuration" = "Save configuration";
+
+"Library entries exclude device profiles and runtime values. Loading never recalls motors." = "Library entries exclude device profiles and runtime values. Loading never recalls motors.";
+
+"Confirm configuration library action" = "Confirm configuration library action";
+
+"Configuration library is protected: %@" = "Configuration library is protected: %@";
+
+"Configuration name cannot be empty." = "Configuration name cannot be empty.";
+
+"Configuration name already exists." = "Configuration name already exists.";
+
+"Backup verification failed; original file preserved." = "Backup verification failed; original file preserved.";
+
+"Workspace version %@ is newer than this application; original file preserved." = "Workspace version %@ is newer than this application; original file preserved.";
+
+"No valid migration from workspace version %@; original file preserved." = "No valid migration from workspace version %@; original file preserved.";
+
+"Load" = "Load";
+
+"Delete" = "Delete";

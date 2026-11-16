@@ -558,3 +558,28 @@ readings are downgraded to history and press states become unknown until new inp
 command invents a new position. A first transport failure keeps the existing live
 readings and layer evidence. Diagnostic assertions also invalidate motor-command
 history, so old cache entries cannot suppress a later intentional motor reassertion.
+
+## Named configuration library and workspace migrations
+
+Settings includes a named configuration library in the independent
+`configuration-library.json` file. Save records parameter definitions, assignments,
+colors/groups, links and scenes. Device profiles, endpoint choices, current values,
+Agent state and permissions are excluded. Load and delete require confirmation.
+Loading validates the same device/version/assignment rules as import, replaces the
+configuration through the existing session loader, preserves matching live values
+(clamped to the loaded definitions), and never recalls motors or changes TX/RX/LED
+profile settings. Removed parameters disappear; new parameters start at defaults.
+
+Workspace schema remains v1. `WorkspaceMigrations` provides an explicit adjacent
+version chain; there is no invented historical schema or automatic v0 fallback.
+Before a registered older-version transformation runs, the exact original bytes
+are backed up. Migration loads in memory; rewriting is an explicit later save.
+Missing/invalid chains and transformation failures preserve the original. Newer
+versions are explicitly refused, including on save, so there is no downgrade.
+
+Existing corrupt-workspace handling already provided stable FNV-1a content backup
+names and a non-dismissible storage warning. Backup reuse now verifies identical
+bytes and rejects symlinks/collisions. The library has the same original-preserving
+protection, a 4 MiB bound and a warning that remains visible in Settings until a
+successful operation after repair. Invalid originals are never silently replaced.
+FNV names identify content; they are not cryptographic authenticity claims.

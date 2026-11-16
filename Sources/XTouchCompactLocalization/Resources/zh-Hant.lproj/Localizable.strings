@@ -708,3 +708,29 @@
 "Recent MCP calls" = "最近的 MCP 呼叫";
 
 "Rejected" = "已拒絕";
+
+"Configuration library" = "設定庫";
+
+"Configuration name" = "設定名稱";
+
+"Save configuration" = "儲存設定";
+
+"Library entries exclude device profiles and runtime values. Loading never recalls motors." = "設定庫不包含裝置設定檔和執行階段值。載入不會召回馬達。";
+
+"Confirm configuration library action" = "確認設定庫操作";
+
+"Configuration library is protected: %@" = "設定庫已保護：%@";
+
+"Configuration name cannot be empty." = "設定名稱不能為空。";
+
+"Configuration name already exists." = "設定名稱已存在。";
+
+"Backup verification failed; original file preserved." = "備份驗證失敗；原始檔案已保留。";
+
+"Workspace version %@ is newer than this application; original file preserved." = "工作區版本 %@ 高於本應用程式；原始檔案已保留。";
+
+"No valid migration from workspace version %@; original file preserved." = "無法從工作區版本 %@ 移轉；原始檔案已保留。";
+
+"Load" = "載入";
+
+"Delete" = "刪除";

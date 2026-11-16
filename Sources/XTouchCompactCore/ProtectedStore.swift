@@ -1,4 +1,5 @@
 import Foundation
+import SurfacePluginContracts
 
 public struct DeviceProfile: Codable, Equatable, Sendable {
     public var transmitChannel = 1
@@ -25,7 +26,7 @@ public struct SavedWorkspace: Codable, Equatable, Sendable {
     }
 
     public func validate() throws {
-        guard version == 1 else { throw ParameterError.wrongDeviceOrVersion }
+        guard version == WorkspaceMigrations.currentVersion else { throw ParameterError.wrongDeviceOrVersion }
         try configuration.validate(); try profile.validate()
         try hardwareValues?.validate()
         if let parameterValues {
@@ -37,13 +38,15 @@ public struct SavedWorkspace: Codable, Equatable, Sendable {
     }
 }
 
-public enum StoreError: Error { case protectedCorruptFile(URL), symbolicLink }
+public enum StoreError: Error { case protectedCorruptFile(URL), symbolicLink, backupConflict, newerWorkspaceVersion(Int), migrationUnavailable(Int) }
 
 /// Atomic workspace storage. Invalid originals are never rewritten implicitly.
 public struct ProtectedWorkspaceStore {
     public let url: URL
-    public init(directory: URL) {
+    private let migrations: WorkspaceMigrations
+    public init(directory: URL, migrations: WorkspaceMigrations = .init()) {
         url = directory.appendingPathComponent("workspace.json")
+        self.migrations = migrations
     }
 
     public func load() throws -> SavedWorkspace? {
@@ -51,16 +54,29 @@ public struct ProtectedWorkspaceStore {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
         do {
-            let workspace = try JSONDecoder().decode(SavedWorkspace.self, from: data)
+            let original = try JSONDecoder().decode(JSONValue.self, from: data)
+            guard let version = original.value(for: "version")?.exactIntValue else { throw ParameterError.wrongDeviceOrVersion }
+            if version > WorkspaceMigrations.currentVersion {
+                throw StoreError.newerWorkspaceVersion(version)
+            }
+            if version < WorkspaceMigrations.currentVersion {
+                _ = try protectedContentBackup(data, original: url, kind: "pre-migration")
+            }
+            let migrated = try migrations.migrate(original)
+            let workspace = try migrated.decoded(SavedWorkspace.self)
             try workspace.validate()
             return workspace
-        } catch {
-            // FNV-1a is a stable content fingerprint, not a security hash.
-            let fingerprint = data.reduce(UInt64(14_695_981_039_346_656_037)) { ($0 ^ UInt64($1)) &* 1_099_511_628_211 }
-            let backup = url.appendingPathExtension("invalid-\(String(fingerprint, radix: 16)).backup")
-            if !FileManager.default.fileExists(atPath: backup.path) {
-                try data.write(to: backup, options: .withoutOverwriting)
+        } catch let error as StoreError {
+            // Future data is explicitly refused, never classified as a corrupt v1 file.
+            if case .newerWorkspaceVersion = error {
+                throw error
             }
+            if case .migrationUnavailable = error {
+                throw error
+            }
+            throw error
+        } catch {
+            let backup = try protectedContentBackup(data, original: url, kind: "invalid")
             throw StoreError.protectedCorruptFile(backup)
         }
     }
@@ -89,6 +105,9 @@ extension StoreError: LocalizedError {
         switch self {
         case let .protectedCorruptFile(url): "Invalid workspace preserved. Fingerprint backup: \(url.path). Repair or move the original before saving again."
         case .symbolicLink: "Workspace storage refuses symbolic links."
+        case .backupConflict: "Backup verification failed; original file preserved."
+        case let .newerWorkspaceVersion(version): "Workspace version \(version) is newer than this application; original file preserved."
+        case let .migrationUnavailable(version): "No valid migration from workspace version \(version); original file preserved."
         }
     }
 }
