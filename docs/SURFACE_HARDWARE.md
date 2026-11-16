@@ -35,7 +35,11 @@ Ready JSON stdout/file contains `status`, `pid`, `port`, `url`, `source: hardwar
 `test_only: false`, and `surface_control` (expected identity, sequence, contract version).
 Token validation, exclusive owned-ready cleanup, auth, loopback-only HTTP and MCP
 versions 2025-11-25/2026-07-28 match the simulator. `initialize`, `ping`, `tools/list`
-and seven surface tools are available. No remote method accepts device input.
+and seven surface tools are available to the owner. With scoped credentials, `tools/list`
+returns only the authenticated role's catalogue: operator gets discover, snapshot, input,
+events and renew; display gets discover, snapshot, feedback and events. This does not
+authorize any hardware input or lease operation: their existing execution refusals remain.
+No remote method accepts device input.
 A restart is a fresh instance/epoch. SIGTERM/SIGINT removes only its own ready inode.
 
 ## Profile and safety

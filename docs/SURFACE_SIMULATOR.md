@@ -595,6 +595,8 @@ retain the explicit input/feedback/reset process options needed by the owner.
 | operator | surface_control_discover, surface_control_snapshot, surface_control_events, surface_control_input, surface_control_renew |
 | display | surface_control_discover, surface_control_snapshot, surface_control_events, surface_control_feedback |
 
+`tools/list` succeeds for every role. Secondary catalogues contain only the tools in that
+role's row above, with their original schemas and ordering; the owner catalogue is unchanged.
 Both secondary credentials refuse reset and every other tool with `permission_denied`.
 All normal contract validation, process permission flags and aggregate/independent
 budgets still apply. The host generates a distinct opaque random writer for each secondary

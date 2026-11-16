@@ -230,7 +230,7 @@ private func removeOwnedReadyFile() {
                     result = .object(["protocolVersion": .string(negotiated), "capabilities": .object(["tools": .object([:])]), "serverInfo": .object(["name": .string("XTouchSurfaceSimulator"), "version": .string("1.0")])])
                 case "ping": result = .object([:])
                 case "tools/list":
-                    result = .object(["tools": .array(SurfaceControlTools.descriptors.map { tool in
+                    result = .object(["tools": .array(SurfaceControlTools.descriptors.filter { client.permits($0.name) }.map { tool in
                         .object(["name": .string(tool.name), "description": .string("Explicit software simulation control contract"), "inputSchema": tool.inputSchema,
                                  "outputSchema": tool.outputSchema, "annotations": .object(["readOnlyHint": .bool(!tool.isMutation)])])
                     })])

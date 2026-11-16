@@ -54,6 +54,9 @@ class ScopedHost:
     def call(self, role, name, arguments=None, token=None):
         envelope = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
                     'params': {'name': name, 'arguments': arguments or {}}}
+        return self.rpc(role, envelope, token=token)
+
+    def rpc(self, role, envelope, token=None):
         request = urllib.request.Request(self.ready['url'], json.dumps(envelope).encode(),
                                         {'Authorization': 'Bearer ' + (token or self.tokens[role]), 'Content-Type': 'application/json'})
         with urllib.request.urlopen(request, timeout=5) as response:
@@ -68,6 +71,39 @@ class ScopedHost:
 
 
 class ScopedCredentialTests(unittest.TestCase):
+    def assert_role_catalogues(self, hardware=False):
+        suffixes = {
+            'owner': ['discover', 'snapshot', 'input', 'feedback', 'events', 'reset', 'renew'],
+            'operator': ['discover', 'snapshot', 'input', 'renew', 'events'],
+            'display': ['discover', 'snapshot', 'feedback', 'events'],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            host = ScopedHost(directory, credentials(), hardware=hardware)
+            try:
+                original = host.clients['owner'].snapshot()
+                owner_tools = host.rpc('owner', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})['tools']
+                self.assertEqual([tool['name'] for tool in owner_tools],
+                                 ['surface_control_' + name for name in suffixes['owner']])
+                for role, permitted in suffixes.items():
+                    with self.subTest(role=role, hardware=hardware):
+                        response = host.rpc(role, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'})
+                        expected = [tool for tool in owner_tools
+                                    if tool['name'] in {'surface_control_' + name for name in permitted}]
+                        # Keep each complete descriptor, its schema and its order unchanged.
+                        self.assertEqual(response, {'tools': expected})
+                after = host.clients['owner'].snapshot()
+                self.assertEqual({key: value for key, value in after.items() if key != 'server_time'},
+                                 {key: value for key, value in original.items() if key != 'server_time'})
+            finally:
+                host.close()
+
+    def test_simulator_catalogue_only_lists_the_authenticated_role_tools(self):
+        self.assert_role_catalogues()
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'hardware service is macOS only')
+    def test_hardware_catalogue_only_lists_the_authenticated_role_tools(self):
+        self.assert_role_catalogues(hardware=True)
+
     def test_operator_display_are_separate_trusted_writers_with_enforced_scopes(self):
         tokens = credentials()
         with tempfile.TemporaryDirectory() as directory:
