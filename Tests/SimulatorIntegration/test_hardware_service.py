@@ -20,7 +20,7 @@ BINARY = Path(os.environ.get("XTOUCH_HARDWARE_BINARY", ROOT / ".build/debug/XTou
 
 
 class RunningHardware:
-    def __init__(self, directory, feedback=True, fake=True):
+    def __init__(self, directory, feedback=True, fake=True, extra=()):
         self.directory = Path(directory)
         self.script = self.directory / "midi.json"
         self.report = self.directory / "output.json"
@@ -28,7 +28,7 @@ class RunningHardware:
         self.script.write_text(json.dumps(self.rows))
         self.token = secrets.token_hex(32)
         self.ready_file = self.directory / "ready.json"
-        args = [str(BINARY), "--receive-channel", "2", "--light-protocol", "observed114", "--token-stdin", "--surface-instance-id", "hardware.test", "--ready-file", str(self.ready_file)]
+        args = [str(BINARY), "--receive-channel", "2", "--light-protocol", "observed114", "--token-stdin", "--surface-instance-id", "hardware.test", "--ready-file", str(self.ready_file), *extra]
         if feedback:
             args.append("--allow-surface-feedback")
         env = dict(os.environ)

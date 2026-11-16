@@ -32,7 +32,7 @@ def default_output(root=ROOT):
 
 
 SHARED = ROOT / "build/dependencies/SurfacePlugins"
-SDK_VERSION = "1.4.0"
+SDK_VERSION = "1.5.0"
 CONTRACT_VERSION = "1.3"
 SDK_ZIP = "surface-control-sdk-" + SDK_VERSION + ".zip"
 TEST_SUPPORT_ZIP = "surface-control-test-support-" + SDK_VERSION + ".zip"
@@ -40,6 +40,16 @@ TEST_SUPPORT_ZIP = "surface-control-test-support-" + SDK_VERSION + ".zip"
 # integrations/ and clients/python/tests are deliberately not part of a generic delivery.
 SHARED_FILES = {
     "surface-control-diagnostic-capture.schema.json": "docs/surface-control-diagnostic-capture.schema.json",
+    "surface-control-diagnostic-capture-v1.5.schema.json": "docs/surface-control-diagnostic-capture-v1.5.schema.json",
+    **{
+        name: "docs/" + name
+        for name in (
+            "surface-control-input-retention-tools.json",
+            "surface-control-input-retention-examples.json",
+            "surface-control-input-retention-hardware-tools.json",
+            "surface-control-input-retention-hardware-examples.json",
+        )
+    },
     "surface-control-diagnostics.md": "docs/surface-control-diagnostics.md",
     "status-panel-demo.md": "docs/status-panel-demo.md",
     "control-tools.json": "docs/surface-control-tools.json",
@@ -88,8 +98,9 @@ def kernel_provenance(root=ROOT):
     }
 
 
-def sdk_sources(shared=SHARED):
+def sdk_sources(shared=None):
     """Stable member order and metadata match the other host's SDK archive."""
+    shared = SHARED if shared is None else shared
     python_root = shared / "clients/python"
     return sorted(
         str(path.relative_to(shared))
@@ -104,8 +115,9 @@ def sdk_sources(shared=SHARED):
     )
 
 
-def test_support_sources(shared=SHARED):
+def test_support_sources(shared=None):
     """Separate, explicitly test-only distribution; excluded from runtime imports."""
+    shared = SHARED if shared is None else shared
     return sorted(
         str(path.relative_to(shared))
         for path in (shared / "clients/python/surface_control_testing").rglob("*")
@@ -113,7 +125,8 @@ def test_support_sources(shared=SHARED):
     )
 
 
-def stage_test_support(stage, shared=SHARED):
+def stage_test_support(stage, shared=None):
+    shared = SHARED if shared is None else shared
     with zipfile.ZipFile(stage / TEST_SUPPORT_ZIP, "w") as support:
         for source in test_support_sources(shared):
             entry = zipfile.ZipInfo(str(Path(source).relative_to("clients/python")), date_time=(1980, 1, 1, 0, 0, 0))
@@ -140,8 +153,9 @@ def sdk_version(source):
     return assignments[0]
 
 
-def validate_sdk_archive(stage, shared=SHARED):
+def validate_sdk_archive(stage, shared=None):
     """The archive filename, embedded version and every source byte must agree."""
+    shared = SHARED if shared is None else shared
     sdk_version((shared / SDK_SOURCE).read_bytes())
     if sorted(path.name for path in stage.glob("surface-control-sdk-*.zip")) != [SDK_ZIP]:
         raise RuntimeError("SDK archive filename differs from the packaged SDK version")
@@ -157,8 +171,9 @@ def validate_sdk_archive(stage, shared=SHARED):
             raise RuntimeError("SDK archive differs from the locked SDK source bytes")
 
 
-def stage_shared_files(stage, root=ROOT, shared=SHARED):
+def stage_shared_files(stage, root=ROOT, shared=None):
     """Copy host files and shared published files into a delivery stage (no binary)."""
+    shared = SHARED if shared is None else shared
     sdk_version((shared / SDK_SOURCE).read_bytes())
     shutil.copy2(root / "LICENSE", stage)
     shutil.copy2(root / "examples/surface_simulator/minimal_consumer.py", stage)
@@ -166,6 +181,7 @@ def stage_shared_files(stage, root=ROOT, shared=SHARED):
     shutil.copy2(root / "docs/DISPLAY_TARGETS_SIMULATION.md", stage / "display-targets.md")
     shutil.copy2(root / "docs/DISPLAY_BUDGET.md", stage / "display-budget.md")
     shutil.copy2(root / "configs/check_display_targets.py", stage / "check_display_targets.py")
+    shutil.copy2(root / "configs/surface_sdk_metadata.py", stage / "surface_sdk_metadata.py")
     shutil.copy2(root / "configs/surface_plugins.lock.json", stage)
     for name, source in SHARED_FILES.items():
         shutil.copy2(shared / source, stage / name)
@@ -199,12 +215,13 @@ def source_provenance(root=ROOT):
     }
 
 
-def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED):
+def write_manifest(stage, source_commit, configuration, root=ROOT, shared=None):
     """Hash every staged file and record exact host/shared revisions and shared source hashes.
 
     Profile identity and mapping revision are read from the staged `control-contract.json`,
     which is the delivered binary's own `--describe` output for the default configuration.
     """
+    shared = SHARED if shared is None else shared
     validate_sdk_archive(stage, shared)
     discovery = json.loads((stage / "control-contract.json").read_text())["discovery"]
     if discovery["contract_version"] != CONTRACT_VERSION:

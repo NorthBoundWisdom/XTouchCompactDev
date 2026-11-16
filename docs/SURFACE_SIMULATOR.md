@@ -45,8 +45,8 @@ The shared SurfacePlugins files come byte for byte from the locked managed depen
 
 | Delivery file | Shared source |
 | --- | --- |
-| `surface-control-sdk-1.4.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/`, and `surface_control_diagnostics/` sources/README |
-| `surface-control-test-support-1.4.0.zip` (test-only; no hardware qualification) | separate `surface_control_testing/` sources/README |
+| `surface-control-sdk-1.5.0.zip` (SDK and live checker packages) | `clients/python/surface_control/`, `clients/python/surface_conformance/`, and `surface_control_diagnostics/` sources/README |
+| `surface-control-test-support-1.5.0.zip` (test-only; no hardware qualification) | separate `surface_control_testing/` sources/README |
 | `control-tools.json` | `docs/surface-control-tools.json` |
 | `surface-control-scenario.schema.json` | `docs/surface-control-scenario.schema.json` |
 | `surface-control-software-v1.json`, `surface-control-software-v1.1.json`, `surface-control-software-v1.2.json`, `surface-control-software-v1.3.json` | `fixtures/` |
@@ -58,7 +58,7 @@ The shared SDK tests and the Pipe integration example (`integrations/pipe/`) are
 of this generic delivery. The manifest's common fields have the same names and meanings as
 the other host's (shared `docs/surface-control-delivery.md`): `schema_version`, `artifact`
 (`surface-control-simulator`), `surface_control_contract` (`"1.3"`), `surface_control_sdk`
-(`"1.4.0"`), `source`, `source_commit`, `source_dirty`, `profile_id`, `profile_version`,
+(`"1.5.0"`), `source`, `source_commit`, `source_dirty`, `profile_id`, `profile_version`,
 `mapping_revision`, `surface_plugins_revision`, `files_sha256` (every delivered file), and
 `surface_plugins_files_sha256` (each shared source file). Profile identity and
 `mapping_revision` are taken from the delivered binary's own `--describe` output, so they
@@ -66,7 +66,7 @@ describe the default demonstration configuration; a running instance is still pi
 `surface_control_discover`. Private fields (`product`, platform, architecture, build
 configuration, start/stop notes) are not part of the convention. `examples/surface_roundtrip.py` imports the SDK only from the
 delivery zip after checking the manifest pin and every file hash. It is a local software
-delivery, without a release tag or notarization claim. SDK 1.4.0 also contains the separate,
+delivery, without a release tag or notarization claim. SDK 1.5.0 also contains the separate,
 clearly marked test-only hardware double and its README; manifest `test_artifacts`
 records its test-only identity. This does not turn the simulator into a hardware
 source: discovery remains Contract 1.3/simulation and default SDK clients remain
@@ -395,7 +395,7 @@ permissions, run from the delivery directory (use a fresh process and private to
 as described above):
 
 ```sh
-PYTHONPATH=surface-control-sdk-1.4.0.zip python3 -B -m surface_conformance \
+PYTHONPATH=surface-control-sdk-1.5.0.zip python3 -B -m surface_conformance \
   --url http://127.0.0.1:PORT/mcp --token-file /path/to/private/token \
   --instance-id INSTANCE --fixture surface-control-software-v1.3.json \
   --roles conformance-roles.json --report /path/to/evidence/conformance-v1.3.json
@@ -733,3 +733,23 @@ renderer has been checked through the same CompactSession display intent, PanelS
 RingLEDs fields that SurfacePanelView uses. Its separate legacy MCP endpoint does not expose the
 control-contract demo entry point: the CLI currently connects to standalone XTouchSurfaceSimulator
 or XTouchSurfaceHardware, and does not directly drive the GUI window. No GUI network API was added.
+
+
+### Explicit input-event retention
+
+`--surface-input-event-capacity N` (1..65536) explicitly opts this process into
+contract/profile version 1.5 with `events.input_retention`. The stable profile ID
+and device control declarations are unchanged. Without the option the original
+version, capabilities, seven tools, global journal and write budgets are unchanged.
+
+The eighth tool, `surface_control_input_events`, is read-only and available to
+owner, operator and display roles. It requires the complete discovered `expected`
+identity, a canonical decimal `after_input_sequence`, and `limit` 1..1024.
+Feedback cannot evict this independent bounded input history. Capacity overflow
+is reported as `input_event_gap`; reset/reconnect invalidates old identity and
+clears history while retaining the configured capacity. SDK 1.5 `InputEventCursor`
+is an explicit caller choice; the original global event cursor never falls back.
+Read calls do not consume a write budget. This option does not authorize inputs
+or any hardware mechanism; hardware input remains transport-owned and feedback
+remains display-only. Runtime SDK 1.5 and separate test-support archives are
+packaged independently; published 1.0–1.4 fixtures keep their original bytes.

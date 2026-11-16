@@ -76,7 +76,7 @@ Startup, endpoint changes and exit create zero device output. Only authorized di
 requests send; a transport failure returns an error without an accepted feedback event.
 If a multi-message ring write partially reached transport, its outcome is unknown: do not retry.
 
-Use SDK 1.4.0 with `accepted_sources=("hardware",)` and discover contract 1.4.
+Use SDK 1.5.0 with `accepted_sources=("hardware",)` and discover contract 1.4.
 Old default clients fail closed. Hardware `input`, `renew`, and `reset` are rejected
 with permission_denied, unsupported_hold, and unsupported_tool respectively.
 Consumers must stop on link loss, epoch change or event gaps and explicitly prepare
@@ -101,8 +101,8 @@ sets test_only true. Scripts are never sent through HTTP.
 
 `python3 configs/package_surface_hardware.py --output-root ../deliveries` packages
 a hardware root plus a separate complete `simulation/` artifact from the same clean host HEAD; it never replaces any previous delivery.
-The manifest records host/shared pins, Contract 1.4, SDK 1.4.0, profile/mapping and
-file hashes. Runtime SDK includes runtime, checker and read-only diagnostics packages. The fake hardware double is confined to a separate `surface-control-test-support-1.4.0.zip`, explicitly test-only and hashed in the manifest; it never enters the runtime SDK ZIP.
+The manifest records host/shared pins, Contract 1.4, SDK 1.5.0, profile/mapping and
+file hashes. Runtime SDK includes runtime, checker and read-only diagnostics packages. The fake hardware double is confined to a separate `surface-control-test-support-1.5.0.zip`, explicitly test-only and hashed in the manifest; it never enters the runtime SDK ZIP.
 The static hardware verifier is limited to describe, descriptor/mapping/hash validation without opening MIDI. The separate HTTP verifier uses permanently disabled device access. Neither is connected hardware acceptance. The attended checklist and its fake-only rehearsal are
 prepared separately under the workspace `build/e/`.
 
@@ -182,7 +182,7 @@ rotating at restart; `--surface-principal-file` v1 still preserves only owner/in
 Operator can read and invoke input/renew, which **remain refused** in hardware sessions.
 Display can read and invoke feedback, still requiring `--allow-surface-feedback`, connected
 endpoints and matching layer evidence. Secondary credentials never gain reset or other tools.
-Scopes do not grant process permissions or extra write budgets. Use SDK 1.4.0's explicit
+Scopes do not grant process permissions or extra write budgets. Use SDK 1.5.0's explicit
 `accepted_sources=("hardware",)` for both hardware clients; input must come from the device.
 
 The default checklist is this repository's `build/e/xtouch-attended.json` and its same-content
@@ -318,3 +318,23 @@ an inherited descriptor; its existing `--token-file /dev/fd/N` argument names on
 pipe descriptor, and creates no credential file. Offline verify requires no credential. Synthetic
 test credentials stay in memory/pipes and are checked absent from process arguments and regular
 files. Legacy product token-file authentication and its dedicated safety tests are unchanged.
+
+
+### Explicit input-event retention
+
+`--surface-input-event-capacity N` (1..65536) explicitly opts this process into
+contract/profile version 1.5 with `events.input_retention`. The stable profile ID
+and device control declarations are unchanged. Without the option the original
+version, capabilities, seven tools, global journal and write budgets are unchanged.
+
+The eighth tool, `surface_control_input_events`, is read-only and available to
+owner, operator and display roles. It requires the complete discovered `expected`
+identity, a canonical decimal `after_input_sequence`, and `limit` 1..1024.
+Feedback cannot evict this independent bounded input history. Capacity overflow
+is reported as `input_event_gap`; reset/reconnect invalidates old identity and
+clears history while retaining the configured capacity. SDK 1.5 `InputEventCursor`
+is an explicit caller choice; the original global event cursor never falls back.
+Read calls do not consume a write budget. This option does not authorize inputs
+or any hardware mechanism; hardware input remains transport-owned and feedback
+remains display-only. Runtime SDK 1.5 and separate test-support archives are
+packaged independently; published 1.0–1.4 fixtures keep their original bytes.

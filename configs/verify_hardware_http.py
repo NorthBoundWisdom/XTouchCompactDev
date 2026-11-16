@@ -22,6 +22,12 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Checks below rely on assert; refuse to run where python -O would strip them.
+try:
+    from .surface_sdk_metadata import package_sdk
+except ImportError:
+    from surface_sdk_metadata import package_sdk
+
+
 if not __debug__:
     raise SystemExit("Run without -O: these checks rely on assert")
 
@@ -147,7 +153,7 @@ def verify(directory, evidence):
     evidence = Path(evidence).resolve()
     evidence.mkdir(parents=True, exist_ok=True)
     binary = directory / "XTouchSurfaceHardware"
-    sdk_zip = directory / "surface-control-sdk-1.4.0.zip"
+    sdk_zip, sdk_version = package_sdk(directory)
     manifest_path = directory / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
     for name, digest in manifest["files_sha256"].items():
@@ -158,7 +164,7 @@ def verify(directory, evidence):
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(sdk_zip))
     sdk = importlib.import_module("surface_control")
-    assert str(sdk.__file__).startswith(str(sdk_zip) + "/") and sdk.__version__ == "1.4.0"
+    assert str(sdk.__file__).startswith(str(sdk_zip) + "/") and sdk.__version__ == sdk_version
     readonly = []
     refusals = []
     lifecycle = []

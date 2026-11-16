@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "purpose": "immutable real SDK1.4 and original packaging inputs for preserved legacy assertions",
+  "records": [
+    {
+      "path": "surface-control-sdk-1.4.0.zip",
+      "sha256": "c277eb0a78c2dc165aac7ab0384c00853376bf119df5906f65d8e724c6a9423e",
+      "source_delivery": "xtouch-surface-1.4-5593d7b",
+      "source_host": "5593d7b448fb2c33ddb586badceb499a79a261d9",
+      "shared_revision": "12ba0edbc1f2c46eea5311f9b8f982d563c55b75"
+    },
+    {
+      "path": "surface-control-test-support-1.4.0.zip",
+      "sha256": "5acb1eb0613b278e9a93597a6144018414347d7068618957d07b7022a88b46a4",
+      "source_delivery": "xtouch-surface-1.4-5593d7b",
+      "source_host": "5593d7b448fb2c33ddb586badceb499a79a261d9",
+      "shared_revision": "12ba0edbc1f2c46eea5311f9b8f982d563c55b75"
+    },
+    {
+      "path": "locked-shared-files.zip",
+      "sha256": "ee234e02cbe8bc6d4941ff942ce492a95ec4914ec9e0eae8abc3e0ad3049e15a",
+      "shared_revision": "12ba0edbc1f2c46eea5311f9b8f982d563c55b75",
+      "members": {
+        "CHANGELOG.md": "9f7411fa067d56fe6a66a536a4273aec356c7f9a27e91dd7b3eb1a9ab641ce2c",
+        "clients/python/surface_conformance/__init__.py": "45ef28782765e4801c3d59adb75c9fc9f2da7a0dfac40e23357a7f0674d44e1b",
+        "clients/python/surface_conformance/__main__.py": "f76a633e1cde28b81fca816fba6e2a99fd0e638e0c95e90ed1246971cc121920",
+        "clients/python/surface_control/__init__.py": "13ef593f197a9036b6012e2796d213e1061605f211d2759c8bde3dd93d8dfc80",
+        "clients/python/surface_control_diagnostics/README.md": "a66efa6a12cc900a40aa7c448c6cf60424e77c2f5e4fa684c86df870c3abeaa2",
+        "clients/python/surface_control_diagnostics/__init__.py": "c69c7be4a58a76a1f0811104f4ce2cdab8be1d6b3c7776a52dcb6515cfc73a60",
+        "clients/python/surface_control_diagnostics/__main__.py": "a989bfbd20824f2d4594e5f45106c6450634e1a02e6c4c4ddb5900cdb30cf304",
+        "clients/python/surface_control_testing/README.md": "8d3d30e523a7f86026869168841c780f43ebcfc656f2f76ae641fa7d0edb5b74",
+        "clients/python/surface_control_testing/__init__.py": "7d64b4ae5f65a4e5fca998c9fd8d30d267eacb750d40bbac1d0ba48c19ede374",
+        "clients/python/surface_control_testing/__main__.py": "674109d129c2861e90ce201a7b335563b1449596a4b3b03140d41c2d9e18a922",
+        "clients/python/surface_panel_demo/__init__.py": "e5230f7f7b5aacb5910a07dffba43d466112b1f81c6b78cb1c35b9dae0ca5449",
+        "clients/python/surface_panel_demo/__main__.py": "fe40999b4b2f5989e25ca40a04ec197325c7568a78013d540a4330c9145c8989",
+        "clients/python/surface_panel_demo/mappings/bcr.json": "9be9e75fcd8148fe516a64a97856c283f1db70b16ac76cd84afd82356bc5a1a6",
+        "clients/python/surface_panel_demo/mappings/compact.json": "36deb679c8572a07c1236a8fc12e2f30c1033d0f5d4229354b80c95af1ac9628",
+        "clients/python/surface_panel_demo/reference_actual.json": "4035c548f4287a17b1516a53682bc760fc37468f68cb13756d134dd32d64f1a6",
+        "docs/release-checklist.md": "16a72103b3b3d6645ce50f817e4407756208cefd383448c6950eda2f85350ddd",
+        "docs/status-panel-demo.md": "31b81ca8b3aabe259e3e629350fddcc1d2d4de1564a3d923b3a7bac6637f7b79",
+        "docs/surface-control-conformance-report.schema.json": "f6e1d2f32523ecd5f5b66338a3f799c0bb69df6758db930b4b901c3e8c14c16c",
+        "docs/surface-control-conformance.md": "db49d7e73e89598423aed83cb34448ce6a794f9b871dabb8f992c47066c88edc",
+        "docs/surface-control-delivery.md": "7e0a5b1b57006a48b1bf0469b8a3d1efd99c59958663ff564131e364e5d026c8",
+        "docs/surface-control-diagnostic-capture.schema.json": "6163dae8b4a218a2c779216652f5943d879a0ce6fe154a7846fdf6f5df41039d",
+        "docs/surface-control-diagnostics.md": "a66efa6a12cc900a40aa7c448c6cf60424e77c2f5e4fa684c86df870c3abeaa2",
+        "docs/surface-control-hardware-examples.json": "2ca993aa9ae7caa138d1e743362a2118bf55ab62661f0d9ede820c12221c7685",
+        "docs/surface-control-hardware-tools.json": "609bf553bd8cac09c82df9b321063468d594a63d95cb79858ca100daf2561875",
+        "docs/surface-control-scenario.schema.json": "bfc6e9c7ef266853dfe6ae809af906b3990d127b48c29f5c408c84d77d1b4f9d",
+        "docs/surface-control-scenarios.md": "cd6525b025581d6c050c4a1ab029c6610250e71e74d8db53d9b170ac4bb467b6",
+        "docs/surface-control-tools.json": "2bf891a9a358a7928bd063e59094f041e040447b7a833d5d267b359ee1c8292e",
+        "docs/surface-control.md": "775337a17a477e6ba34bc9b6e130f91d0c8d4aaf41aed44e203bb8bd43d3d70f",
+        "docs/versioning.md": "0876d22cc62d03b21204c58831edc23069314cf4df4f4aea8688765115298b78",
+        "fixtures/surface-control-hardware-independent-v1.4.json": "27ada7c5272fba87e216a9fcd6217b1a848e2051702ab3690cf4f4e36cf9999b",
+        "fixtures/surface-control-hardware-v1.4.json": "aa1e48bb414cdb9a2043ec6198e1180490e3af47fa5e43231183557806798144",
+        "fixtures/surface-control-software-v1.1.json": "e94698d0ff44125648cf541498ee88219e590ff65a7829100a31fe6f31248aec",
+        "fixtures/surface-control-software-v1.2.json": "0109293e0aceff6c57d0dee271511ad2a2fc1f3f87e552b34466f93c1c0dcf34",
+        "fixtures/surface-control-software-v1.3.json": "fd153591d8f4815357068b36141e9dc418f2f67f787367e3f75e945283eabb85",
+        "fixtures/surface-control-software-v1.json": "e7d1fe278026778fd1c148f8d1fcfa334cbac6a3202ec01bf52594c205d80f18"
+      }
+    }
+  ]
+}

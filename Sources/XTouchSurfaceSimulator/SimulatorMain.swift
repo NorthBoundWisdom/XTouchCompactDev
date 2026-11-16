@@ -109,6 +109,7 @@ private func removeOwnedReadyFile() {
         var readyPath: String?
         var configurationPath: String?
         var describe = false
+        var inputEventCapacity: Int?
         var writeLimit = SurfaceWriteBudget.writesPerSecond
         var explicitWriteLimit = false
         var writeLimits: ControlWriteLimits?
@@ -121,6 +122,9 @@ private func removeOwnedReadyFile() {
                 return arguments.removeFirst()
             }
             switch option {
+            case "--surface-input-event-capacity":
+                guard inputEventCapacity == nil, let capacity = try Int(value()), (1 ... 65536).contains(capacity) else { throw StartupError.invalidArguments }
+                inputEventCapacity = capacity
             case "--surface-principal-file": principalPath = try value()
             case "--write-limits":
                 guard writeLimits == nil else { throw StartupError.invalidArguments }
@@ -158,9 +162,9 @@ private func removeOwnedReadyFile() {
         let configuration = try configurationPath.map { try SimulationConfiguration.decode(Data(contentsOf: URL(fileURLWithPath: $0))) } ?? CompactSurfaceSimulator.demonstrationConfiguration
         guard !clientTokensStdin || (!tokenStdin && tokenPath == nil) else { throw StartupError.invalidArguments }
         if describe {
-            let simulator = try CompactSurfaceSimulator(instanceID: "example.simulation", epoch: "discovery-only", configuration: configuration, writeLimits: writeLimits)
+            let simulator = try CompactSurfaceSimulator(instanceID: "example.simulation", epoch: "discovery-only", configuration: configuration, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
             let value: JSONValue = try .object(["discovery": .encoded(simulator.controls.discovery()),
-                                                "tools": .array(SurfaceControlTools.descriptors.map { try .encoded($0) })])
+                                                "tools": .array((SurfaceControlTools.descriptors + (inputEventCapacity == nil ? [] : SurfaceControlInputEventsTools.descriptors(source: .simulation))).map { try .encoded($0) })])
             try FileHandle.standardOutput.write(JSONEncoder().encode(value) + Data("\n".utf8))
             return
         }
@@ -187,7 +191,7 @@ private func removeOwnedReadyFile() {
         let principals = try SurfacePrincipals.loadOrCreate(path: principalPath)
         credentials = credentials?.reservingWriterIDs([principals.remote_writer_id, principals.interface_writer_id, principals.system_writer_id])
         var simulator = try CompactSurfaceSimulator(instanceID: instance, epoch: UUID().uuidString, configuration: configuration,
-                                                    remoteWriterID: principals.remote_writer_id, systemWriterID: principals.system_writer_id, writeLimits: writeLimits)
+                                                    remoteWriterID: principals.remote_writer_id, systemWriterID: principals.system_writer_id, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
         let server = try LoopbackHTTPServer(port: port, token: token, credentials: credentials)
         let discovery = simulator.controls.discovery()
         let ready: JSONValue = try .object(["expected": .encoded(discovery.expected), "latest_sequence": .string(discovery.latest_sequence),
@@ -231,58 +235,66 @@ private func removeOwnedReadyFile() {
                     result = .object(["protocolVersion": .string(negotiated), "capabilities": .object(["tools": .object([:])]), "serverInfo": .object(["name": .string("XTouchSurfaceSimulator"), "version": .string("1.0")])])
                 case "ping": result = .object([:])
                 case "tools/list":
-                    result = .object(["tools": .array(SurfaceControlTools.descriptors.filter { client.permits($0.name) }.map { tool in
+                    result = .object(["tools": .array((SurfaceControlTools.descriptors + (inputEventCapacity == nil ? [] : SurfaceControlInputEventsTools.descriptors(source: .simulation))).filter { client.permits($0.name, inputRetentionEnabled: inputEventCapacity != nil) }.map { tool in
                         .object(["name": .string(tool.name), "description": .string("Explicit software simulation control contract"), "inputSchema": tool.inputSchema,
                                  "outputSchema": tool.outputSchema, "annotations": .object(["readOnlyHint": .bool(!tool.isMutation)])])
                     })])
                 case "tools/call":
                     guard let params = object["params"]?.objectValue, let name = params["name"]?.stringValue else { throw RPCError.invalidParams }
                     do {
-                        guard client.permits(name) else { throw ControlContractError("permission_denied") }
-                        let operation = try SurfaceControlTools.parse(name, arguments: params["arguments"] ?? .object([:]))
-                        let time = ProcessInfo.processInfo.systemUptime
-                        advanceHolds(to: time)
-                        let value: JSONValue
-                        func commit(_ candidate: CompactSurfaceSimulator, category: SurfaceWriteBudgets.Category) throws {
-                            // Mutations run on a copy of the value-type simulator. Only a fully
-                            // validated, successful operation consumes the write budget and is committed.
-                            guard budget.consume(category, at: time, writerID: client.writerID) else { throw ControlContractError("rate_limited") }
-                            simulator = candidate
+                        guard client.permits(name, inputRetentionEnabled: inputEventCapacity != nil) else { throw ControlContractError("permission_denied") }
+                        if inputEventCapacity != nil, name == SurfaceControlInputEventsTools.name {
+                            let request = try SurfaceControlInputEventsTools.parse(name, arguments: params["arguments"] ?? .object([:]))
+                            let time = ProcessInfo.processInfo.systemUptime
+                            advanceHolds(to: time)
+                            let page = try simulator.controls.inputEvents(expected: request.expected, afterInputSequence: request.after_input_sequence, limit: request.limit, at: time)
+                            result = try content(.encoded(page), isError: false)
+                        } else {
+                            let operation = try SurfaceControlTools.parse(name, arguments: params["arguments"] ?? .object([:]))
+                            let time = ProcessInfo.processInfo.systemUptime
+                            advanceHolds(to: time)
+                            let value: JSONValue
+                            func commit(_ candidate: CompactSurfaceSimulator, category: SurfaceWriteBudgets.Category) throws {
+                                // Mutations run on a copy of the value-type simulator. Only a fully
+                                // validated, successful operation consumes the write budget and is committed.
+                                guard budget.consume(category, at: time, writerID: client.writerID) else { throw ControlContractError("rate_limited") }
+                                simulator = candidate
+                            }
+                            switch operation {
+                            case .discover: value = try .encoded(simulator.controls.discovery())
+                            case let .snapshot(instanceID):
+                                guard instanceID == simulator.controls.expected.instance_id else { throw ControlContractError("instance_mismatch") }
+                                value = try .encoded(simulator.controls.snapshot(at: time))
+                            case let .input(input):
+                                guard allowInput else { throw ControlContractError("permission_denied") }
+                                var candidate = simulator
+                                let event = try candidate.input(input, at: time, writerID: client.writerID)
+                                try commit(candidate, category: .input)
+                                value = try .encoded(event)
+                            case let .feedback(feedback):
+                                guard allowFeedback else { throw ControlContractError("permission_denied") }
+                                var candidate = simulator
+                                let event = try candidate.feedback(feedback, at: time, writerID: client.writerID)
+                                try commit(candidate, category: .feedback)
+                                value = try .encoded(event)
+                            case let .renew(request):
+                                // Silent lease renewal: input permission and write budget, no sequence or event.
+                                guard allowInput else { throw ControlContractError("permission_denied") }
+                                var candidate = simulator
+                                let renewed = try candidate.renew(request, at: time)
+                                try commit(candidate, category: .renew)
+                                value = try .encoded(renewed)
+                            case let .events(instanceID, epoch, afterSequence, limit):
+                                value = try .encoded(simulator.controls.events(instanceID: instanceID, epoch: epoch, afterSequence: afterSequence, limit: limit, at: time))
+                            case let .reset(expected, expectedSequence):
+                                guard allowReset else { throw ControlContractError("permission_denied") }
+                                var candidate = simulator
+                                try candidate.reset(expected: expected, expectedSequence: expectedSequence, epoch: UUID().uuidString, at: time)
+                                try commit(candidate, category: .admin)
+                                value = try .encoded(simulator.controls.discovery())
+                            }
+                            result = try content(value, isError: false)
                         }
-                        switch operation {
-                        case .discover: value = try .encoded(simulator.controls.discovery())
-                        case let .snapshot(instanceID):
-                            guard instanceID == simulator.controls.expected.instance_id else { throw ControlContractError("instance_mismatch") }
-                            value = try .encoded(simulator.controls.snapshot(at: time))
-                        case let .input(input):
-                            guard allowInput else { throw ControlContractError("permission_denied") }
-                            var candidate = simulator
-                            let event = try candidate.input(input, at: time, writerID: client.writerID)
-                            try commit(candidate, category: .input)
-                            value = try .encoded(event)
-                        case let .feedback(feedback):
-                            guard allowFeedback else { throw ControlContractError("permission_denied") }
-                            var candidate = simulator
-                            let event = try candidate.feedback(feedback, at: time, writerID: client.writerID)
-                            try commit(candidate, category: .feedback)
-                            value = try .encoded(event)
-                        case let .renew(request):
-                            // Silent lease renewal: input permission and write budget, no sequence or event.
-                            guard allowInput else { throw ControlContractError("permission_denied") }
-                            var candidate = simulator
-                            let renewed = try candidate.renew(request, at: time)
-                            try commit(candidate, category: .renew)
-                            value = try .encoded(renewed)
-                        case let .events(instanceID, epoch, afterSequence, limit):
-                            value = try .encoded(simulator.controls.events(instanceID: instanceID, epoch: epoch, afterSequence: afterSequence, limit: limit, at: time))
-                        case let .reset(expected, expectedSequence):
-                            guard allowReset else { throw ControlContractError("permission_denied") }
-                            var candidate = simulator
-                            try candidate.reset(expected: expected, expectedSequence: expectedSequence, epoch: UUID().uuidString, at: time)
-                            try commit(candidate, category: .admin)
-                            value = try .encoded(simulator.controls.discovery())
-                        }
-                        result = try content(value, isError: false)
                     } catch {
                         let failure = (error as? ControlContractError).map { RemoteFailure(code: $0.code) } ?? RemoteFailure.from(error)
                         result = try content(.encoded(failure), isError: true)

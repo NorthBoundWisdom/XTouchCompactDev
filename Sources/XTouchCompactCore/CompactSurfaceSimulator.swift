@@ -48,14 +48,14 @@ public struct CompactSurfaceSimulator: Sendable {
 
     /// The mapping revision is derived from the profile (contract 1.1); it is never chosen by the host.
     public init(instanceID: String, epoch: String, configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024,
-                remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil) throws
+                remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil) throws
     {
         try self.init(instanceID: instanceID, epoch: epoch, configuration: configuration, eventCapacity: eventCapacity,
-                      remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, contextReferences: nil)
+                      remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity, contextReferences: nil)
     }
 
     package init(instanceID: String, epoch: String, configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024,
-                 remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil, contextReferences: CompactContextReferences?) throws
+                 remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil, contextReferences: CompactContextReferences?) throws
     {
         self.configuration = configuration
         self.remoteWriterID = remoteWriterID
@@ -72,14 +72,14 @@ public struct CompactSurfaceSimulator: Sendable {
         _ = try session.loadConfiguration(configuration, resetValues: true)
         try mock.receive(session.connect())
         controls = try SurfaceControlSession(instanceID: instanceID, epoch: epoch,
-                                             profile: Self.profile(configuration: configuration, writeLimits: writeLimits), eventCapacity: eventCapacity, writeLimits: writeLimits)
+                                             profile: Self.profile(configuration: configuration, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity), eventCapacity: eventCapacity, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
         try controls.validateWriterID(remoteWriterID)
         try controls.validateWriterID(systemWriterID)
         guard remoteWriterID != systemWriterID else { throw ControlContractError("invalid_argument") }
         try controls.seedInputs(mockInputs(), at: 0)
     }
 
-    public static func profile(configuration: SurfaceConfiguration, writeLimits: ControlWriteLimits? = nil) -> ControlProfile {
+    public static func profile(configuration: SurfaceConfiguration, writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil) -> ControlProfile {
         var descriptors: [ControlDescriptor] = []
         for layer in CompactLayer.allCases {
             for (kind, count) in layeredKinds {
@@ -107,8 +107,8 @@ public struct CompactSurfaceSimulator: Sendable {
         // Public programmatic configurations may block every touch control. Advertise hold
         // only when a real eligible descriptor supports it; retain the default capability order.
         let declaredCapabilities = descriptors.contains { $0.hold != nil } ? capabilities : capabilities.filter { $0 != "input.hold" }
-        return .init(id: profileID, version: profileVersion, controls: descriptors,
-                     capabilities: declaredCapabilities + (writeLimits == nil ? [] : ["writes.independent_limits"]))
+        return .init(id: profileID, version: inputEventCapacity == nil ? profileVersion : "1.5", controls: descriptors,
+                     capabilities: declaredCapabilities + (writeLimits == nil ? [] : ["writes.independent_limits"]) + (inputEventCapacity == nil ? [] : ["events.input_retention"]))
     }
 
     /// Input eligibility is static mapping content. The shared session rejects `false` before
@@ -330,7 +330,7 @@ public struct CompactSurfaceSimulator: Sendable {
         #endif
         var next = try Self(instanceID: expected.instance_id, epoch: epoch,
                             configuration: configuration, eventCapacity: controls.eventCapacity,
-                            remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, contextReferences: references)
+                            remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, inputEventCapacity: controls.inputEventCapacity, contextReferences: references)
         try nextControls.seedInputs(next.mockInputs(), at: time)
         next.controls = nextControls
         self = next

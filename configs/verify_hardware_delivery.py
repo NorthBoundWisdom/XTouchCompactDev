@@ -11,6 +11,12 @@ import zipfile
 from pathlib import Path
 
 # Checks below rely on assert; refuse to run where python -O would strip them.
+try:
+    from .surface_sdk_metadata import package_sdk
+except ImportError:
+    from surface_sdk_metadata import package_sdk
+
+
 if not __debug__:
     raise SystemExit("Run without -O: these checks rely on assert")
 
@@ -24,8 +30,9 @@ def verify(directory):
             raise RuntimeError("Invalid delivery path")
         if hashlib.sha256((directory / relative).read_bytes()).hexdigest() != digest:
             raise RuntimeError("Delivery hash mismatch: " + name)
+    sdk_zip, sdk_version = package_sdk(directory)
     with tempfile.TemporaryDirectory() as scratch:
-        with zipfile.ZipFile(directory / "surface-control-sdk-1.4.0.zip") as sdk:
+        with zipfile.ZipFile(sdk_zip) as sdk:
             sdk.extractall(scratch)
         sys.dont_write_bytecode = True
         sys.path.insert(0, scratch)

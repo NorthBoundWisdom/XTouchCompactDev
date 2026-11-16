@@ -1,0 +1,42 @@
+{
+  "sdk_version": "1.4.0",
+  "host_packager_base": "37e9d4b35eac0343d91dcef336aab0981d1cb142",
+  "shared_revision": "12ba0edbc1f2c46eea5311f9b8f982d563c55b75",
+  "shared_files": {
+    "package_surface_simulator.py": {
+      "surface-control-diagnostic-capture.schema.json": "docs/surface-control-diagnostic-capture.schema.json",
+      "surface-control-diagnostics.md": "docs/surface-control-diagnostics.md",
+      "status-panel-demo.md": "docs/status-panel-demo.md",
+      "control-tools.json": "docs/surface-control-tools.json",
+      "surface-control-scenario.schema.json": "docs/surface-control-scenario.schema.json",
+      "surface-control-software-v1.json": "fixtures/surface-control-software-v1.json",
+      "surface-control-software-v1.1.json": "fixtures/surface-control-software-v1.1.json",
+      "surface-control-software-v1.2.json": "fixtures/surface-control-software-v1.2.json",
+      "surface-control-software-v1.3.json": "fixtures/surface-control-software-v1.3.json",
+      "surface-control.md": "docs/surface-control.md",
+      "surface-control-scenarios.md": "docs/surface-control-scenarios.md",
+      "surface-control-delivery.md": "docs/surface-control-delivery.md",
+      "surface-control-conformance.md": "docs/surface-control-conformance.md",
+      "surface-control-conformance-report.schema.json": "docs/surface-control-conformance-report.schema.json",
+      "versioning.md": "docs/versioning.md",
+      "CHANGELOG.md": "CHANGELOG.md",
+      "release-checklist.md": "docs/release-checklist.md"
+    },
+    "package_surface_hardware.py": {
+      "surface-control-diagnostic-capture.schema.json": "docs/surface-control-diagnostic-capture.schema.json",
+      "surface-control-diagnostics.md": "docs/surface-control-diagnostics.md",
+      "status-panel-demo.md": "docs/status-panel-demo.md",
+      "control-tools.json": "docs/surface-control-hardware-tools.json",
+      "control-examples.json": "docs/surface-control-hardware-examples.json",
+      "surface-control-hardware-v1.4.json": "fixtures/surface-control-hardware-v1.4.json",
+      "surface-control-hardware-independent-v1.4.json": "fixtures/surface-control-hardware-independent-v1.4.json",
+      "surface-control-scenario.schema.json": "docs/surface-control-scenario.schema.json",
+      "surface-control.md": "docs/surface-control.md",
+      "surface-control-scenarios.md": "docs/surface-control-scenarios.md",
+      "surface-control-delivery.md": "docs/surface-control-delivery.md",
+      "surface-control-conformance.md": "docs/surface-control-conformance.md",
+      "surface-control-conformance-report.schema.json": "docs/surface-control-conformance-report.schema.json",
+      "versioning.md": "docs/versioning.md"
+    }
+  }
+}

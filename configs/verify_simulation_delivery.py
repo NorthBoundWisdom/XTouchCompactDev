@@ -16,6 +16,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+try:
+    from .surface_sdk_metadata import package_sdk
+except ImportError:
+    from surface_sdk_metadata import package_sdk
+
+
 if not __debug__:
     raise SystemExit("Run without -O: these checks rely on assert")
 
@@ -34,11 +40,12 @@ def verify(directory, evidence):
             assert hashlib.sha256((root / relative).read_bytes()).hexdigest() == digest
     assert "surface_control" not in sys.modules
     sys.dont_write_bytecode = True
-    sys.path.insert(0, str(simulation / "surface-control-sdk-1.4.0.zip"))
+    sdk_zip, sdk_version = package_sdk(simulation)
+    sys.path.insert(0, str(sdk_zip))
     sdk = importlib.import_module("surface_control")
     checker = importlib.import_module("surface_conformance")
     diagnostics = importlib.import_module("surface_control_diagnostics")
-    assert str(sdk.__file__).startswith(str(simulation)) and sdk.__version__ == "1.4.0"
+    assert str(sdk.__file__).startswith(str(simulation)) and sdk.__version__ == sdk_version
     results = []
     environment = dict(os.environ)
     environment.pop("XTOUCH_HARDWARE_TEST_SCRIPT", None)

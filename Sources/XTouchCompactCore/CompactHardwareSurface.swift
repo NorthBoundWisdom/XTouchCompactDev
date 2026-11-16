@@ -13,7 +13,7 @@ public struct CompactHardwareSurface: Sendable {
     public let remoteWriterID: String
 
     public init(instanceID: String, epoch: String, configuration: CompactHardwareConfiguration,
-                hardwareWriterID: String, remoteWriterID: String, eventCapacity: Int = 1024, writeLimits: ControlWriteLimits? = nil) throws
+                hardwareWriterID: String, remoteWriterID: String, eventCapacity: Int = 1024, writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil) throws
     {
         self.configuration = configuration
         self.hardwareWriterID = hardwareWriterID
@@ -22,7 +22,10 @@ public struct CompactHardwareSurface: Sendable {
         if writeLimits != nil {
             profile = .init(id: profile.id, version: profile.version, controls: profile.controls, capabilities: profile.capabilities + ["writes.independent_limits"])
         }
-        controls = try .init(instanceID: instanceID, epoch: epoch, profile: profile, eventCapacity: eventCapacity, writeLimits: writeLimits)
+        if inputEventCapacity != nil {
+            profile = .init(id: profile.id, version: "1.5", controls: profile.controls, capabilities: profile.capabilities + ["events.input_retention"])
+        }
+        controls = try .init(instanceID: instanceID, epoch: epoch, profile: profile, eventCapacity: eventCapacity, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
         try controls.validateWriterID(hardwareWriterID)
         try controls.validateWriterID(remoteWriterID)
         guard hardwareWriterID != remoteWriterID else { throw ControlContractError("invalid_argument") }

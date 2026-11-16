@@ -46,6 +46,16 @@ except ImportError:
 
 SHARED_FILES = {
     "surface-control-diagnostic-capture.schema.json": "docs/surface-control-diagnostic-capture.schema.json",
+    "surface-control-diagnostic-capture-v1.5.schema.json": "docs/surface-control-diagnostic-capture-v1.5.schema.json",
+    **{
+        name: "docs/" + name
+        for name in (
+            "surface-control-input-retention-tools.json",
+            "surface-control-input-retention-examples.json",
+            "surface-control-input-retention-hardware-tools.json",
+            "surface-control-input-retention-hardware-examples.json",
+        )
+    },
     "surface-control-diagnostics.md": "docs/surface-control-diagnostics.md",
     "status-panel-demo.md": "docs/status-panel-demo.md",
     "control-tools.json": "docs/surface-control-hardware-tools.json",
@@ -65,7 +75,7 @@ SHARED_FILES = {
         )
     },
 }
-SDK_ZIP = "surface-control-sdk-1.4.0.zip"
+SDK_ZIP = "surface-control-sdk-1.5.0.zip"
 
 
 def sdk_sources():
@@ -95,6 +105,7 @@ def stage_files(stage):
         ("configs/surface_plugins.lock.json", "surface_plugins.lock.json"),
         ("examples/surface_hardware/conformance-roles.json", "conformance-roles.json"),
         ("configs/verify_hardware_delivery.py", "verify_hardware_delivery.py"),
+        ("configs/surface_sdk_metadata.py", "surface_sdk_metadata.py"),
         ("configs/verify_hardware_http.py", "verify_hardware_http.py"),
         ("configs/verify_simulation_delivery.py", "verify_simulation_delivery.py"),
     ):
@@ -192,7 +203,7 @@ def package(output_root, configuration="release"):
             "source_commit": command("git", "rev-parse", "HEAD"),
             "source_dirty": False,
             "surface_control_contract": "1.4",
-            "surface_control_sdk": "1.4.0",
+            "surface_control_sdk": "1.5.0",
             **kernel_provenance(ROOT),
             "profile_id": discovery["profile"]["id"],
             "profile_version": discovery["profile"]["version"],

@@ -121,6 +121,7 @@ private func removeOwnedReadyFile() {
         var transmitChannel: UInt8 = 0
         var lights: ButtonLightProtocol?
         var describe = false
+        var inputEventCapacity: Int?
         var writeLimit = SurfaceWriteBudget.writesPerSecond
         var explicitWriteLimit = false
         var writeLimits: ControlWriteLimits?
@@ -133,6 +134,9 @@ private func removeOwnedReadyFile() {
                 return arguments.removeFirst()
             }
             switch option {
+            case "--surface-input-event-capacity":
+                guard inputEventCapacity == nil, let capacity = try Int(value()), (1 ... 65536).contains(capacity) else { throw StartupError.invalidArguments }
+                inputEventCapacity = capacity
             case "--surface-principal-file": principalPath = try value()
             case "--write-limits":
                 guard writeLimits == nil else { throw StartupError.invalidArguments }
@@ -159,7 +163,7 @@ private func removeOwnedReadyFile() {
             case "--transmit-channel": guard let channel = try UInt8(value()), (1 ... 16).contains(channel) else { throw StartupError.invalidArguments }; transmitChannel = channel - 1
             case "--light-protocol": guard let parsed = try ButtonLightProtocol(rawValue: value()) else { throw StartupError.invalidArguments }; lights = parsed
             case "--help":
-                print("XTouchSurfaceHardware --receive-channel 1..16 --light-protocol manual|observed114 [--transmit-channel 1..16] [--device NAME] [--device-access enabled|disabled] [--token-file PATH|--token-stdin] [--port 0] [--ready-file PATH] [--surface-instance-id ID] [--surface-principal-file PATH] [--surface-client-tokens-stdin] [--write-limit N|--write-limits input=N,feedback=N,renew=N,admin=N] [--allow-surface-feedback] [--describe]\nDisplay only; no motor, layer or mode output. Display feedback defaults off.\n--device-access disabled is immutable offline diagnostics: no MIDI creation/enumeration/connection or scripted inputs; permanently disconnected, no physical qualification.")
+                print("XTouchSurfaceHardware --receive-channel 1..16 --light-protocol manual|observed114 [--transmit-channel 1..16] [--device NAME] [--device-access enabled|disabled] [--token-file PATH|--token-stdin] [--port 0] [--ready-file PATH] [--surface-instance-id ID] [--surface-principal-file PATH] [--surface-client-tokens-stdin] [--write-limit N|--write-limits input=N,feedback=N,renew=N,admin=N] [--allow-surface-feedback] [--surface-input-event-capacity 1..65536] [--describe]\nDisplay only; no motor, layer or mode output. Display feedback defaults off.\n--device-access disabled is immutable offline diagnostics: no MIDI creation/enumeration/connection or scripted inputs; permanently disconnected, no physical qualification.")
                 return
             case "--surface-instance-id":
                 instance = try value()
@@ -180,8 +184,8 @@ private func removeOwnedReadyFile() {
         let configuration = try CompactHardwareConfiguration(transmitChannel: transmitChannel, receiveChannel: receiveChannel, lightProtocol: lights)
         guard !clientTokensStdin || (!tokenStdin && tokenPath == nil) else { throw StartupError.invalidArguments }
         if describe {
-            let surface = try CompactHardwareSurface(instanceID: "example.hardware", epoch: "discovery-only", configuration: configuration, hardwareWriterID: "hardware.example", remoteWriterID: "remote.example", writeLimits: writeLimits)
-            let value: JSONValue = try .object(["device_access": .string(deviceAccess.rawValue), "diagnostic_only": .bool(deviceAccess == .disabled), "discovery": .encoded(surface.controls.discovery()), "tools": .array(SurfaceControlTools.descriptors(source: .hardware).map { try .encoded($0) })])
+            let surface = try CompactHardwareSurface(instanceID: "example.hardware", epoch: "discovery-only", configuration: configuration, hardwareWriterID: "hardware.example", remoteWriterID: "remote.example", writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
+            let value: JSONValue = try .object(["device_access": .string(deviceAccess.rawValue), "diagnostic_only": .bool(deviceAccess == .disabled), "discovery": .encoded(surface.controls.discovery()), "tools": .array((SurfaceControlTools.descriptors(source: .hardware) + (inputEventCapacity == nil ? [] : SurfaceControlInputEventsTools.descriptors(source: .hardware))).map { try .encoded($0) })])
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
             try FileHandle.standardOutput.write(encoder.encode(value) + Data("\n".utf8))
             return
@@ -209,7 +213,7 @@ private func removeOwnedReadyFile() {
         let principals = try SurfacePrincipals.loadOrCreate(path: principalPath)
         credentials = credentials?.reservingWriterIDs([principals.remote_writer_id, principals.interface_writer_id, principals.system_writer_id])
         var surface = try CompactHardwareSurface(instanceID: instance, epoch: UUID().uuidString, configuration: configuration,
-                                                 hardwareWriterID: principals.interface_writer_id, remoteWriterID: principals.remote_writer_id, writeLimits: writeLimits)
+                                                 hardwareWriterID: principals.interface_writer_id, remoteWriterID: principals.remote_writer_id, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
         let audit = DeviceAccessAudit(access: deviceAccess)
         let testOnly = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] != nil
         let midi: any HardwareMIDI = try deviceAccess.make(testInjectionRequested: injectionRequested, disabled: {
@@ -314,53 +318,61 @@ private func removeOwnedReadyFile() {
                     result = .object(["protocolVersion": .string(negotiated), "capabilities": .object(["tools": .object([:])]), "serverInfo": .object(["name": .string("XTouchSurfaceHardware"), "version": .string("1.0")])])
                 case "ping": result = .object([:])
                 case "tools/list":
-                    result = .object(["tools": .array(SurfaceControlTools.descriptors(source: .hardware).filter { client.permits($0.name) }.map { tool in
+                    result = .object(["tools": .array((SurfaceControlTools.descriptors(source: .hardware) + (inputEventCapacity == nil ? [] : SurfaceControlInputEventsTools.descriptors(source: .hardware))).filter { client.permits($0.name, inputRetentionEnabled: inputEventCapacity != nil) }.map { tool in
                         .object(["name": .string(tool.name), "description": .string("Hardware observations and display-only feedback"), "inputSchema": tool.inputSchema,
                                  "outputSchema": tool.outputSchema, "annotations": .object(["readOnlyHint": .bool(!tool.isMutation)])])
                     })])
                 case "tools/call":
                     guard let params = object["params"]?.objectValue, let name = params["name"]?.stringValue else { throw RPCError.invalidParams }
-                    if SurfaceControlTools.descriptors(source: .hardware).contains(where: { $0.name == name }) {
+                    if (SurfaceControlTools.descriptors(source: .hardware) + (inputEventCapacity == nil ? [] : SurfaceControlInputEventsTools.descriptors(source: .hardware))).contains(where: { $0.name == name }) {
                         auditOperation = name
                     }
                     do {
-                        guard client.permits(name) else { throw ControlContractError("permission_denied") }
-                        let operation = try SurfaceControlTools.parse(name, arguments: params["arguments"] ?? .object([:]))
-                        drainMIDI()
-                        let time = ProcessInfo.processInfo.systemUptime
-                        let value: JSONValue
-                        switch operation {
-                        case .discover: value = try .encoded(surface.controls.discovery())
-                        case let .snapshot(instanceID):
-                            guard instanceID == surface.controls.expected.instance_id else { throw ControlContractError("instance_mismatch") }
-                            value = try .encoded(surface.controls.snapshot(at: time))
-                        case let .input(input):
-                            try surface.controls.validateInput(input, at: time, writerID: principals.remote_writer_id)
-                            throw ControlContractError("permission_denied")
-                        case let .feedback(feedback):
-                            let plan = try surface.displayPlan(feedback, allowed: allowFeedback, at: time, writerID: client.writerID)
-                            var candidate = surface
-                            let event = try candidate.recordFeedback(feedback, at: time, writerID: client.writerID)
-                            guard budget.consume(.feedback, at: time, writerID: client.writerID) else { throw ControlContractError("rate_limited") }
-                            // Spent before any send: a partly delivered or failing request is still
-                            // rate limited. The event commits only after every message was accepted.
-                            let sendOrigin = activeEndpointOrigin
-                            for message in plan {
-                                try midi.send(message, expectedOrigin: sendOrigin)
+                        guard client.permits(name, inputRetentionEnabled: inputEventCapacity != nil) else { throw ControlContractError("permission_denied") }
+                        if inputEventCapacity != nil, name == SurfaceControlInputEventsTools.name {
+                            let request = try SurfaceControlInputEventsTools.parse(name, arguments: params["arguments"] ?? .object([:]))
+                            drainMIDI()
+                            let time = ProcessInfo.processInfo.systemUptime
+                            let page = try surface.controls.inputEvents(expected: request.expected, afterInputSequence: request.after_input_sequence, limit: request.limit, at: time)
+                            result = try content(.encoded(page), isError: false)
+                        } else {
+                            let operation = try SurfaceControlTools.parse(name, arguments: params["arguments"] ?? .object([:]))
+                            drainMIDI()
+                            let time = ProcessInfo.processInfo.systemUptime
+                            let value: JSONValue
+                            switch operation {
+                            case .discover: value = try .encoded(surface.controls.discovery())
+                            case let .snapshot(instanceID):
+                                guard instanceID == surface.controls.expected.instance_id else { throw ControlContractError("instance_mismatch") }
+                                value = try .encoded(surface.controls.snapshot(at: time))
+                            case let .input(input):
+                                try surface.controls.validateInput(input, at: time, writerID: principals.remote_writer_id)
+                                throw ControlContractError("permission_denied")
+                            case let .feedback(feedback):
+                                let plan = try surface.displayPlan(feedback, allowed: allowFeedback, at: time, writerID: client.writerID)
+                                var candidate = surface
+                                let event = try candidate.recordFeedback(feedback, at: time, writerID: client.writerID)
+                                guard budget.consume(.feedback, at: time, writerID: client.writerID) else { throw ControlContractError("rate_limited") }
+                                // Spent before any send: a partly delivered or failing request is still
+                                // rate limited. The event commits only after every message was accepted.
+                                let sendOrigin = activeEndpointOrigin
+                                for message in plan {
+                                    try midi.send(message, expectedOrigin: sendOrigin)
+                                }
+                                surface = candidate
+                                value = try .encoded(event)
+                            case let .renew(request):
+                                try surface.controls.validateRenew(request, at: time)
+                                throw ControlContractError("unsupported_hold")
+                            case let .events(instanceID, epoch, afterSequence, limit):
+                                value = try .encoded(surface.controls.events(instanceID: instanceID, epoch: epoch, afterSequence: afterSequence, limit: limit, at: time))
+                            case let .reset(expected, expectedSequence):
+                                var rejected = surface.controls
+                                try rejected.reset(expected: expected, expectedSequence: expectedSequence, epoch: UUID().uuidString, at: time)
+                                throw ControlContractError("unsupported_tool")
                             }
-                            surface = candidate
-                            value = try .encoded(event)
-                        case let .renew(request):
-                            try surface.controls.validateRenew(request, at: time)
-                            throw ControlContractError("unsupported_hold")
-                        case let .events(instanceID, epoch, afterSequence, limit):
-                            value = try .encoded(surface.controls.events(instanceID: instanceID, epoch: epoch, afterSequence: afterSequence, limit: limit, at: time))
-                        case let .reset(expected, expectedSequence):
-                            var rejected = surface.controls
-                            try rejected.reset(expected: expected, expectedSequence: expectedSequence, epoch: UUID().uuidString, at: time)
-                            throw ControlContractError("unsupported_tool")
+                            result = try content(value, isError: false)
                         }
-                        result = try content(value, isError: false)
                     } catch {
                         let failure = (error as? ControlContractError).map { RemoteFailure(code: $0.code) } ?? RemoteFailure.from(error)
                         result = try content(.encoded(failure), isError: true)

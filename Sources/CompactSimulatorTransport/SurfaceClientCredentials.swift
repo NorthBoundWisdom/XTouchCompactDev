@@ -11,8 +11,11 @@ public struct SurfaceClientContext: Sendable {
     public let scope: Scope
     public let writerID: String?
 
-    public func permits(_ tool: String) -> Bool {
-        switch scope {
+    public func permits(_ tool: String, inputRetentionEnabled: Bool = false) -> Bool {
+        if inputRetentionEnabled, tool == "surface_control_input_events" {
+            return true
+        }
+        return switch scope {
         case .owner: true
         case .operator: ["surface_control_discover", "surface_control_snapshot", "surface_control_events", "surface_control_input", "surface_control_renew"].contains(tool)
         case .display: ["surface_control_discover", "surface_control_snapshot", "surface_control_events", "surface_control_feedback"].contains(tool)
