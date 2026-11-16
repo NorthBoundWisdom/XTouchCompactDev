@@ -36,3 +36,22 @@ runs the existing package validation. No Swift compilation runs in assembly.
 Both ZIP and DMG still receive GUI and headless startup validation on ARM and
 Intel smoke runners. Slice jobs and downstream jobs share the original run
 creation timestamp; parallelism does not reset or exempt the budget.
+
+## Python case evidence
+
+`configs/run_python_workflow_tests.py --suite workflow|simulator [--pattern test_hardware_service.py]`
+uses the BCR TimedResult shape: every case includes setUp/tearDown wall time in
+`build/ci-verification/tests/python-*-case-times.json`, sorted descending;
+`Slowest workflow cases:` prints the first twenty. Test failures retain a nonzero
+exit and still write timing evidence. Both CI lanes upload the JSON even on
+failure. Discovery and assertions remain unittest's own. Only three read/rejected
+request cases share a daemon, guarded by a zero-sequence assertion after each.
+Mutation, restart, generation, quotas and credentials retain isolated processes.
+
+Audit: the sole Python HTTPServer bind in Tests/tools/Clients is
+`Tests/H10Support/response_drop.py:64`. A read-only extracted-bind probe confirmed
+it calls getfqdn. That file is explicitly reserved to the ongoing H round and is
+unchanged here; H must apply BCR 9fc56ae's TCPServer.server_bind override and add
+the DNS-denial test. No in-scope HTTP fixture had that defect. Real slow-reader
+and lease deadlines remain measured against real sockets and process clocks;
+their waits and safety bounds were preserved.

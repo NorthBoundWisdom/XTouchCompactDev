@@ -203,22 +203,6 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertEqual(self.a.discover()["source"], "simulation")
         self.assertLess(time.monotonic() - started, 1)
 
-    def test_denials_and_bad_encoding_are_side_effect_free(self):
-        for token, origin, status in [("wrong-token", None, 401), (TOKEN, "https://untrusted.invalid", 403)]:
-            with self.assertRaises(urllib.error.HTTPError) as caught:
-                self.a.request("surface_control_discover", token=token, origin=origin)
-            self.assertEqual(caught.exception.code, status)
-            caught.exception.close()
-        request = self.a.input()
-        request["encoding"] = "signedDelta"
-        result = self.a.request("surface_control_input", request)
-        self.assertEqual(result["structuredContent"]["code"], "unsupported_encoding")
-        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")
-        request = self.a.input()
-        request["source"] = "hardware"
-        result = self.a.request("surface_control_input", request)
-        self.assertEqual(result["structuredContent"]["code"], "invalid_argument")
-        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")
 
     def test_lost_response_is_accepted_once_and_old_request_cannot_replay(self):
         args = self.a.input()
@@ -374,22 +358,6 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
         self.assertNotIn("holds", page)
         self.assertEqual(page["events"][-1]["reason"], "hold_expired")
 
-    def test_describe_matches_live_discovery_and_the_sdk_mapping_revision(self):
-        # The delivery manifest takes profile identity and mapping_revision from --describe.
-        described = json.loads(
-            subprocess.run(
-                [str(copy_binary(self.temporary.name)), "--describe"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=10,
-            ).stdout
-        )["discovery"]
-        live = self.a.discover()
-        self.assertEqual(described["profile"], live["profile"])
-        self.assertEqual(described["contract_version"], live["contract_version"])
-        self.assertEqual(described["expected"]["mapping_revision"], live["expected"]["mapping_revision"])
-        self.assertEqual(described["expected"]["mapping_revision"], mapping_revision(live["profile"]))
 
     def test_renew_is_silent_permissioned_and_budgeted(self):
         client = Client(self.a.ready["url"], TOKEN, "car.a")
@@ -699,29 +667,6 @@ class SurfaceSimulatorHTTPTests(unittest.TestCase):
             "inactive_layer",
         )
 
-    def test_json_rpc_error_codes(self):
-        cases = [
-            (b"{not json", -32700),
-            (json.dumps([1, 2]).encode(), -32600),
-            (json.dumps({"jsonrpc": "1.0", "id": 1, "method": "ping"}).encode(), -32600),
-            (json.dumps({"jsonrpc": "2.0", "id": {"x": 1}, "method": "ping"}).encode(), -32600),
-            (json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": 3}).encode(), -32600),
-            (json.dumps({"jsonrpc": "2.0", "id": 7, "method": "resources/list"}).encode(), -32601),
-            (
-                json.dumps({"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"arguments": {}}}).encode(),
-                -32602,
-            ),
-        ]
-        for raw, code in cases:
-            with self.subTest(code=code, raw=raw):
-                reply = self.a.rpc(None, raw=raw)
-                self.assertEqual(reply["error"]["code"], code)
-                self.assertNotIn("result", reply)
-        self.assertEqual(self.a.rpc({"jsonrpc": "2.0", "id": 7, "method": "resources/list"})["id"], 7)
-        # A tool-level failure is still a result with the shared stable code, not a JSON-RPC error.
-        unknown = self.a.request("surface_control_missing")
-        self.assertTrue(unknown["isError"])
-        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")
 
     def test_failed_mutations_do_not_consume_write_budget(self):
         # Budget window: 60 committed writes per second. Failed validation never consumes it,
@@ -1394,3 +1339,84 @@ class Contract13HTTPTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadOnlySurfaceHTTPTests(unittest.TestCase):
+    """Only read/rejected requests share a process; all state/epoch/budget/credential tests remain isolated."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory()
+        try:
+            cls.a = RunningSimulator(cls.temporary.name, "car.a")
+        except BaseException:
+            cls.temporary.cleanup()
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.a.close()
+        cls.temporary.cleanup()
+
+    def tearDown(self):
+        # Sharing is valid only while no case commits state. Fail visibly if a future
+        # change adds a mutation, rather than silently resetting state between cases.
+        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")
+
+    def test_denials_and_bad_encoding_are_side_effect_free(self):
+        for token, origin, status in [("wrong-token", None, 401), (TOKEN, "https://untrusted.invalid", 403)]:
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.a.request("surface_control_discover", token=token, origin=origin)
+            self.assertEqual(caught.exception.code, status)
+            caught.exception.close()
+        request = self.a.input()
+        request["encoding"] = "signedDelta"
+        result = self.a.request("surface_control_input", request)
+        self.assertEqual(result["structuredContent"]["code"], "unsupported_encoding")
+        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")
+        request = self.a.input()
+        request["source"] = "hardware"
+        result = self.a.request("surface_control_input", request)
+        self.assertEqual(result["structuredContent"]["code"], "invalid_argument")
+        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")
+
+    def test_describe_matches_live_discovery_and_the_sdk_mapping_revision(self):
+        # The delivery manifest takes profile identity and mapping_revision from --describe.
+        described = json.loads(
+            subprocess.run(
+                [str(copy_binary(self.temporary.name)), "--describe"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            ).stdout
+        )["discovery"]
+        live = self.a.discover()
+        self.assertEqual(described["profile"], live["profile"])
+        self.assertEqual(described["contract_version"], live["contract_version"])
+        self.assertEqual(described["expected"]["mapping_revision"], live["expected"]["mapping_revision"])
+        self.assertEqual(described["expected"]["mapping_revision"], mapping_revision(live["profile"]))
+
+    def test_json_rpc_error_codes(self):
+        cases = [
+            (b"{not json", -32700),
+            (json.dumps([1, 2]).encode(), -32600),
+            (json.dumps({"jsonrpc": "1.0", "id": 1, "method": "ping"}).encode(), -32600),
+            (json.dumps({"jsonrpc": "2.0", "id": {"x": 1}, "method": "ping"}).encode(), -32600),
+            (json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": 3}).encode(), -32600),
+            (json.dumps({"jsonrpc": "2.0", "id": 7, "method": "resources/list"}).encode(), -32601),
+            (
+                json.dumps({"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"arguments": {}}}).encode(),
+                -32602,
+            ),
+        ]
+        for raw, code in cases:
+            with self.subTest(code=code, raw=raw):
+                reply = self.a.rpc(None, raw=raw)
+                self.assertEqual(reply["error"]["code"], code)
+                self.assertNotIn("result", reply)
+        self.assertEqual(self.a.rpc({"jsonrpc": "2.0", "id": 7, "method": "resources/list"})["id"], 7)
+        # A tool-level failure is still a result with the shared stable code, not a JSON-RPC error.
+        unknown = self.a.request("surface_control_missing")
+        self.assertTrue(unknown["isError"])
+        self.assertEqual(self.a.snapshot()["latest_sequence"], "0")

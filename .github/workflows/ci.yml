@@ -59,7 +59,7 @@ jobs:
           restore-keys: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-
       - run: python3 configs/setup_local_project.py
       - run: python3 configs/check_host_layers.py
-      - run: python3 -m unittest discover -s Tests/BuildWorkflowTests -v
+      - run: python3 -B configs/run_python_workflow_tests.py --suite workflow
       - name: Compile portable targets and tests
         id: compile
         run: swift build --build-tests
@@ -73,7 +73,14 @@ jobs:
       - name: Build the standalone software simulator
         run: swift build --product XTouchSurfaceSimulator
       - name: Exercise real loopback simulator processes
-        run: python3 -B -m unittest discover -s Tests/SimulatorIntegration -v
+        run: python3 -B configs/run_python_workflow_tests.py --suite simulator
+      - name: Preserve Python per-case wall times
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: python-case-times-${{ github.job }}
+          path: build/ci-verification/tests/python-*-case-times.json
+          if-no-files-found: warn
       - name: Report whole-run wall time and enforce 300s budget
         if: always()
         env:
@@ -114,7 +121,7 @@ jobs:
           restore-keys: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-
       - run: python3 configs/setup_local_project.py
       - run: python3 configs/check_host_layers.py
-      - run: python3 -m unittest discover -s Tests/BuildWorkflowTests -v
+      - run: python3 -B configs/run_python_workflow_tests.py --suite workflow
       # One build path for tests, executables and the app, so nothing is compiled twice.
       - name: Compile native targets and tests
         id: compile
@@ -131,11 +138,11 @@ jobs:
       - name: Exercise hardware service with isolated fake MIDI only
         env:
           XTOUCH_HARDWARE_BINARY: build/swiftpm/debug/XTouchSurfaceHardware
-        run: python3 -B -m unittest discover -s Tests/SimulatorIntegration -p test_hardware_service.py -v
+        run: python3 -B configs/run_python_workflow_tests.py --suite simulator --pattern test_hardware_service.py
       - name: Exercise immutable no-device diagnostics over real HTTP
         env:
           XTOUCH_HARDWARE_BINARY: build/swiftpm/debug/XTouchSurfaceHardware
-        run: python3 -B -m unittest discover -s Tests/SimulatorIntegration -p test_hardware_offline_diagnostics.py -v
+        run: python3 -B configs/run_python_workflow_tests.py --suite simulator --pattern test_hardware_offline_diagnostics.py
       - run: python3 configs/macos_workflow.py build
       - name: Isolated native startup
         run: |
@@ -158,6 +165,13 @@ jobs:
           path: build/screenshots/
           if-no-files-found: warn
           retention-days: 7
+      - name: Preserve Python per-case wall times
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: python-case-times-${{ github.job }}
+          path: build/ci-verification/tests/python-*-case-times.json
+          if-no-files-found: warn
       - name: Report whole-run wall time and enforce 300s budget
         if: always()
         env:
