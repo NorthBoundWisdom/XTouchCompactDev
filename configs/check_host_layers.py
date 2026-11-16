@@ -26,7 +26,7 @@ PURE_IMPORTS = {
 }
 IMPORTS = re.compile(
     r"^[ \t]*(?:(?:@\w+(?:\([^()\n]*\))?|public|package|internal|fileprivate|private)\s+)*"
-    r"import\s+(?:(?:struct|enum|class|protocol|func|var|typealias)\s+)?(\w+)",
+    r"import\s+(?:(?:struct|enum|class|protocol|func|var|let|typealias)\s+)?(\w+)",
     re.MULTILINE,
 )
 TOKENS = re.compile(r"[A-Za-z_][A-Za-z_0-9]*|[^\s]")
@@ -136,9 +136,144 @@ def source_symbols(code):
             if name.isidentifier():
                 members.append((owners[-1][1], name, owners[-1][2]))
     bindings = defaultdict(set)
-    for name, value in re.findall(r"\b(\w+)\s*:\s*(?:[A-Z]\w*\.)?([A-Z]\w*)", code):
+    for name, value in re.findall(r"\b(\w+)\s*:\s*((?:[A-Z]\w*\s*\.\s*)*[A-Z]\w*)", code):
         bindings[name].add(value)
     return tokens, declarations, members, bindings
+
+
+def expression_context_prefix(prefix):
+    """Peel ordinary throwing/await and grouping prefixes before inferring an initializer."""
+    while True:
+        wrapper = re.search(r"(?:\btry\s*[!?]?|\bawait|\()\s*$", prefix)
+        if wrapper is None:
+            return prefix
+        prefix = prefix[: wrapper.start()]
+
+
+def nominal_scope_at(code, position):
+    """The nearest lexically declared nominal, including extensions and nested types."""
+    prefix = code[:position]
+    scopes, boundary = [], 0
+    for token in TOKENS.finditer(prefix):
+        if token.group() == "{":
+            header = prefix[boundary : token.start()]
+            declared = [
+                match.group(1)
+                for match in re.finditer(r"\b(?:struct|class|enum|actor|extension|protocol)\s+((?:\w+\.)*\w+)", header)
+                if match.group(1) not in {"func", "var", "let"}
+            ]
+            scopes.append(declared[-1] if declared else scopes[-1] if scopes else None)
+            boundary = token.end()
+        elif token.group() == "}":
+            if scopes:
+                scopes.pop()
+            boundary = token.end()
+        elif token.group() == ";":
+            boundary = token.end()
+    return scopes[-1] if scopes else None
+
+
+def contextual_constructor_type(code, position, resolve):
+    """Resolve ordinary typed bindings, assignments, computed values and explicit returns."""
+    prefix = expression_context_prefix(code[:position])
+    statement = re.split(r"[{};]", prefix)[-1]
+    binding = re.search(r"\b(?:let|var)\s+\w+\s*:\s*((?:\w+\s*\.\s*)*\w+)\s*[?!]?\s*=\s*$", statement)
+    if binding:
+        return resolve(binding.group(1))
+    assignment = re.search(r"\b(\w+)\s*=\s*$", statement)
+    if assignment:
+        annotations = re.findall(r"\b" + re.escape(assignment.group(1)) + r"\s*:\s*((?:\w+\s*\.\s*)*\w+)", prefix)
+        if annotations:
+            candidate = resolve(annotations[-1])
+            if candidate:
+                return candidate
+    # A return's expected type belongs to its lexical function/computed-property scope,
+    # and continues through ordinary control blocks. An unrelated closure clears it.
+    scopes = []
+    boundary = 0
+    for token in TOKENS.finditer(prefix):
+        if token.group() == "{":
+            header = prefix[boundary : token.start()]
+            parent = scopes[-1] if scopes else None
+            result = re.search(r"->\s*((?:\w+\s*\.\s*)*\w+)\s*[?!]?\s*(?:=\s*)?$", header)
+            property_type = re.search(r"\bvar\s+\w+\s*:\s*((?:\w+\s*\.\s*)*\w+)\s*[?!]?\s*$", header)
+            if result:
+                expected = resolve(result.group(1))
+            elif property_type:
+                expected = resolve(property_type.group(1))
+            elif re.search(r"\b(?:if|else|switch|do|catch|for|while|guard|get)\b[^{};]*$", header):
+                expected = parent
+            else:
+                expected = None
+            scopes.append(expected)
+            boundary = token.end()
+        elif token.group() == "}":
+            if scopes:
+                scopes.pop()
+            boundary = token.end()
+        elif token.group() == ";":
+            boundary = token.end()
+    previous = TOKENS.findall(prefix)
+    if previous and previous[-1] in {"return", "{", ":", "?"}:
+        return scopes[-1] if scopes else None
+    return None
+
+
+def constructor_errors(path, code, policy, alias_definitions, visible_targets, external_imports):
+    if not policy:
+        return []
+    source_target = path.split("/")[1]
+
+    def resolve(name, target=source_target, externals=external_imports, visited=frozenset(), nominal=None):
+        parts = re.sub(r"\s+", "", name).split(".")
+        if parts and parts[0] in {"Self", "self"}:
+            if nominal is None:
+                return None
+            parts = nominal.split(".") + parts[1:]
+        while len(parts) > 1 and parts[-1] in {"init", "self", "Type"}:
+            parts.pop()
+        if not parts or parts[0] in externals:
+            return None
+        if len(parts) > 1 and parts[0] in visible_targets:
+            target = parts[0]
+        leaf = parts[-1]
+        key = (target, leaf)
+        if key in visited:
+            return None
+        if leaf in policy:
+            return leaf
+        candidates = [item for item in alias_definitions if item[0] == target and item[1] == leaf]
+        if not candidates:
+            candidates = [item for item in alias_definitions if item[0] in visible_targets and item[1] == leaf]
+        if len(candidates) != 1:
+            return None
+        alias = candidates[0]
+        return resolve(alias[2], target=alias[0], externals=alias[3], visited=visited | {key}, nominal=nominal)
+
+    errors = []
+
+    def validate(type_name, opening):
+        if type_name and not re.match(r"\s*" + re.escape(policy[type_name]) + r"\s*:", code[opening:]):
+            errors.append(f"Runtime construction bypasses validated entry point: {path} -> {type_name}")
+
+    # Includes ordinary calls, module qualification, plain aliases and explicit metatypes.
+    for match in re.finditer(r"\b((?:[A-Za-z_]\w*\s*\.\s*)*[A-Za-z_]\w*)\s*\(", code):
+        name = match.group(1)
+        scope = nominal_scope_at(code, match.start()) if name.split(".")[0].strip() in {"Self", "self"} else None
+        validate(resolve(name, nominal=scope), match.end())
+    # A leading-dot initializer gets its type from an explicit local/return context.
+    for match in re.finditer(r"(?<![\w.])\.\s*init\s*\(", code):
+        scope = nominal_scope_at(code, match.start()) if re.search(r"\bSelf\b", code) else None
+        validate(
+            contextual_constructor_type(code, match.start(), lambda name: resolve(name, nominal=scope)), match.end()
+        )
+    return errors
+
+
+def qualification_root(tokens, index):
+    while index >= 2 and tokens[index - 1] == "." and tokens[index - 2].isidentifier():
+        index -= 2
+    return tokens[index]
 
 
 def target_dependencies(target):
@@ -185,6 +320,12 @@ def check_tree(root, manifest, package=None):
             if is_extension:
                 member_owners[name].add(owner)
 
+    alias_definitions = []
+    for source_path, (code, *_rest) in parsed.items():
+        externals = frozenset(IMPORTS.findall(code)) - targets.keys()
+        for name, value in re.findall(r"\btypealias\s+(\w+)\s*=\s*((?:\w+\s*\.\s*)*\w+)", code):
+            alias_definitions.append((source_path.split("/")[1], name, value, externals))
+
     def reference(path, destination, reason):
         source_role, target_role = roles[path], roles[destination]
         edges.append((path, destination, reason))
@@ -208,21 +349,21 @@ def check_tree(root, manifest, package=None):
         def visible(destinations):
             return {destination for destination in destinations if destination.split("/")[1] in visible_targets}
 
-        # Construction through a bridge-only convenience initializer is still a reverse
-        # dependency even though its type's declaration lives in runtime. Explicit validated
-        # value entry points are listed in the manifest; no caller callback is involved.
-        if role == "runtime":
-            for type_name, label in manifest.get("validated_runtime_constructors", {}).items():
-                for match in re.finditer(r"\b" + re.escape(type_name) + r"\s*(?:\.\s*init\s*)?\(", code):
-                    tail = code[match.end() :]
-                    if not re.match(r"\s*" + re.escape(label) + r"\s*:", tail):
-                        errors.append(f"Runtime construction bypasses validated entry point: {path} -> {type_name}")
         external_imports = set(imports) - targets.keys()
+        if role == "runtime":
+            errors += constructor_errors(
+                path,
+                code,
+                manifest.get("validated_runtime_constructors", {}),
+                alias_definitions,
+                visible_targets,
+                external_imports,
+            )
         for index, token in enumerate(tokens):
             if token in declarations:
                 prefix = tokens[index - 2] if index >= 2 and tokens[index - 1] == "." else None
                 # A qualified external SDK type is not a coincidentally named host type.
-                if prefix not in external_imports:
+                if qualification_root(tokens, index) not in external_imports:
                     destinations = (
                         {destination for destination in declarations[token] if destination.split("/")[1] == prefix}
                         if prefix in targets
@@ -232,12 +373,25 @@ def check_tree(root, manifest, package=None):
                     )
                     for destination in destinations:
                         reference(path, destination, token)
-            if index + 2 < len(tokens) and tokens[index + 1] == "." and tokens[index + 2].isidentifier():
+            if (
+                index + 2 < len(tokens)
+                and tokens[index + 1] == "."
+                and tokens[index + 2].isidentifier()
+                and qualification_root(tokens, index) not in external_imports
+            ):
                 member = tokens[index + 2]
-                owners = ({token} if token in declarations else set()) | bindings.get(token, set())
-                for owner in owners:
+                root_qualifier = qualification_root(tokens, index)
+                owners = (
+                    {(token, root_qualifier if root_qualifier in targets else None)} if token in declarations else set()
+                )
+                for annotated in bindings.get(token, set()):
+                    parts = re.sub(r"\s+", "", annotated).split(".")
+                    if parts[0] not in external_imports:
+                        owners.add((parts[-1], parts[0] if len(parts) > 1 and parts[0] in targets else None))
+                for owner, module in owners:
                     for destination in visible(members.get((owner, member), set())):
-                        reference(path, destination, owner + "." + member)
+                        if module is None or destination.split("/")[1] == module:
+                            reference(path, destination, owner + "." + member)
             if token == "." and index + 1 < len(tokens):
                 member = tokens[index + 1]
                 owners = member_owners.get(member, set())

@@ -6,8 +6,9 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
-from configs.check_host_layers import check_tree, swift_code
+from configs.check_host_layers import PURE_IMPORTS, check_tree, swift_code
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -182,4 +183,224 @@ class HostLayerTests(unittest.TestCase):
         with fixture(files, constructors={"Engine": "validatedConfiguration"}) as (root, manifest):
             self.assertTrue(any("bypasses validated" in error for error in check_tree(root, manifest)["errors"]))
             (root / "Sources/Host/Runtime.swift").write_text("let engine = Engine(validatedConfiguration: Config())")
+            self.assertEqual(check_tree(root, manifest)["errors"], [])
+
+    def construction_fixture(self, consumer):
+        return fixture(
+            {
+                "Sources/Host/Values.swift": ("values", "struct Configuration {}"),
+                "Sources/Host/Engine.swift": (
+                    "runtime",
+                    "struct ParameterEngine { init(validatedConfiguration: Configuration, actionBindings: [Int: Int]) {} }",
+                ),
+                "Sources/Host/Adapter.swift": (
+                    "bridge",
+                    "extension ParameterEngine { init(configuration: Configuration = Configuration(), actionBindings: [Int: Int] = [:]) { self.init(validatedConfiguration: configuration, actionBindings: actionBindings) } }",
+                ),
+                "Sources/Host/Consumer.swift": ("runtime", consumer),
+            },
+            constructors={"ParameterEngine": "validatedConfiguration"},
+        )
+
+    def test_typed_inferred_initializers_cannot_call_bridge_convenience(self):
+        for expression in [
+            "let engine: ParameterEngine = .init()",
+            "let engine: ParameterEngine = .init(configuration: Configuration())",
+        ]:
+            with self.subTest(expression=expression), self.construction_fixture(expression) as (root, manifest):
+                self.assertTrue(any("validated" in error for error in check_tree(root, manifest)["errors"]))
+
+    def test_explicit_function_return_context_cannot_infer_bridge_convenience(self):
+        for expression in [
+            "func make() -> ParameterEngine { .init() }",
+            "func make() -> ParameterEngine { return .init(configuration: Configuration()) }",
+            "func make(_ ready: Bool) -> ParameterEngine { if ready { return .init() }; return .init() }",
+        ]:
+            with self.subTest(expression=expression), self.construction_fixture(expression) as (root, manifest):
+                self.assertTrue(any("validated" in error for error in check_tree(root, manifest)["errors"]))
+
+    def test_plain_alias_calls_and_inferred_alias_initializers_are_guarded(self):
+        for expression in [
+            "typealias Engine = ParameterEngine; let engine = Engine()",
+            "typealias Engine = ParameterEngine; let engine: Engine = .init(configuration: Configuration())",
+            "typealias Engine = ParameterEngine; func make() -> Engine { .init() }",
+        ]:
+            with self.subTest(expression=expression), self.construction_fixture(expression) as (root, manifest):
+                self.assertTrue(any("validated" in error for error in check_tree(root, manifest)["errors"]))
+
+    def test_explicit_metatype_initializers_use_the_same_validated_boundary(self):
+        with self.construction_fixture("let engine = ParameterEngine.self.init(configuration: Configuration())") as (
+            root,
+            manifest,
+        ):
+            self.assertTrue(any("validated" in error for error in check_tree(root, manifest)["errors"]))
+        with self.construction_fixture(
+            "let engine = ParameterEngine.self.init(validatedConfiguration: Configuration(), actionBindings: [:])"
+        ) as (root, manifest):
+            self.assertEqual(check_tree(root, manifest)["errors"], [])
+
+    def test_legal_contextual_and_aliased_validated_initializers_remain_allowed(self):
+        for expression in [
+            "let engine: ParameterEngine = .init(validatedConfiguration: Configuration(), actionBindings: [:])",
+            "func make() -> ParameterEngine { .init(validatedConfiguration: Configuration(), actionBindings: [:]) }",
+            "typealias Engine = ParameterEngine; let engine = Engine(validatedConfiguration: Configuration(), actionBindings: [:])",
+            "typealias Engine = ParameterEngine; let engine: Engine = .init(validatedConfiguration: Configuration(), actionBindings: [:])",
+        ]:
+            with self.subTest(expression=expression), self.construction_fixture(expression) as (root, manifest):
+                self.assertEqual(check_tree(root, manifest)["errors"], [])
+
+    def test_external_qualified_members_do_not_resolve_to_host_extensions(self):
+        files = {
+            "Sources/Host/Values.swift": ("values", "struct SurfaceConfiguration {}"),
+            "Sources/Host/Adapter.swift": (
+                "bridge",
+                "extension SurfaceConfiguration { static var neutral: Self { .init() } }",
+            ),
+            "Sources/Host/Consumer.swift": (
+                "runtime",
+                "import External\nlet value = External.SurfaceConfiguration.neutral",
+            ),
+        }
+        with patch.dict(PURE_IMPORTS, {"runtime": PURE_IMPORTS["runtime"] | {"External"}}):
+            with fixture(files) as (root, manifest):
+                self.assertEqual(check_tree(root, manifest)["errors"], [])
+
+    def test_external_annotated_receivers_do_not_bind_host_extension_members(self):
+        files = {
+            "Sources/Host/Values.swift": ("values", "struct SurfaceConfiguration {}"),
+            "Sources/Host/Adapter.swift": ("bridge", "extension SurfaceConfiguration { func validate() {} }"),
+            "Sources/Host/Consumer.swift": (
+                "runtime",
+                "import External\nstruct Consumer { var config: External.SurfaceConfiguration; func f() { config.validate() } }",
+            ),
+        }
+        with patch.dict(PURE_IMPORTS, {"runtime": PURE_IMPORTS["runtime"] | {"External"}}):
+            with fixture(files) as (root, manifest):
+                self.assertEqual(check_tree(root, manifest)["errors"], [])
+
+    def test_internal_qualified_annotated_receivers_still_check_extension_roles(self):
+        files = {
+            "Sources/Host/Values.swift": ("values", "struct Config {}"),
+            "Sources/Host/Device.swift": ("device", "extension Config { func validate() {} }"),
+            "Sources/Host/Consumer.swift": (
+                "runtime",
+                "struct Consumer { var config: Host.Config; func f() { config.validate() } }",
+            ),
+        }
+        with fixture(files) as (root, manifest):
+            self.assertTrue(any("Config.validate" in error for error in check_tree(root, manifest)["errors"]))
+
+    def throwing_construction_fixture(self, consumer):
+        return fixture(
+            {
+                "Sources/Host/Values.swift": ("values", "struct Configuration {}"),
+                "Sources/Host/Engine.swift": (
+                    "runtime",
+                    "struct ParameterEngine { init(validatedConfiguration: Configuration, actionBindings: [Int: Int]) throws {} }",
+                ),
+                "Sources/Host/Adapter.swift": (
+                    "bridge",
+                    "extension ParameterEngine { init(configuration: Configuration = Configuration(), actionBindings: [Int: Int] = [:]) throws { try self.init(validatedConfiguration: configuration, actionBindings: actionBindings) } }",
+                ),
+                "Sources/Host/Consumer.swift": ("runtime", consumer),
+            },
+            constructors={"ParameterEngine": "validatedConfiguration"},
+        )
+
+    def test_throwing_inferred_initializers_cannot_call_bridge_convenience(self):
+        for expression in [
+            "func consume() throws { let e: ParameterEngine = try .init() }",
+            "func consume() throws { let e: ParameterEngine = try .init(configuration: Configuration()) }",
+            "func make() throws -> ParameterEngine { return try .init() }",
+            "func make() throws -> ParameterEngine { try .init() }",
+        ]:
+            with (
+                self.subTest(expression=expression),
+                self.throwing_construction_fixture(expression) as (root, manifest),
+            ):
+                self.assertTrue(any("validated" in error for error in check_tree(root, manifest)["errors"]))
+
+    def test_forced_and_optional_try_inferred_initializers_cannot_bypass_the_boundary(self):
+        for expression in [
+            "func make() -> ParameterEngine { try! .init() }",
+            "func make() -> ParameterEngine? { try? .init() }",
+        ]:
+            with (
+                self.subTest(expression=expression),
+                self.throwing_construction_fixture(expression) as (root, manifest),
+            ):
+                self.assertTrue(any("validated" in error for error in check_tree(root, manifest)["errors"]))
+
+    def test_throwing_validated_initializers_remain_legal_in_all_static_forms(self):
+        for expression in [
+            "func consume() throws { let e: ParameterEngine = try .init(validatedConfiguration: Configuration(), actionBindings: [:]) }",
+            "func make() throws -> ParameterEngine { return try .init(validatedConfiguration: Configuration(), actionBindings: [:]) }",
+            "func make() -> ParameterEngine { try! .init(validatedConfiguration: Configuration(), actionBindings: [:]) }",
+            "func make() -> ParameterEngine? { try? .init(validatedConfiguration: Configuration(), actionBindings: [:]) }",
+            "typealias Engine = ParameterEngine; func make() throws -> Engine { try .init(validatedConfiguration: Configuration(), actionBindings: [:]) }",
+            "func make() throws -> ParameterEngine { try ParameterEngine.self.init(validatedConfiguration: Configuration(), actionBindings: [:]) }",
+        ]:
+            with (
+                self.subTest(expression=expression),
+                self.throwing_construction_fixture(expression) as (root, manifest),
+            ):
+                self.assertEqual(check_tree(root, manifest)["errors"], [])
+
+    def test_parenthesized_throwing_constructor_prefixes_are_normalized(self):
+        for expression in [
+            "func consume() throws { let e: ParameterEngine = (try .init()) }",
+            "func make() throws -> ParameterEngine { return (try .init()) }",
+            "func make() throws -> ParameterEngine { (try .init()) }",
+            "func make() -> ParameterEngine { ((try! .init())) }",
+            "func make() -> ParameterEngine? { return (try? .init()) }",
+        ]:
+            with (
+                self.subTest(expression=expression),
+                self.throwing_construction_fixture(expression) as (root, manifest),
+            ):
+                self.assertTrue(any("validated" in error for error in check_tree(root, manifest)["errors"]))
+                legal = expression.replace(
+                    ".init()", ".init(validatedConfiguration: Configuration(), actionBindings: [:])"
+                )
+                (root / "Sources/Host/Consumer.swift").write_text(legal)
+                self.assertEqual(check_tree(root, manifest)["errors"], [])
+
+    def test_let_imports_identify_the_real_module_without_expanding_allowed_imports(self):
+        with fixture(
+            {"Sources/Host/Runtime.swift": ("runtime", "import let Foundation.NSFoundationVersionNumber")}
+        ) as (root, manifest):
+            self.assertEqual(check_tree(root, manifest)["errors"], [])
+        with fixture({"Sources/Host/Runtime.swift": ("runtime", "import let CoreMIDI.kMIDIInvalidUniqueID")}) as (
+            root,
+            manifest,
+        ):
+            self.assertTrue(any("CoreMIDI" in error for error in check_tree(root, manifest)["errors"]))
+
+    def test_lexical_self_constructors_and_delegation_cannot_call_the_bridge(self):
+        for expression in [
+            "extension ParameterEngine { static func make() throws -> Self { try Self(configuration: Configuration()) } }",
+            "extension ParameterEngine { func copy() throws -> Self { try .init(configuration: Configuration()) } }",
+            "extension ParameterEngine { init(copy: Bool) throws { try self.init(configuration: Configuration()) } }",
+        ]:
+            with (
+                self.subTest(expression=expression),
+                self.throwing_construction_fixture(expression) as (root, manifest),
+            ):
+                self.assertTrue(any("validated" in error for error in check_tree(root, manifest)["errors"]))
+
+    def test_lexical_self_validated_construction_and_delegation_remain_legal(self):
+        for expression in [
+            "extension ParameterEngine { static func make() throws -> Self { try Self(validatedConfiguration: Configuration(), actionBindings: [:]) } }",
+            "extension ParameterEngine { func copy() throws -> Self { try .init(validatedConfiguration: Configuration(), actionBindings: [:]) } }",
+            "extension ParameterEngine { init(copy: Bool) throws { try self.init(validatedConfiguration: Configuration(), actionBindings: [:]) } }",
+        ]:
+            with (
+                self.subTest(expression=expression),
+                self.throwing_construction_fixture(expression) as (root, manifest),
+            ):
+                self.assertEqual(check_tree(root, manifest)["errors"], [])
+
+    def test_nested_other_nominal_self_does_not_inherit_the_engine_policy(self):
+        expression = "extension ParameterEngine { struct Other { init(configuration: Configuration) throws {} ; func copy() throws -> Self { try .init(configuration: Configuration()) } } }"
+        with self.throwing_construction_fixture(expression) as (root, manifest):
             self.assertEqual(check_tree(root, manifest)["errors"], [])

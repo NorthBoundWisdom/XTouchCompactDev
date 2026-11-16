@@ -42,12 +42,20 @@ then checks references in the actual file role, including module qualification, 
 and annotated instance-member calls. Imported external SDK types are not confused with
 same-named host types. A mixed target does not make its resource-rendering types values:
 a transport reference to `Localizer` is rejected even though message data shares its module.
-The parameter runtime's validated constructor label is also explicitly guarded, preventing
-an accidental call back into its bridge convenience initializer.
+The parameter runtime's validated constructor label is also explicitly guarded. Ordinary
+direct, module-qualified, plain type-alias and explicit-metatype calls are resolved; leading-dot
+initializers use explicit binding/assignment/computed-property or function-return contexts.
+Throwing prefixes (`try`, `try!`, `try?`) and expression grouping are normalized together.
+Lexical `Self`/`self.init` resolves to its enclosing nominal or extension, with nested other
+types retaining their own scope. The same validated entry remains legal through those forms.
+External qualified members and annotated external receivers are
+excluded from both host-type and member lookup, preventing same-name SDK false positives.
+These checks prevent an accidental call back into the bridge convenience initializer.
 
 This is a conservative source guard, not a Swift compiler or a general-purpose semantic
 index. It resolves declared host types and annotated receivers; reflection, arbitrary
-inferred generic receiver dispatch and dynamic lookup are outside its static model.
+inferred generic receiver dispatch, dynamic metatype-variable construction and dynamic lookup
+are outside its static model.
 The real compiler and complete existing behavior tests remain mandatory. There is no
 reverse-edge allowlist and no ignored production subdirectory. Purpose-built fixtures
 exercise illegal imports, nested files, qualified references, extension bodies and members,
