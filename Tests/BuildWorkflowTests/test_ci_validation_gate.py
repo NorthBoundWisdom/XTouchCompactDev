@@ -190,12 +190,17 @@ class ValidationGateTests(unittest.TestCase):
         validation = text.split("  validation-macos:", 1)[1].split("  app-macos:", 1)[0]
         app = text.split("  app-macos:", 1)[1]
         self.assertNotIn("needs:", app)
-        for block, runner in [(validation, "macos-26-intel"), (app, "macos-26")]:
+        for block, runner in [(validation, "macos-26-intel"), (app, "macos-26-intel")]:
             self.assertIn("runs-on: " + runner + "\n", block)
             self.assertIn("DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer", block)
             self.assertIn("ref: ${{ github.sha }}", block)
             self.assertIn("python3 configs/setup_local_project.py", block)
         self.assertIn("dependencies-${{ runner.os }}-${{ runner.arch }}-", validation)
+        self.assertIn("dependencies-${{ runner.os }}-${{ runner.arch }}-", app)
+        native_cache = "swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-"
+        self.assertEqual(app.count("key: " + native_cache + "${{ github.sha }}"), 2)
+        self.assertIn("restore-keys: " + native_cache + "\n", app)
+        self.assertNotIn("swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-", app)
         self.assertNotIn("path: build/swiftpm", validation)
         self.assertIn("brew install swiftformat ruff", validation)
         self.assertIn("python3 configs/format_repo.py --check", validation)

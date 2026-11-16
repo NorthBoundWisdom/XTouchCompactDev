@@ -123,7 +123,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 configs/ci_job_budget.py --post-reserve-seconds 20
   app-macos:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 20
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
@@ -144,15 +144,15 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: build/dependencies
-          key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
+          key: dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
       - name: Restore the latest SwiftPM build
         id: build-cache
         if: github.event_name != 'workflow_dispatch' || inputs.cold_build != true
         uses: actions/cache/restore@v6.1.0
         with:
           path: build/swiftpm
-          key: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-${{ github.sha }}
-          restore-keys: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-${{ github.sha }}
+          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-
       - run: python3 configs/setup_local_project.py
       # One build path for tests, executables and the app, so nothing is compiled twice.
       - name: Compile native targets and tests
@@ -163,7 +163,7 @@ jobs:
         uses: actions/cache/save@v6.1.0
         with:
           path: build/swiftpm
-          key: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-${{ github.sha }}
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-${{ github.sha }}
       - name: Require exact validation success before native execution
         env:
           GH_TOKEN: ${{ github.token }}
