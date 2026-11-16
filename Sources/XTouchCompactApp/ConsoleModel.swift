@@ -35,6 +35,13 @@
         /// Outcome of the last motor command per fader since its last position input.
         /// Transport delivery only; never evidence that the cap arrived.
         @Published private(set) var faderMotorDelivery: [Int: MotorDeliveryPresentation] = [:]
+        private struct HardwareInputKey: Hashable {
+            var control: CompactControl
+            var layer: CompactLayer
+        }
+
+        private var hardwareReceiptRevision: UInt64 = 0
+        private var hardwareInputRevisions: [HardwareInputKey: UInt64] = [:]
         private var hardwareValuesDirty = false
         /// Parameter values last written to disk; differences are flushed with the runtime tick.
         private var savedParameterValues: [String: Double]?
@@ -208,6 +215,7 @@
                         hasAttachedHardwareRoute = true
                     }
                     liveHardwareValues = nil
+                    hardwareInputRevisions = [:]
                     reportedHardwarePresses = [:]
                     faderMotorDelivery = [:]
                 }
@@ -983,6 +991,8 @@
 
         private func recordHardwareInput(_ input: CompactInput) {
             guard let inputID = connection.connectedInput?.id else { return }
+            hardwareReceiptRevision &+= 1
+            hardwareInputRevisions[HardwareInputKey(control: input.control, layer: input.layer)] = hardwareReceiptRevision
             let channel = session.state.map.transmitChannel
             if hardwareValueCache?.inputID != inputID || hardwareValueCache?.transmitChannel != channel {
                 hardwareValueCache = HardwareValueCache(inputID: inputID, transmitChannel: channel)
@@ -1003,6 +1013,28 @@
             if case let .fader(index) = input.control {
                 faderMotorDelivery[index] = nil
             }
+        }
+
+        private func expireHardwareFacts(beforeOrAt cutoff: UInt64) {
+            let newer = Set(hardwareInputRevisions.filter { $0.value > cutoff }.keys)
+            if newer.isEmpty {
+                liveHardwareValues = nil
+                reportedHardwarePresses = [:]
+            } else {
+                var faders = Set<Int>()
+                var encoders: [CompactLayer: Set<Int>] = [:]
+                for key in newer {
+                    switch key.control {
+                    case let .fader(index): faders.insert(index)
+                    case let .encoder(index): encoders[key.layer, default: []].insert(index)
+                    default: break
+                    }
+                }
+                liveHardwareValues?.retainReadings(faders: faders, encoders: encoders)
+                let controls = Set(newer.map(\.control))
+                reportedHardwarePresses = reportedHardwarePresses.filter { controls.contains($0.key) }
+            }
+            faderMotorDelivery = [:]
         }
 
         private func receive(_ envelope: CompactMIDIInputEnvelope) {
@@ -1113,9 +1145,30 @@
                           testAudit: NonMotorTestAudit? = nil) -> MonitorEvent.Delivery
         {
             let authorization = session.writeAuthorization
+            let dispatchHostLayer = session.state.layer
+            let dispatchHardwareMode = hardwareMode
+            let dispatchListenOnly = listenOnly
+            let dispatchObservationMode = isObservingHardware
+            let dispatchAgentMotorPermission = mcpMotorWritesAllowed
+            let dispatchMap = session.state.map
+            let dispatchLightProtocol = session.state.lightProtocol
             let route = connection // Pin the entire batch, including synchronous service callbacks.
             let outputOrigin = hardwareMode ? CompactEndpointStamp(endpoint: route.connectedOutput, generation: route.generation) : .simulation
             let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
+            func scopeIsCurrent() -> Bool {
+                connection.generation == route.generation
+                    && connection.connectedInput?.id == route.connectedInput?.id
+                    && connection.connectedOutput?.id == route.connectedOutput?.id
+                    && session.writeAuthorization == authorization
+                    && session.state.layer == dispatchHostLayer
+                    && hardwareMode == dispatchHardwareMode
+                    && listenOnly == dispatchListenOnly
+                    && isObservingHardware == dispatchObservationMode
+                    && (source != .agent || mcpMotorWritesAllowed == dispatchAgentMotorPermission)
+                    && session.state.map.transmitChannel == dispatchMap.transmitChannel
+                    && session.state.map.globalReceiveChannel == dispatchMap.globalReceiveChannel
+                    && session.state.lightProtocol == dispatchLightProtocol
+            }
             var testAllowed = false
             if let authorizedTest {
                 do {
@@ -1134,7 +1187,7 @@
                         faderMotorDelivery[Int(number)] = .staged
                     }
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
-                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin)
+                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
                 }
                 return .suppressed
             }
@@ -1147,7 +1200,7 @@
                 // Even a touched write which generated no message must not queue a target.
                 session.discardPendingMotorWrites()
             }
-            for message in messages {
+            for (messageIndex, message) in messages.enumerated() {
                 let isMechanism = switch message {
                 case .programChange: true
                 case .controlChange(_, 1 ... 9, _): true
@@ -1157,7 +1210,7 @@
                       isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay
                 else {
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
-                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
                     if hardwareMode {
                         hardwareFeedbackNeedsSync = true
                     }
@@ -1173,7 +1226,7 @@
                         faderMotorDelivery[Int(number)] = .refused
                     }
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
-                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
                     continue
                 }
                 // A preceding transport call can synchronously deliver a new touch edge.
@@ -1182,18 +1235,18 @@
                     self.error = error
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
-                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin)
+                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
                     return .suppressed
                 }
                 guard !session.filterFeedbackForDelivery([message]).isEmpty else {
                     withheldMotor = true
-                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
                     continue
                 }
                 guard hardwareMode else {
                     mock.receive(message)
                     mockMIDIInAt = now()
-                    record(message, direction: .output, source: source, delivery: .sent, endpointOrigin: outputOrigin)
+                    record(message, direction: .output, source: source, delivery: .sent, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
                     continue
                 }
                 if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
@@ -1202,6 +1255,8 @@
                     // during the send is newer than this command and must be able to clear it.
                     faderMotorDelivery[Int(number)] = .sent
                 }
+                let observationCutoff = session.state.observationRevision
+                let receiptCutoff = hardwareReceiptRevision
                 do {
                     if let authorizedTest {
                         try midi.sendPinned(message, inputID: authorizedTest.approval.inputID, outputID: authorizedTest.approval.outputID, generation: authorizedTest.approval.generation)
@@ -1210,15 +1265,23 @@
                               let outputID = route.connectedOutput?.id else { throw ConsoleError.noConnection }
                         try midi.sendPinned(message, inputID: inputID, outputID: outputID, generation: route.generation)
                     }
-                    if case .programChange = message {
-                        session.didTransmitLayerAssertion()
-                        liveHardwareValues = nil
-                        reportedHardwarePresses = [:]
-                        faderMotorDelivery = [:]
-                    }
                     record(message, direction: .output, source: source, delivery: .sent,
-                           nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin)
+                           nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                    // Acceptance belongs to the pinned old scope. A synchronous callback may
+                    // already own a different route/binding/mode; old completion cannot edit it.
+                    guard scopeIsCurrent() else {
+                        return messageIndex == messages.count - 1 && !withheldMotor ? .sent : .suppressed
+                    }
+                    if case .programChange = message {
+                        session.didTransmitLayerAssertion(preservingObservationsAfter: observationCutoff)
+                        expireHardwareFacts(beforeOrAt: receiptCutoff)
+                    }
                 } catch {
+                    guard scopeIsCurrent() else {
+                        record(message, direction: .output, source: source, ignored: true, delivery: .failed,
+                               nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                        return .failed
+                    }
                     self.error = error
                     if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number),
                        faderMotorDelivery[Int(number)] == .sent
@@ -1226,7 +1289,7 @@
                         faderMotorDelivery[Int(number)] = .failed
                     }
                     record(message, direction: .output, source: source, ignored: true, delivery: .failed,
-                           nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin)
+                           nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
                     hardwareFeedbackNeedsSync = true
                     session.discardPendingMotorWrites()
                     session.invalidateTransportFeedback()
@@ -1616,24 +1679,26 @@
 
         private func record(_ message: MIDIMessage, direction: MonitorEvent.Direction,
                             source: MonitorEvent.Source, ignored: Bool = false, delivery: MonitorEvent.Delivery? = nil,
-                            nonMotorTest: NonMotorTestAudit? = nil, controlOverride: CompactControl? = nil, endpointOrigin: CompactEndpointStamp? = nil)
+                            nonMotorTest: NonMotorTestAudit? = nil, controlOverride: CompactControl? = nil, endpointOrigin: CompactEndpointStamp? = nil,
+                            recordedHostLayer: CompactLayer? = nil, outputHardwareMode: Bool? = nil, recordedMap: FactoryStandardMap? = nil, recordedLightProtocol: ButtonLightProtocol? = nil, recordedListenOnly: Bool? = nil)
         {
+            let map = recordedMap ?? session.state.map
             let control: CompactControl?
             if let controlOverride {
                 control = controlOverride
             } else if direction == .input {
-                control = session.state.map.decode(message)?.control
+                control = map.decode(message)?.control
             } else {
                 let candidates = (1 ... 9).map(CompactControl.fader) + (1 ... 16).map(CompactControl.encoder)
                     + (1 ... 39).map(CompactControl.button)
                 control = candidates.first { control in
-                    let address = session.state.map.feedbackAddress(for: control)
+                    let address = map.feedbackAddress(for: control)
                     switch message {
                     case let .controlChange(c, n, _):
                         if address?.messageType == .controlChange, address?.channel == c, address?.number == n {
                             return true
                         }
-                        if case let .encoder(index) = control, let style = session.state.map.encoderRingStyleAddress(encoder: index) {
+                        if case let .encoder(index) = control, let style = map.encoderRingStyleAddress(encoder: index) {
                             return style.channel == c && style.number == n
                         }
                         return false
@@ -1643,12 +1708,18 @@
                 }
             }
             let key = direction == .input ? (source == .mock ? "IN %@ [MOCK]" : "IN %@")
-                : (!hardwareMode ? "OUT %@ [MOCK]" : "OUT %@")
+                : (!(outputHardwareMode ?? hardwareMode) ? "OUT %@ [MOCK]" : "OUT %@")
+            let deviceSource: MonitorEvent.DeviceSource = direction == .input
+                ? (source == .mock ? .simulation : .hardware)
+                : ((outputHardwareMode ?? hardwareMode) ? .hardware : .simulation)
+            let dispatchContext: MonitorEvent.DispatchContext? = direction == .output
+                ? .init(transmitChannel: map.transmitChannel, receiveChannel: map.globalReceiveChannel,
+                        lightProtocol: recordedLightProtocol ?? session.state.lightProtocol, listenOnly: recordedListenOnly ?? listenOnly) : nil
             appendEvent(MonitorEvent(timestamp: now(), direction: direction, source: source, message: message,
-                                     control: control, hostLayer: session.state.layer,
-                                     deviceLayer: direction == .input ? session.state.map.decode(message)?.layer : nil,
+                                     control: control, hostLayer: recordedHostLayer ?? session.state.layer,
+                                     deviceLayer: direction == .input ? map.decode(message)?.layer : nil,
                                      delivery: delivery ?? (direction == .input ? .received : nil),
-                                     ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest, endpointOrigin: endpointOrigin))
+                                     ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest, endpointOrigin: endpointOrigin, deviceSource: deviceSource, dispatchContext: dispatchContext))
         }
 
         private func appendEvent(_ event: MonitorEvent) {

@@ -7,6 +7,14 @@
         enum Direction: String, Sendable { case input = "IN", output = "OUT" }
         enum Source: String, Sendable { case mock, hardware, agent, application }
         enum Delivery: String, Sendable { case received, sent, suppressed, failed }
+        enum DeviceSource: String, Sendable { case simulation, hardware }
+        struct DispatchContext: Equatable, Sendable {
+            var transmitChannel: UInt8
+            var receiveChannel: UInt8
+            var lightProtocol: ButtonLightProtocol
+            var listenOnly: Bool
+        }
+
         let id = UUID()
         var timestamp: Date
         var direction: Direction?
@@ -21,6 +29,8 @@
         var connection: CompactMIDIConnection?
         var nonMotorTest: NonMotorTestAudit?
         var endpointOrigin: CompactEndpointStamp?
+        var deviceSource: DeviceSource?
+        var dispatchContext: DispatchContext?
     }
 
     struct ConsoleNotification: Identifiable, Equatable, Sendable {

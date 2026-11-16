@@ -8,6 +8,10 @@ public struct CompactState: Sendable {
     public private(set) var layer: CompactLayer = .a
 
     public private(set) var observedLayer: CompactLayer?
+    /// Revision of actual decoded input, independent from requests and delivery receipts.
+    public private(set) var observationRevision: UInt64 = 0
+    private var layerObservationRevision: UInt64 = 0
+    private var faderObservationRevisions: [Int: UInt64] = [:]
     public var layerMismatch: Bool {
         observedLayer.map { $0 != layer } ?? false
     }
@@ -106,9 +110,15 @@ public struct CompactState: Sendable {
     }
 
     /// Delivery invalidates prior layer evidence; it never acknowledges a physical layer.
-    public mutating func didTransmitLayerAssertion() {
+    public mutating func didTransmitLayerAssertion(preservingObservationsAfter cutoff: UInt64? = nil) {
+        let newerCurrent = observedIsCurrent.filter { index in
+            cutoff.map { faderObservationRevisions[index, default: 0] > $0 } ?? false
+        }
         invalidateMotorCommandHistory()
-        observedLayer = nil
+        observedIsCurrent.formUnion(newerCurrent)
+        if cutoff.map({ layerObservationRevision <= $0 }) ?? true {
+            observedLayer = nil
+        }
     }
 
     @discardableResult
@@ -123,11 +133,13 @@ public struct CompactState: Sendable {
     /// The domain engine consumes the returned CompactInput and chooses the resulting parameter value.
     public mutating func receive(_ message: MIDIMessage) -> CompactInput? {
         guard let event = map.decode(message) else { return nil }
+        observationRevision &+= 1
         // A release ends a gesture; it cannot prove the device returned to our layer.
         // Once contradicted, withheld motion is obsolete even if fresh positive input
         // later restores layer agreement.
         if !layerMismatch || event.isPressed != false {
             observedLayer = event.layer
+            layerObservationRevision = observationRevision
         }
         if layerMismatch {
             pendingMotor.removeAll()
@@ -135,6 +147,7 @@ public struct CompactState: Sendable {
         switch event.control {
         case let .fader(i):
             observedFaders[i] = event.value
+            faderObservationRevisions[i] = observationRevision
             observedIsCurrent.insert(i)
         case let .faderTouch(i):
             if event.isPressed == true {
@@ -340,6 +353,9 @@ public extension CompactState {
         next.touchedFaders = touchedFaders
         next.safetyTouches = safetyTouches
         next.observedLayer = observedLayer
+        next.observationRevision = observationRevision
+        next.layerObservationRevision = layerObservationRevision
+        next.faderObservationRevisions = faderObservationRevisions
         next.observedFaders = observedFaders
         next.pressedButtons = pressedButtons
         next.pushedEncoders = pushedEncoders

@@ -110,8 +110,8 @@ public struct CompactSession: Sendable {
         return try syncVisibleNonMotorFeedback()
     }
 
-    public mutating func didTransmitLayerAssertion() {
-        state.didTransmitLayerAssertion()
+    public mutating func didTransmitLayerAssertion(preservingObservationsAfter cutoff: UInt64? = nil) {
+        state.didTransmitLayerAssertion(preservingObservationsAfter: cutoff)
     }
 
     /// Explicitly opt in to motor recall after connection or a layer change.

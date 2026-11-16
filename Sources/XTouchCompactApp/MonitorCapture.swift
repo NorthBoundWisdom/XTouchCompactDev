@@ -40,11 +40,13 @@
             var row: [String: Any] = [
                 "kind": "event", "sequence": sequence + 1, "timestamp": timestamp(event.timestamp),
                 "source": event.source.rawValue, "hostLayer": event.hostLayer.rawValue,
-                "hardwareMode": hardwareMode, "listenOnly": listenOnly, "ignored": event.ignored,
-                "transmitChannel": Int(map.transmitChannel) + 1,
-                "globalReceiveChannel": Int(map.globalReceiveChannel) + 1,
-                "ledProtocol": lightProtocol.rawValue,
+                "hardwareMode": event.deviceSource.map { $0 == .hardware } ?? hardwareMode,
+                "listenOnly": event.dispatchContext?.listenOnly ?? listenOnly, "ignored": event.ignored,
+                "transmitChannel": Int(event.dispatchContext?.transmitChannel ?? map.transmitChannel) + 1,
+                "globalReceiveChannel": Int(event.dispatchContext?.receiveChannel ?? map.globalReceiveChannel) + 1,
+                "ledProtocol": (event.dispatchContext?.lightProtocol ?? lightProtocol).rawValue,
             ]
+            row["deviceSource"] = event.deviceSource?.rawValue
             row["direction"] = event.direction?.rawValue
             row["delivery"] = event.delivery?.rawValue
             row["deviceLayer"] = event.deviceLayer?.rawValue

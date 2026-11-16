@@ -35,6 +35,18 @@ public struct HardwareValueCache: Codable, Equatable, Sendable {
         faders.removeValue(forKey: index)
     }
 
+    /// A successful layer command expires prior readings but must preserve later actual input.
+    /// The host supplies receipt-revision-selected keys; wall timestamps do not decide freshness.
+    public mutating func retainReadings(faders retainedFaders: Set<Int>, encoders retainedEncoders: [CompactLayer: Set<Int>]) {
+        faders = faders.filter { retainedFaders.contains($0.key) }
+        encoders = encoders.reduce(into: [:]) { result, entry in
+            let readings = entry.value.filter { retainedEncoders[entry.key]?.contains($0.key) == true }
+            if !readings.isEmpty {
+                result[entry.key] = readings
+            }
+        }
+    }
+
     public func validate() throws {
         guard transmitChannel < 16,
               faders.allSatisfy({ (1 ... 9).contains($0.key) && $0.value.value < 128 && $0.value.timestamp.timeIntervalSince1970.isFinite }),
