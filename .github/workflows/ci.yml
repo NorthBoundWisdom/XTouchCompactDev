@@ -209,6 +209,11 @@ jobs:
         env:
           XTOUCH_HARDWARE_BINARY: build/swiftpm/debug/XTouchSurfaceHardware
         run: python3 -B configs/run_python_workflow_tests.py --suite simulator --pattern test_hardware_offline_diagnostics.py
+      - name: Exercise owned virtual transport (Debug; no physical endpoint discovery)
+        env:
+          XTOUCH_HARDWARE_BINARY: build/swiftpm/debug/XTouchSurfaceHardware
+          XTOUCH_OWNED_REPORT_ROOT: build/ci-verification/owned-rehearsal
+        run: python3 -B configs/run_python_workflow_tests.py --suite simulator --pattern test_owned_virtual_rehearsal.py
       - run: python3 configs/macos_workflow.py build
       - name: Isolated native startup
         run: |
@@ -236,7 +241,9 @@ jobs:
         uses: actions/upload-artifact@v7.0.2
         with:
           name: python-case-times-${{ github.job }}
-          path: build/ci-verification/tests/python-*-case-times.json
+          path: |
+            build/ci-verification/tests/python-*-case-times.json
+            build/ci-verification/owned-rehearsal/
           if-no-files-found: warn
       - name: Report whole-run wall time and enforce 300s budget
         if: always()

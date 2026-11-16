@@ -223,10 +223,14 @@ class ValidationGateTests(unittest.TestCase):
             "swift test --build-path build/swiftpm --skip-build",
             "--pattern test_hardware_service.py",
             "--pattern test_hardware_offline_diagnostics.py",
+            "--pattern test_owned_virtual_rehearsal.py",
             "python3 configs/macos_workflow.py build",
             "--startup-smoke",
         ]:
             self.assertGreater(app.index(command), gate)
+        self.assertIn("Exercise owned virtual transport (Debug; no physical endpoint discovery)", app)
+        self.assertIn("XTOUCH_OWNED_REPORT_ROOT: build/ci-verification/owned-rehearsal", app)
+        self.assertIn("build/ci-verification/owned-rehearsal/", app)
         native = app[app.index("Require exact validation success before native execution") :]
         self.assertNotIn("continue-on-error:", native)
         before_artifacts = native.split("# Release ZIP/DMG", 1)[0]
