@@ -43,12 +43,18 @@ def report(run, job, cache_key, now, post_reserve_seconds=0):
     ]
     projected = whole + post_reserve_seconds
     if post_reserve_seconds:
-        lines.append(f"Post-job reserve: {post_reserve_seconds:.1f}s; projected whole-run wall time: {projected:.1f}s (the hard limit remains 300s).")
+        lines.append(
+            f"Post-job reserve: {post_reserve_seconds:.1f}s; projected whole-run wall time: {projected:.1f}s (the hard limit remains 300s)."
+        )
     failed = projected > 300
     if failed and whole <= 300:
         lines.append("**Required post-job reserve cannot fit inside the unchanged whole-run 300s budget.**")
     else:
-        lines.append("**Whole-run 300s budget exceeded.**" if failed else "Whole-run live 300s budget met; no cold-cache exemption.")
+        lines.append(
+            "**Whole-run 300s budget exceeded.**"
+            if failed
+            else "Whole-run live 300s budget met; no cold-cache exemption."
+        )
     return "\n".join(lines) + "\n", failed
 
 

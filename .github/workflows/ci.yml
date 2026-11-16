@@ -88,7 +88,7 @@ jobs:
           RESTORED_BUILD_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
         run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY" --post-reserve-seconds 20
   validation-macos:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 20
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
@@ -106,7 +106,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: build/dependencies
-          key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
+          key: dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
       - run: python3 configs/setup_local_project.py
       - run: python3 configs/check_host_layers.py
       - run: python3 -B configs/run_python_workflow_tests.py --suite workflow
