@@ -784,3 +784,13 @@
 "Enabled" = "已使能";
 
 "Disabled" = "未使能";
+
+"Replay refused: capture device %@ is not X-TOUCH COMPACT." = "拒绝重播：录制设备 %@ 不是 X-TOUCH COMPACT。";
+
+"Recorded device: %@" = "录制设备：%@";
+
+"Recorded events: %@" = "录制事件：%@";
+
+"Motor safety audit not applicable" = "电机安全审计不适用";
+
+"Motor safety audit is not applicable to another device. No X-Touch addresses or motor conclusions are inferred." = "其他设备不适用电机安全审计，不推断 X-Touch 地址或电机结论。";

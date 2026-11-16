@@ -1,0 +1,11 @@
+{
+  "bcr-sample.jsonl": {
+    "kind": "handwritten-placeholder",
+    "repository": "BCR2000Dev",
+    "commit": null,
+    "source_path": "Tests/Fixtures/Capture/bcr-sample.jsonl",
+    "note": "BCR window has not generated its sample yet; replace with its committed recorder fixture. Common fields follow docs/CAPTURE_FORMAT.md; no BCR recorder equivalence claimed.",
+    "sha256": "90b0d13e787747e495d87aea387c19255a4a630527ea37b8604d8d753db98299",
+    "eventCount": 12
+  }
+}

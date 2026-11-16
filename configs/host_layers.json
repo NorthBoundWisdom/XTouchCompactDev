@@ -48,6 +48,7 @@
     "Sources/XTouchCompactApp/XTouchCompactApp.swift": "composition",
     "Sources/XTouchCompactCore/Agents.swift": "bridge",
     "Sources/XTouchCompactCore/ArmPreview.swift": "values",
+    "Sources/XTouchCompactCore/CaptureCommonFields.swift": "device",
     "Sources/XTouchCompactCore/CaptureIntegrityReview.swift": "device",
     "Sources/XTouchCompactCore/CaptureMotorAudit.swift": "device",
     "Sources/XTouchCompactCore/CompactHardwareProfile.swift": "device",

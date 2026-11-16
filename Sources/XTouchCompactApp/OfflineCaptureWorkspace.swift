@@ -9,7 +9,13 @@
         let name: String
         let byteCount: Int
         let sha256: String
-        let capture: RecordedCapture
+        let capture: RecordedCapture?
+        let inspection: CaptureCommonDocument
+        var replayUnavailableReason: LocalizedMessage? {
+            guard inspection.isForeignDevice, let device = inspection.deviceModel else { return nil }
+            return LocalizedMessage("Replay refused: capture device %@ is not X-TOUCH COMPACT.", device)
+        }
+
         let audit: CaptureMotorAudit
     }
 
@@ -26,10 +32,12 @@
     /// Reads a frozen bounded prefix. No writer, MIDI service or user settings are reachable.
     enum OfflineCaptureLoader {
         static func parse(_ data: Data, name: String) throws -> LoadedOfflineCapture {
-            let capture = try RecordedCapture(data: data)
+            let inspection = try CaptureCommonDocument(data: data)
+            let capture = try inspection.isForeignDevice ? nil : RecordedCapture(data: data)
+            let audit = try capture.map(CaptureMotorAudit.init(capture:)) ?? CaptureMotorAudit(foreignCapture: inspection)
             return LoadedOfflineCapture(name: name, byteCount: data.count,
                                         sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
-                                        capture: capture, audit: CaptureMotorAudit(capture: capture))
+                                        capture: capture, inspection: inspection, audit: audit)
         }
 
         static func load(_ url: URL) throws -> LoadedOfflineCapture {

@@ -36,6 +36,20 @@
                         if let hash = state.sha256 {
                             Text("SHA-256: " + hash).font(.caption.monospaced()).textSelection(.enabled)
                         }
+                        if let reason = state.replayUnavailableReason {
+                            Text(l.text(reason)).foregroundStyle(.orange)
+                            if let device = state.deviceModel {
+                                Text(l.text("Recorded device: %@", device)).font(.caption)
+                            }
+                            if let count = state.eventCount {
+                                Text(l.text("Recorded events: %@", String(count))).font(.caption)
+                            }
+                            Text(l.text(state.isComplete == true ? "Complete capture" : "Incomplete capture prefix")).font(.caption)
+                            ForEach(state.commonEvents, id: \.sequence) { event in
+                                Text("#\(event.sequence) · \(event.source) · \(event.direction ?? "—") · \(event.timestamp ?? "—") · \(event.rawMIDI1Bytes?.map(String.init).joined(separator: " ") ?? "—")")
+                                    .font(.caption.monospaced()).textSelection(.enabled)
+                            }
+                        }
                         if let replay = state.replay {
                             replayView(replay, loading: state.isLoading)
                         }
@@ -119,29 +133,34 @@
             VStack(alignment: .leading, spacing: 10) {
                 Text(l.text(assessmentKey(audit.assessment)))
                     .font(.headline).foregroundStyle(audit.assessment == .violations ? Color.red : audit.assessment == .inconclusive ? Color.orange : Color.primary)
-                Text(l.text("Events %@ · motor outputs %@ · layer assertions %@", String(audit.eventCount), String(audit.motorOutputs), String(audit.layerAssertions)))
-                    .font(.caption.monospacedDigit())
-                Text(l.text(audit.complete ? "Complete capture" : "Incomplete capture prefix")).font(.caption)
-                findings("Motor output while touched", audit.motorWhileTouched)
-                findings("Motor output during known layer mismatch", audit.motorDuringLayerMismatch)
-                findings("Layer assertion while touched", audit.layerAssertionWhileTouched)
-                findings("Motor output with unknown touch", audit.motorWithUnknownTouch)
-                findings("Motor output with unknown layer", audit.motorWithUnknownLayer)
-                findings("Motor output with unknown route", audit.motorWithUnknownRoute)
-                findings("Layer assertion with incomplete touch evidence", audit.layerAssertionWithUnknownTouch)
-                findings("Layer assertion with unknown route", audit.layerAssertionWithUnknownRoute)
-                findings("Output with unknown delivery", audit.outputsWithUnknownDelivery)
-                if !audit.releaseWindows.isEmpty {
-                    Divider()
-                    Text(l.text("Outputs after each release")).font(.headline)
-                    Text(l.text("Counts include later explicit writes until the next touch or state boundary; they do not prove release catch-up."))
+                if audit.assessment == .notApplicable {
+                    Text(l.text("Motor safety audit is not applicable to another device. No X-Touch addresses or motor conclusions are inferred."))
                         .font(.caption).foregroundStyle(.secondary)
-                    ForEach(Array(audit.releaseWindows.prefix(100).enumerated()), id: \.offset) { _, window in
-                        Text(l.text("F%@ · release #%@ → #%@ · %@ motor outputs", String(window.fader), String(window.releaseSequence), String(window.endSequence), String(window.motorCount)))
-                            .font(.caption.monospacedDigit())
-                    }
-                    if audit.releaseWindows.count > 100 {
-                        Text(l.text("Showing the first 100 release windows; totals use the full capture.")).font(.caption)
+                } else {
+                    Text(l.text("Events %@ · motor outputs %@ · layer assertions %@", String(audit.eventCount), String(audit.motorOutputs), String(audit.layerAssertions)))
+                        .font(.caption.monospacedDigit())
+                    Text(l.text(audit.complete ? "Complete capture" : "Incomplete capture prefix")).font(.caption)
+                    findings("Motor output while touched", audit.motorWhileTouched)
+                    findings("Motor output during known layer mismatch", audit.motorDuringLayerMismatch)
+                    findings("Layer assertion while touched", audit.layerAssertionWhileTouched)
+                    findings("Motor output with unknown touch", audit.motorWithUnknownTouch)
+                    findings("Motor output with unknown layer", audit.motorWithUnknownLayer)
+                    findings("Motor output with unknown route", audit.motorWithUnknownRoute)
+                    findings("Layer assertion with incomplete touch evidence", audit.layerAssertionWithUnknownTouch)
+                    findings("Layer assertion with unknown route", audit.layerAssertionWithUnknownRoute)
+                    findings("Output with unknown delivery", audit.outputsWithUnknownDelivery)
+                    if !audit.releaseWindows.isEmpty {
+                        Divider()
+                        Text(l.text("Outputs after each release")).font(.headline)
+                        Text(l.text("Counts include later explicit writes until the next touch or state boundary; they do not prove release catch-up."))
+                            .font(.caption).foregroundStyle(.secondary)
+                        ForEach(Array(audit.releaseWindows.prefix(100).enumerated()), id: \.offset) { _, window in
+                            Text(l.text("F%@ · release #%@ → #%@ · %@ motor outputs", String(window.fader), String(window.releaseSequence), String(window.endSequence), String(window.motorCount)))
+                                .font(.caption.monospacedDigit())
+                        }
+                        if audit.releaseWindows.count > 100 {
+                            Text(l.text("Showing the first 100 release windows; totals use the full capture.")).font(.caption)
+                        }
                     }
                 }
             }
@@ -162,6 +181,7 @@
 
         private func assessmentKey(_ assessment: CaptureAuditAssessment) -> String {
             switch assessment {
+            case .notApplicable: "Motor safety audit not applicable"
             case .violations: "Recorded violations"
             case .inconclusive: "Insufficient recorded evidence"
             case .noRecordedViolations: "No recorded violations"

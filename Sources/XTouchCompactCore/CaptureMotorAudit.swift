@@ -2,6 +2,7 @@ import Foundation
 
 public enum CaptureAuditAssessment: String, Codable, Sendable {
     case violations, inconclusive
+    case notApplicable = "not-applicable"
     case noRecordedViolations = "no-recorded-violations"
 }
 
@@ -44,6 +45,15 @@ public struct CaptureMotorAudit: Equatable, Codable, Sendable {
 }
 
 public extension CaptureMotorAudit {
+    init(foreignCapture: CaptureCommonDocument) throws {
+        guard foreignCapture.isForeignDevice else { throw CaptureDocumentError.invalidRecord(line: 1) }
+        self.init()
+        eventCount = foreignCapture.integrity.eventCount
+        complete = foreignCapture.integrity.isComplete
+        evidenceSufficient = false
+        assessment = .notApplicable
+    }
+
     init(capture: RecordedCapture) {
         var review = Self()
         review.eventCount = capture.events.count; review.complete = capture.isComplete

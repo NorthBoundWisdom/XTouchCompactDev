@@ -107,7 +107,7 @@
         }
 
         private func installOfflineCapture(_ loaded: LoadedOfflineCapture) {
-            do { offlineCaptureState = try OfflineCaptureWorkspace(loaded: loaded, replay: RecordedCaptureReplay(capture: loaded.capture)) }
+            do { offlineCaptureState = try OfflineCaptureWorkspace(loaded: loaded, replay: loaded.capture.map { try RecordedCaptureReplay(capture: $0) }) }
             catch { failOfflineCapture(error) }
         }
 

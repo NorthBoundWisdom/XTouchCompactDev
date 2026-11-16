@@ -30,6 +30,11 @@ public struct RecordedCaptureReplay: Sendable {
         capture.session.transmitChannel == nil || capture.session.receiveChannel == nil || capture.session.lightProtocol == nil
     }
 
+    public init(inspection: CaptureCommonDocument) throws {
+        try inspection.requireCompactDevice()
+        try self.init(capture: RecordedCapture(data: inspection.rawData))
+    }
+
     public init(capture: RecordedCapture) throws {
         self.capture = capture
         let map = try FactoryStandardMap(transmitChannel: (capture.session.transmitChannel ?? 1) - 1,

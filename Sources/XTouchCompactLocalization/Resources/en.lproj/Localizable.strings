@@ -784,3 +784,13 @@
 "Enabled" = "Enabled";
 
 "Disabled" = "Disabled";
+
+"Replay refused: capture device %@ is not X-TOUCH COMPACT." = "Replay refused: capture device %@ is not X-TOUCH COMPACT.";
+
+"Recorded device: %@" = "Recorded device: %@";
+
+"Recorded events: %@" = "Recorded events: %@";
+
+"Motor safety audit not applicable" = "Motor safety audit not applicable";
+
+"Motor safety audit is not applicable to another device. No X-Touch addresses or motor conclusions are inferred." = "Motor safety audit is not applicable to another device. No X-Touch addresses or motor conclusions are inferred.";

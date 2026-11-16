@@ -1,0 +1,14 @@
+{"kind":"capture-start","schemaVersion":1,"session":{"deviceModel":"BCR2000","deviceSource":"mock","hardwareMode":false,"sessionID":"BCR-PLACEHOLDER-v1"},"timestamp":"1970-01-01T00:01:40.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,0],"sequence":1,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,32],"sequence":2,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,64],"sequence":3,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,96],"sequence":4,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,127],"sequence":5,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,96],"sequence":6,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,64],"sequence":7,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,32],"sequence":8,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,0],"sequence":9,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,16],"sequence":10,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,48],"sequence":11,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"delivery":"received","direction":"IN","ignored":false,"kind":"event","rawMIDI1Bytes":[176,1,80],"sequence":12,"source":"mock","timestamp":"1970-01-01T00:01:41.000Z"}
+{"eventCount":12,"kind":"capture-end","timestamp":"1970-01-01T00:01:44.000Z"}

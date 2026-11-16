@@ -2,7 +2,8 @@
 """Read-only motor safety review of an app JSONL v1 capture; never opens MIDI.
 
 Exit 0: no recorded violations with sufficient recorded state; 1: violations;
-2: invalid/unreadable evidence; 3: incomplete or insufficient state evidence.
+2: invalid/unreadable evidence; 3: incomplete or insufficient state evidence;
+4: another device, so Compact motor audit is not applicable.
 Release windows include later explicit writes, not just release reconciliation.
 No result qualifies physical hardware or measures silent firmware motor travel.
 """
@@ -266,17 +267,35 @@ def audit(data):
     }
 
 
+def review_capture(data):
+    """Interchange inspection: a foreign device has no Compact motor assessment."""
+    events, complete, session = read_capture(data)
+    device = session.get("deviceModel")
+    if device not in (None, "X-TOUCH COMPACT"):
+        return {
+            "schemaVersion": 1,
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "deviceModel": device,
+            "eventCount": len(events),
+            "complete": complete,
+            "evidenceSufficient": False,
+            "assessment": "not-applicable",
+            "reason": "Other device: Compact addresses, touch and motor semantics do not apply.",
+        }
+    return audit(data)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("capture", type=Path)
     args = parser.parse_args(argv)
     try:
-        result = audit(args.capture.read_bytes())
+        result = review_capture(args.capture.read_bytes())
     except (OSError, CaptureError) as error:
         print(f"motor audit: {error}", file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
-    return {"no-recorded-violations": 0, "violations": 1, "inconclusive": 3}[result["assessment"]]
+    return {"no-recorded-violations": 0, "violations": 1, "inconclusive": 3, "not-applicable": 4}[result["assessment"]]
 
 
 if __name__ == "__main__":

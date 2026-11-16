@@ -404,6 +404,11 @@
     }
 
     struct OfflineCapturePresentation: Equatable, Sendable {
+        var deviceModel: String?
+        var eventCount: Int?
+        var isComplete: Bool?
+        var commonEvents: [CaptureCommonEvent] = []
+        var replayUnavailableReason: LocalizedMessage?
         var name: String?
         var byteCount: Int?
         var sha256: String?
