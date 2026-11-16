@@ -61,6 +61,7 @@
                                 }
                             }
                         }.accessibilityIdentifier("organizeWorkspace.button.\(group.name)")
+                            .accessibilityValue(isOn ? "highlighted" : "not-highlighted")
                             .buttonStyle(.plain)
                     }
                 }

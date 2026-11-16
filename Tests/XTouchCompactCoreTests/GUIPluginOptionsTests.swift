@@ -23,3 +23,11 @@ import Testing
         }
     }
 }
+
+@Test func offscreenRequiresExplicitIntegrationAndCannotHideOrdinaryStartup() throws {
+    for args in [["--offscreen"], ["--startup-smoke", "--offscreen"], ["--offscreen", "--robot-sim"]] {
+        #expect(throws: GUIPluginOptions.OffscreenRequiresIntegration.self) { _ = try GUIPluginOptions(arguments: args) }
+    }
+    #expect(try GUIPluginOptions(arguments: ["--integration-test", "--offscreen"]).selection.isEmpty)
+    #expect(try GUIPluginOptions(arguments: []).selection.isEmpty)
+}

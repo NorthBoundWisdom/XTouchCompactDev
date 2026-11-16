@@ -794,3 +794,9 @@
 "Motor safety audit not applicable" = "馬達安全稽核不適用";
 
 "Motor safety audit is not applicable to another device. No X-Touch addresses or motor conclusions are inferred." = "其他裝置不適用馬達安全稽核，不推斷 X-Touch 位址或馬達結論。";
+
+"Access token copied." = "存取權杖已複製。";
+
+"Expanded" = "已展開";
+
+"Collapsed" = "已摺疊";

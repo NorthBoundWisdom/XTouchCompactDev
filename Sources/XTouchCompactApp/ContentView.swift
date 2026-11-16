@@ -39,8 +39,12 @@
                     Text(l.text(warning)).foregroundStyle(.orange).padding(.horizontal)
                 }
                 ForEach(snapshot.notifications) { notification in
+                    let message = notification.message.map { l.text($0) } ?? snapshot.runtimeError.map { l.text($0) } ?? ""
                     HStack {
-                        ErrorBanner(text: notification.message.map { l.text($0) } ?? snapshot.runtimeError.map { l.text($0) } ?? "", level: notification.level)
+                        ErrorBanner(text: message, level: notification.level)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("notification.\(notification.id)")
+                            .accessibilityValue(message)
                         if notification.persistent {
                             Button(l.text("Retry save")) { intents.retrySave?() }.accessibilityIdentifier("contentView.retrySave.\(notification.id)")
                         } else {

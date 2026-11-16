@@ -9,6 +9,7 @@
         @State private var host: String
         @State private var port: UInt16
         @State private var parameter: String
+        @State private var showsMCPAudit = false
         init(snapshot: PanelSnapshot, intents: PanelIntents) {
             self.snapshot = snapshot; self.intents = intents
             _host = State(initialValue: snapshot.oscHost)
@@ -38,17 +39,31 @@
                     .accessibilityIdentifier("mcp.permission.agentControl").disabled(!snapshot.mcpWritesAllowed)
                 Text(l.text("Remote write limit: 60 per second; HTTP limit: 60 requests per minute."))
                     .font(.caption).foregroundStyle(.secondary)
-                DisclosureGroup(l.text("Recent MCP calls")) {
-                    ForEach(snapshot.mcpAudit.reversed()) { entry in
-                        HStack {
-                            Text(entry.time, style: .time)
-                            Text(entry.method).monospaced()
-                            Spacer()
-                            Text(l.text(entry.succeeded ? "Completed" : "Rejected"))
-                        }.font(.caption)
+                VStack(alignment: .leading, spacing: 8) {
+                    Button { showsMCPAudit.toggle() } label: {
+                        Label(l.text("Recent MCP calls"), systemImage: showsMCPAudit ? "chevron.down" : "chevron.right")
                     }
-                }.accessibilityIdentifier("mcpSettings.recentMcpCalls")
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("mcpSettings.recentMcpCalls")
+                    .accessibilityValue(l.text(showsMCPAudit ? "Expanded" : "Collapsed"))
+                    if showsMCPAudit {
+                        ForEach(snapshot.mcpAudit.reversed()) { entry in
+                            HStack {
+                                Text(entry.time, style: .time)
+                                Text(entry.method).monospaced()
+                                Spacer()
+                                Text(l.text(entry.succeeded ? "Completed" : "Rejected"))
+                            }.font(.caption)
+                                .accessibilityElement(children: .combine)
+                                .accessibilityIdentifier("mcp.call.\(entry.id)")
+                                .accessibilityValue(entry.method + (entry.succeeded ? ":completed" : ":rejected"))
+                        }
+                    }
+                }
                 Button(l.text("Copy access token")) { intents.copyMCPToken?() }.accessibilityIdentifier("mcpSettings.copyAccessToken")
+                if let status = snapshot.mcpTokenCopyStatus {
+                    Text(l.text(status)).accessibilityIdentifier("mcp.tokenCopyStatus")
+                }
             }
             Section(l.text("OSC output")) {
                 Text(l.text("OSC requires trusted destination actual-state feedback and an independent heartbeat. This version has no built-in receiver configuration for that feedback; enabling output alone cannot make it ready."))

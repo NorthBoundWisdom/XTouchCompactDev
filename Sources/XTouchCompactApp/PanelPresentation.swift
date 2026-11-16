@@ -419,6 +419,7 @@
     }
 
     struct PanelSnapshot: Equatable, Sendable {
+        var integrationSummary: [String: String] = [:]
         var mode: ConsoleMode {
             isMock ? .mock : listenOnly ? .hardwareListen : .hardwareSend
         }
@@ -470,6 +471,7 @@
         var libraryWarning: LocalizedMessage?
         var pendingLibraryAction: ConfigurationLibraryRequest?
         var configuration: SurfaceConfiguration = .neutral
+        var mcpTokenCopyStatus: String?
         var mcpPort: UInt16 = 8765
         var mcpEnabled = false
         var mcpWritesAllowed = false
@@ -561,6 +563,12 @@
         var requestLibraryDelete: ((UUID) -> Void)?
         var confirmLibraryAction: (() -> Void)?
         var cancelLibraryAction: (() -> Void)?
+        // Explicit isolated Mock fixtures; never populated by a normal GUI session.
+        var integrationCapture: (() -> Void)?
+        var integrationAdvance: (() -> Void)?
+        var integrationAgentWrite: ((Double) -> Void)?
+        var integrationPhysicalLayer: ((CompactLayer) -> Void)?
+        var integrationFlushValues: (() -> Void)?
         var setMCPEnabled: ((Bool) -> Void)?
         var setMCPWritesAllowed: ((Bool) -> Void)?
         var setMCPSimulationControlAllowed: ((Bool) -> Void)?

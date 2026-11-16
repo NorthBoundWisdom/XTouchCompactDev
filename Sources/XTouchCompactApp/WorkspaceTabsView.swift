@@ -191,6 +191,9 @@
                     value: Binding(get: { Double(value) }, set: { onChange(UInt8($0.rounded())) }),
                     in: 0 ... 127
                 )
+                .accessibilityAdjustableAction { direction in
+                    onChange(RawControlAdjustment.next(value, increment: direction == .increment))
+                }
                 .accessibilityIdentifier("values.value.\(control.accessibilityID)").accessibilityLabel(l.text("%@ 软件数值", String(name)))
                 if let badge {
                     Text(badge).font(.caption2).foregroundStyle(Theme.touch)

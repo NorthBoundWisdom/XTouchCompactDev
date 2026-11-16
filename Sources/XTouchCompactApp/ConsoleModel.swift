@@ -85,7 +85,14 @@
         }
 
         let mcp: LocalMCPServer
-        let mcpPort: UInt16 = 8765
+        let mcpPort: UInt16
+        @Published var integrationUIActive = false
+        var integrationCaptureAction: (() -> Void)?
+        var integrationAdvanceAction: (() -> Void)?
+        @Published var integrationCaptureCount = 0
+        var integrationMotorLedger: [[String: Any]] = []
+        @Published private(set) var mcpTokenCopyCount = 0
+        @Published private(set) var mcpTokenCopyStatus: String?
         let isolated: Bool
         private let memoryToken = UUID().uuidString + UUID().uuidString
         func accessToken() throws -> String {
@@ -142,15 +149,20 @@
         @Published private(set) var pendingLibraryAction: ConfigurationLibraryRequest?
         private let now: () -> Date
         private let runtimeClock: () -> TimeInterval
+        let offlineReplayYield: @MainActor () async -> Void
         private let runtimeSleep: @MainActor (Duration) async throws -> Void
         private let evidenceWriterFactory: (URL) throws -> any EvidenceWriting
         private(set) var session: CompactSession
         private(set) var mock: MockXTouchCompact
 
         init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: (() -> Date)? = nil, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil,
+             mcpPort: UInt16 = 8765,
+             offlineReplayYield: @escaping @MainActor () async -> Void = { await Task.yield() },
              runtimeSleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
              evidenceWriterFactory: @escaping (URL) throws -> any EvidenceWriting = { try ExclusiveEvidenceFile(url: $0) })
         {
+            self.offlineReplayYield = offlineReplayYield
+            self.mcpPort = mcpPort
             self.midi = midi ?? CoreMIDIService()
             self.oscTransport = oscTransport ?? NetworkOSCTransport()
             let wallClock = now ?? Date.init
@@ -1104,6 +1116,11 @@
                      "destinationID": appliedOutputID.map { .number(Int($0)) } ?? .null])
         }
 
+        func didCopyMCPToken() {
+            mcpTokenCopyCount += 1
+            mcpTokenCopyStatus = "Access token copied."
+        }
+
         func recordMCPCall(_ method: String, succeeded: Bool) {
             mcpAudit.append(MCPAuditEntry(time: now(), method: String(method.prefix(128)), succeeded: succeeded))
             if mcpAudit.count > 100 {
@@ -1490,6 +1507,13 @@
         }
 
         private func appendEvent(_ event: MonitorEvent) {
+            if isolated, integrationUIActive, event.direction == .output, event.delivery == .sent,
+               case let .fader(index) = event.control, let message = event.message
+            {
+                integrationMotorLedger.append(["fader": index, "bytes": message.midi1Bytes,
+                                               "source": event.source.rawValue, "touched": session.state.isTouched(index)])
+            }
+
             events.insert(event, at: 0); trimEvents()
             do {
                 try monitorCapture?.append(event, map: session.state.map,

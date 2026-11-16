@@ -794,3 +794,9 @@
 "Motor safety audit not applicable" = "Motor safety audit not applicable";
 
 "Motor safety audit is not applicable to another device. No X-Touch addresses or motor conclusions are inferred." = "Motor safety audit is not applicable to another device. No X-Touch addresses or motor conclusions are inferred.";
+
+"Access token copied." = "Access token copied.";
+
+"Expanded" = "Expanded";
+
+"Collapsed" = "Collapsed";

@@ -17,7 +17,7 @@
                         drawing(pose, top: true).frame(width: 180, height: 240)
                     }
                     ForEach(Array(pose.joints.enumerated()), id: \.offset) { index, value in
-                        Text("J\(index + 1): \(value.formatted(.number.precision(.fractionLength(0 ... 2))))°").monospacedDigit()
+                        Text("J\(index + 1): \(value.formatted(.number.precision(.fractionLength(0 ... 2))))°").monospacedDigit().accessibilityIdentifier("arm.joint.\(index + 1)")
                     }
                     if let value = pose.wristRoll {
                         Text("J5: \(value.formatted())°")
@@ -36,6 +36,7 @@
                     }
                 } else {
                     Text(l.text("Reference-arm parameters arm.j1–arm.j4 in degrees are missing. Launch with --reference-arm-example to load the example."))
+                        .accessibilityIdentifier("arm.empty")
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 180)
                 }
             }

@@ -19,6 +19,7 @@
                     guard let self else { throw MCPError.denied }
                     return try routeMCP(request)
                 }
+                mcp.onReady = { [weak self] _ in self?.objectWillChange.send() }
                 mcp.onError = { [weak self] error in self?.serviceError(error) }
                 try mcp.start(port: mcpPort, token: token)
                 mcpEnabled = true
@@ -28,7 +29,11 @@
         func copyMCPToken() {
             do {
                 let token = try accessToken()
-                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(token, forType: .string)
+                // Isolated acceptance verifies the action/feedback without altering the user's clipboard.
+                if !isolated {
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(token, forType: .string)
+                }
+                didCopyMCPToken()
             } catch { serviceError(error) }
         }
 

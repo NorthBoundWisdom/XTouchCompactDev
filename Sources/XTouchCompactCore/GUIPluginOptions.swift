@@ -7,6 +7,9 @@ public struct GUIPluginOptions: Equatable, Sendable {
     public let selection: Set<OptionalBusinessPlugin>
 
     public init(arguments: [String]) throws {
+        if arguments.contains("--offscreen"), !arguments.contains("--integration-test") {
+            throw OffscreenRequiresIntegration()
+        }
         var selection = Set<OptionalBusinessPlugin>()
         for plugin in OptionalBusinessPlugin.allCases {
             let retired = "--\(plugin.rawValue)-plugin"
@@ -19,6 +22,13 @@ public struct GUIPluginOptions: Equatable, Sendable {
             }
         }
         self.selection = selection
+    }
+
+    public struct OffscreenRequiresIntegration: Error, LocalizedError, Equatable, Sendable {
+        public init() {}
+        public var errorDescription: String? {
+            "--offscreen requires --integration-test; ordinary launches cannot be hidden."
+        }
     }
 
     public struct InvalidOption: Error, LocalizedError, Equatable, Sendable {

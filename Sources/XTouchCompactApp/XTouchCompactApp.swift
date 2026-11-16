@@ -11,7 +11,9 @@
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
                 exit(2)
             }
-            if ProcessInfo.processInfo.arguments.contains("--startup-smoke=headless") {
+            if ProcessInfo.processInfo.arguments.contains("--offscreen") {
+                OffscreenIntegrationCommand.run()
+            } else if ProcessInfo.processInfo.arguments.contains("--startup-smoke=headless") {
                 NativeStartupSmoke.run()
             } else if ProcessInfo.processInfo.arguments.contains("--mcp-test-server") {
                 MCPIntegrationCommand.run()

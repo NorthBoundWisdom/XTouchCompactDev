@@ -61,15 +61,15 @@ Run setup, then `python3 configs/macos_workflow.py build`. Launch
 This disables CoreMIDI and workspace/Keychain access. MCP/OSC remain off until
 explicitly enabled. A UDP listener alone cannot arm OSC: trusted actual-state feedback and an independent heartbeat are required, and no production receiver configuration exists yet. Test the visible refusal without telemetry; use an explicit trusted fixture for armed-output expiry.
 
-| Case | Mouse procedure | Expected result | Actual result |
-| --- | --- | --- | --- |
-| Touch arbitration | Hold and drag F1; while held, write F1 through MCP or a second input device using the inspector; release | Cap stays with the hand, pending badge appears; release aligns to latest software target | Pending desktop access |
-| Layer mismatch | Inject a Layer B input while host is A using a fake MIDI service/test fixture; inspect warning and click Realign current layer in Connection | Mock: warning clears and Program Change is modeled without bank-target recall. Hardware-send: touched state refuses; after release and explicit retry, the assertion can cycle all nine motors | Pending desktop access |
-| Preset replacement | Write a non-default parameter, choose Audio example, cancel; repeat and confirm | Cancel preserves configuration/value; confirm uses pending preset defaults once, no motor recall | Pending desktop access |
-| OSC stop | Try enabling without trusted telemetry; separately use a trusted actual/heartbeat fixture and let the heartbeat age reach 0.3 s or invalidate the destination | Output disables, visible stop notification; re-enable is explicit | Pending desktop access |
-| MCP switch/token | Enable MCP in Settings, copy token, use local read-only integration client, disable | Loopback listener answers authenticated reads; disabling closes it; token is not logged | Pending desktop access |
-| Agent motor permission | With Agent writes on and motor moves off, `set_parameter` a fader parameter; then turn motor moves on and repeat | Off: value and panel target change, mock fader cap stays; on: cap moves. Motor toggle is disabled while Agent writes is off | Pending desktop access |
-| Value persistence | Change a fader and an encoder, quit normally, relaunch | Values and ring restored; fader caps do not move on launch; panel shows the restored target | Pending desktop access |
+| Case | Mouse procedure | Expected result | Operator visual result | Offscreen automated acceptance |
+| --- | --- | --- | --- | --- |
+| Touch arbitration | Hold and drag F1; while held, write F1 through MCP or a second input device using the inspector; release | Cap stays with the hand, pending badge appears; release aligns to latest software target | Pending desktop access | C-12: passed Mock touch/release + zero touched-motor sends; pointer gesture remains operator-only |
+| Layer mismatch | Inject a Layer B input while host is A using a fake MIDI service/test fixture; inspect warning and click Realign current layer in Connection | Mock: warning clears and Program Change is modeled without bank-target recall. Hardware-send: touched state refuses; after release and explicit retry, the assertion can cycle all nine motors | Pending desktop access | C-12: passed Mock B-input mismatch/explicit realignment; real controller still unverified |
+| Preset replacement | Write a non-default parameter, choose Audio example, cancel; repeat and confirm | Cancel preserves configuration/value; confirm uses pending preset defaults once, no motor recall | Pending desktop access | Manual: native menu/confirmation not opened or substituted |
+| OSC stop | Try enabling without trusted telemetry; separately use a trusted actual/heartbeat fixture and let the heartbeat age reach 0.3 s or invalidate the destination | Output disables, visible stop notification; re-enable is explicit | Pending desktop access | Partial: real enable refusal/notification/off verified; trusted live receiver expiry remains manual |
+| MCP switch/token | Enable MCP in Settings, copy token, use local read-only integration client, disable | Loopback listener answers authenticated reads; disabling closes it; token is not logged | Pending desktop access | Passed isolated enable/stop + token action/feedback; system clipboard is not read or written |
+| Agent motor permission | With Agent writes on and motor moves off, `set_parameter` a fader parameter; then turn motor moves on and repeat | Off: value and panel target change, mock fader cap stays; on: cap moves. Motor toggle is disabled while Agent writes is off | Pending desktop access | Passed real switches + guarded Agent requests; ungranted/touched motor ledger stays empty |
+| Value persistence | Change a fader and an encoder, quit normally, relaunch | Values and ring restored; fader caps do not move on launch; panel shows the restored target | Pending desktop access | Passed owned temporary workspace save/relaunch; restored target sends no startup motor commands |
 
 Deterministic coverage: PanelPresentationTests (mock gestures and held fader),
 ServiceTests (layer realignment and touch), ConfigurationImportTests (preset
@@ -97,3 +97,56 @@ and H6 (U2 refusal and U3 reconnect). H5 must distinguish USB power-up motion fr
 host output using listening-only mode. H4 (touch held during physical layer
 change) needs an agreed safe procedure first. Keep all actual-result cells pending
 until observed; isolated/fake-transport tests do not count as mouse acceptance.
+
+## C-12 offscreen automated acceptance (separate from operator sign-off)
+
+Run locally in a graphical macOS session with Accessibility permission:
+
+```sh
+python3 tools/run_offscreen_acceptance.py
+# Optional: --suite n5|organize|offline|panels --output build/ui-acceptance/<run>
+```
+
+The command builds once, creates uniquely identified ad-hoc test copies with
+LSUIElement=true before launch, then starts only `--integration-test --offscreen`
+owned instances. Ordinary `--offscreen` startup is rejected before app/device
+initialization. The Debug command additionally requires a session UUID, owned
+directory marker and an in-memory credential. It uses `.prohibited` activation
+policy, process-local activation interception, transparent/click-through non-key
+NSPanels, no CoreMIDI and no user workspace/Keychain. Any active/key/opaque/non-Mock
+state kills that owned instance and fails isolation. No global AX traversal,
+keyboard/mouse events, AppleScript or desktop pixels are used. Screenshots come
+from the owned hosting view's cacheDisplay, triggered through AX.
+
+The helper validates target parent PID, UID and integration/session arguments on
+every call. Queries/actions only traverse that PID's AX tree. Read-only loopback
+inspection cross-checks UI values and the dedicated Mock motor-send ledger.
+Mutations happen through AX production controls or labelled Mock input fixtures
+(touch, incoming layer evidence, guarded Agent request, injected clock/flush).
+Menus/confirmation actions are not replaced by alternate success buttons.
+
+| Script | Offscreen coverage | Boundary retained for manual acceptance |
+| --- | --- | --- |
+| tools/verify_n5_ui.py | Touch/release, no motor commands while touched/ungranted, explicit Mock layer realignment, OSC refusal banner, MCP toggle/isolated copy feedback, actual temporary storage/relaunch | Native preset menu/confirmation; trusted actual/heartbeat receiver; system clipboard contents; real pointer gesture |
+| tools/verify_organize_ui.py | Color, group highlight, fixture link follow/touch defer, fixture scene recall without motor sends, undo/redo | Non-key AX text edits/AXConfirm do not commit rename/group-name bindings; native link selection menus; pointer acceptance |
+| tools/verify_offline_ui.py | Frozen XTouch/BCR common evidence, complete/incomplete/N-A display, step/run/pause/reset, isolated replay distinct from live console | Native file picker is not opened; file bytes are loaded at isolated startup; pause uses an injected batch-yield gate, not elapsed sleeps |
+| tools/verify_new_panels_ui.py | Seeded library request-button availability, macro run outcomes, arm content visibility/pose/empty state, new MCP permissions and actual call rows | Native library load/delete confirmations; non-key name/save commit; native macro parameter picker/creation; full Parameters AX page transition; actual Panels menu-bar routing |
+
+A long Mock replay fixture is derived from the frozen XTouch sample, with valid
+new sequences/counts, to exercise pause deterministically between 128-event
+batches. The production default remains Task.yield. Source files are hashed
+before/after import. Seeded links/scenes/macros/library entries are setup data;
+their creation routes are never described as passed when those routes cannot be
+driven offscreen. Missing permission returns status `missing-permission`/exit77
+before launching any UI (also checked during actions), not pass or a test failure.
+
+This is **not in CI**. Permission-free parser/launch-policy/ownership checks are in
+BuildWorkflowTests; Core flag/one-unit adjustment and App token/yield regressions
+also run normally. Results are structured passed/manual-required/failed rows in
+summary.json; a manual row is never an operator sign-off. Canonical local evidence
+for this round: build/align3/acceptance-final/ (summary, actions, read-only state,
+app logs and owned-view PNGs). Earlier probes/failures are retained separately.
+
+The seven N5 operator cells above and TODO manual checkboxes remain pending.
+Offscreen observations add evidence; they do not verify native system dialogs,
+keyboard focus editing, mouse ergonomics, another running app or physical hardware.

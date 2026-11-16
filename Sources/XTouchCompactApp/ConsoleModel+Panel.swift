@@ -41,6 +41,7 @@
         var panelSnapshot: PanelSnapshot {
             let observation = observationPresentation
             return PanelSnapshot(
+                integrationSummary: isolated && integrationUIActive ? integrationSummary : [:],
                 surfaceStatus: surfaceStatusPresentation,
                 mockPedals: hardwareMode ? nil : MockPedalPresentation(expression: mock.expression, footswitchDown: mock.footswitchDown),
                 hardwareDisplayLayer: matchingLiveValues?.lastInputLayer ?? matchingCachedValues?.lastInputLayer,
@@ -80,7 +81,8 @@
                 lastMacroExecution: session.lastMacroExecution,
                 libraryEntries: libraryEntries, libraryWarning: libraryWarning, pendingLibraryAction: pendingLibraryAction,
                 configuration: session.parameters.configuration,
-                mcpPort: mcpPort,
+                mcpTokenCopyStatus: mcpTokenCopyStatus,
+                mcpPort: mcp.boundPort ?? mcpPort,
                 mcpEnabled: mcpEnabled, mcpWritesAllowed: mcpWritesAllowed, mcpSimulationControlAllowed: mcpSimulationControlAllowed,
                 mcpMotorWritesAllowed: mcpMotorWritesAllowed,
                 mcpAgentControlAllowed: mcpAgentControlAllowed, mcpAudit: mcpAudit,
@@ -344,6 +346,15 @@
                 requestLibraryDelete: { [weak self] in self?.requestLibraryAction($0, kind: .delete) },
                 confirmLibraryAction: { [weak self] in self?.confirmLibraryAction() },
                 cancelLibraryAction: { [weak self] in self?.cancelLibraryAction() },
+                integrationCapture: isolated && integrationUIActive ? integrationCaptureAction : nil,
+                integrationAdvance: isolated && integrationUIActive ? integrationAdvanceAction : nil,
+                integrationAgentWrite: isolated && !hardwareMode ? { [weak self] value in
+                    guard let self, !hardwareMode else { return }
+                    do { _ = try routeMCP(["method": "tools/call", "params": ["name": "set_parameter", "arguments": ["id": "a.Fader.1", "value": value]]]) }
+                    catch { serviceError(error) }
+                } : nil,
+                integrationPhysicalLayer: isolated && !hardwareMode ? { [weak self] layer in self?.setMockPhysicalLayerForPreview(layer) } : nil,
+                integrationFlushValues: isolated ? { [weak self] in self?.flushHardwareValues() } : nil,
                 setMCPEnabled: { [weak self] in self?.setMCPEnabled($0) },
                 setMCPWritesAllowed: { [weak self] in self?.mcpWritesAllowed = $0 },
                 setMCPSimulationControlAllowed: { [weak self] in self?.mcpSimulationControlAllowed = $0 },

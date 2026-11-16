@@ -58,7 +58,7 @@
             offlineReplayTask = Task { [weak self] in
                 while !Task.isCancelled {
                     guard self?.advanceOfflineReplayBatch(generation) == true else { return }
-                    await Task.yield()
+                    await self?.offlineReplayYield()
                 }
             }
         }

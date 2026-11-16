@@ -109,6 +109,9 @@
                                 Slider(value: Binding(get: { Double(fader.target) }, set: {
                                     intents.setOfflineReplayFader?(fader.index, UInt8($0.rounded()))
                                 }), in: 0 ... 127)
+                                    .accessibilityAdjustableAction { direction in
+                                        intents.setOfflineReplayFader?(fader.index, RawControlAdjustment.next(fader.target, increment: direction == .increment))
+                                    }
                                     .accessibilityIdentifier("offlineCaptureView.slider.\(fader.index)").disabled(loading || replay.isPlaying || intents.setOfflineReplayFader == nil)
                                     .accessibilityLabel(l.text("Replay test target F%@", String(fader.index)))
                                 Text(String(fader.target)).font(.caption.monospacedDigit()).frame(width: 30)

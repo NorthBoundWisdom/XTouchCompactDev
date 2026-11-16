@@ -53,6 +53,8 @@
                         Text(result.name).font(.headline)
                         ForEach(result.steps) { step in
                             Text(l.text("Step %@: %@", String(step.id), l.text(step.outcome.rawValue)))
+                                .accessibilityIdentifier("macros.result.\(step.id)")
+                                .accessibilityValue(l.text(step.outcome.rawValue))
                                 .font(.caption)
                         }
                     }
