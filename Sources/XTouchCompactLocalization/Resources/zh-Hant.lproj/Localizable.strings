@@ -700,3 +700,11 @@
 "待发送" = "待傳送";
 
 "Staged. Press Send to push it to the device." = "已暫存，按「傳送」後推送到裝置。";
+
+"Allow Agent task control" = "允許 Agent 啟動和中斷任務";
+
+"Remote write limit: 60 per second; HTTP limit: 60 requests per minute." = "遠端寫入限額：每秒 60 次；HTTP 限額：每分鐘 60 個請求。";
+
+"Recent MCP calls" = "最近的 MCP 呼叫";
+
+"Rejected" = "已拒絕";

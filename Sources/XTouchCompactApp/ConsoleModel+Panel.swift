@@ -73,6 +73,7 @@
                 mcpPort: mcpPort,
                 mcpEnabled: mcpEnabled, mcpWritesAllowed: mcpWritesAllowed, mcpSimulationControlAllowed: mcpSimulationControlAllowed,
                 mcpMotorWritesAllowed: mcpMotorWritesAllowed,
+                mcpAgentControlAllowed: mcpAgentControlAllowed, mcpAudit: mcpAudit,
                 oscEnabled: oscEnabled, oscHost: oscHost, oscPort: oscPort,
                 oscParameter: oscParameter, oscOutput: oscOutput,
                 agents: agents.slots, businessPlugins: plugins.businessPresentations,
@@ -328,6 +329,7 @@
                 setMCPWritesAllowed: { [weak self] in self?.mcpWritesAllowed = $0 },
                 setMCPSimulationControlAllowed: { [weak self] in self?.mcpSimulationControlAllowed = $0 },
                 setMCPMotorWritesAllowed: { [weak self] in self?.mcpMotorWritesAllowed = $0 },
+                setMCPAgentControlAllowed: { [weak self] in self?.mcpAgentControlAllowed = $0 },
                 copyMCPToken: { [weak self] in self?.copyMCPToken() },
                 setOSCEnabled: { [weak self] in self?.setOSCEnabled($0) },
                 configureOSC: { [weak self] host, port, parameter in

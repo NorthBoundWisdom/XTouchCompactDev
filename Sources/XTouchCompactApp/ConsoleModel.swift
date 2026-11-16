@@ -1,5 +1,6 @@
 #if os(macOS)
     import AgentPlugin
+    import AgentRemoteBinding
     import AppKit
     import Foundation
     import Network
@@ -94,6 +95,8 @@
         @Published var mcpEnabled = false
         @Published var mcpWritesAllowed = false
         @Published var mcpSimulationControlAllowed = false
+        @Published var mcpAgentControlAllowed = false
+        @Published private(set) var mcpAudit: [MCPAuditEntry] = []
         /// Session-only, default off: Agent parameter writes may move motors only when granted.
         @Published var mcpMotorWritesAllowed = false {
             didSet {
@@ -1014,6 +1017,53 @@
                 }
             }
             return withheldMotor ? .suppressed : .sent
+        }
+
+        var mcpAppliedEndpointSelection: JSONValue {
+            .object(["sourceID": appliedInputID.map { .number(Int($0)) } ?? .null,
+                     "destinationID": appliedOutputID.map { .number(Int($0)) } ?? .null])
+        }
+
+        func recordMCPCall(_ method: String, succeeded: Bool) {
+            mcpAudit.append(MCPAuditEntry(time: now(), method: String(method.prefix(128)), succeeded: succeeded))
+            if mcpAudit.count > 100 {
+                mcpAudit.removeFirst(mcpAudit.count - 100)
+            }
+        }
+
+        func consumeConsoleMCPWrites(_ count: Int) throws {
+            var candidate = surfaceWriteBudget
+            let time = runtimeTime
+            for _ in 0 ..< count {
+                guard candidate.consume(at: time) else { throw MCPToolFailure("Write rate exceeds 60 parameters per second") }
+            }
+            surfaceWriteBudget = candidate
+        }
+
+        func applyMCPBatch(_ entries: [MCPParameterWrite]) throws -> [JSONValue] {
+            guard mcpWritesAllowed else { throw MCPToolFailure("Agent writes are disabled") }
+            // Validate the complete operation on a value copy before any software or MIDI effect.
+            var candidate = session
+            for entry in entries {
+                _ = try candidate.setParameter(entry.id, value: entry.value, fromAgent: true, drivesMotors: mcpMotorWritesAllowed)
+            }
+            try consumeConsoleMCPWrites(entries.count)
+            return try entries.map { entry in
+                try applyAgentParameter(entry.id, value: entry.value)
+                return .object([
+                    "id": .string(entry.id), "value": .double(session.parameters.values[entry.id]!),
+                    "clamped": .bool(session.parameters.values[entry.id]! != entry.value),
+                    "deferredFaders": .array((1 ... 9).filter { session.state.isMotorPending($0) }.map(JSONValue.number)),
+                    "motorsWithheld": .array(mcpMotorWritesAllowed ? [] : session.motorFaders(boundTo: entry.id).map(JSONValue.number)),
+                ])
+            }
+        }
+
+        func interruptMCPAgent(_ slot: Int) throws {
+            var next = plugins
+            _ = try next.callRemote("surface_agent_interrupt", arguments: .object(["instance_id": .string("agent.mock"), "slot": .number(slot)]),
+                                    context: .init(time: runtimeTime, controlToken: UUID().uuidString, permitsOutputEnable: false))
+            try commitPlugins(next)
         }
 
         func applyAgentParameter(_ id: String, value: Double) throws {

@@ -31,6 +31,20 @@
                 Toggle(l.text("Allow simulation administration"), isOn: Binding(get: { snapshot.mcpSimulationControlAllowed }, set: { intents.setMCPSimulationControlAllowed?($0) }))
                 Text(l.text("Simulation reset also requires Agent writes. Remote time advance is unavailable while the host drives the clock."))
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle(l.text("Allow Agent task control"), isOn: Binding(get: { snapshot.mcpAgentControlAllowed }, set: { intents.setMCPAgentControlAllowed?($0) }))
+                    .disabled(!snapshot.mcpWritesAllowed)
+                Text(l.text("Remote write limit: 60 per second; HTTP limit: 60 requests per minute."))
+                    .font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup(l.text("Recent MCP calls")) {
+                    ForEach(snapshot.mcpAudit.reversed()) { entry in
+                        HStack {
+                            Text(entry.time, style: .time)
+                            Text(entry.method).monospaced()
+                            Spacer()
+                            Text(l.text(entry.succeeded ? "Completed" : "Rejected"))
+                        }.font(.caption)
+                    }
+                }
                 Button(l.text("Copy access token")) { intents.copyMCPToken?() }
             }
             Section(l.text("OSC output")) {

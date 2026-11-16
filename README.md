@@ -125,7 +125,7 @@ controllers, including the BCR2000, are rejected on import. Details:
    restored at launch.
 
 The GUI supports MCP `2026-07-28` and the `2025-11-25` handshake; see [protocol and migration](docs/MCP.md).
-Legacy tools are `get_state`, `set_parameter` and `agent_primary`. The shared `surface_` tools add
+Legacy tools are `get_state`, `set_parameter` and `agent_primary`. Aligned console tools add parameter reads, guarded batches/group reset, control/status/endpoint reads and Mock Agent lifecycle; [schemas and differences](docs/MCP.md#aligned-console-tools) are documented. The shared `surface_` tools add
 discovery, snapshots, actions and cursor-based events; see [shared tools](docs/SHARED_REMOTE.md).
 Agent writes use the same touch gate as your own input, and a remote agent cannot approve a waiting
 slot.

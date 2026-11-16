@@ -463,6 +463,8 @@
         var mcpWritesAllowed = false
         var mcpSimulationControlAllowed = false
         var mcpMotorWritesAllowed = false
+        var mcpAgentControlAllowed = false
+        var mcpAudit: [MCPAuditEntry] = []
         var oscEnabled = false
         var oscHost = "127.0.0.1"
         var oscPort: UInt16 = 9000
@@ -542,6 +544,7 @@
         var setMCPWritesAllowed: ((Bool) -> Void)?
         var setMCPSimulationControlAllowed: ((Bool) -> Void)?
         var setMCPMotorWritesAllowed: ((Bool) -> Void)?
+        var setMCPAgentControlAllowed: ((Bool) -> Void)?
         var copyMCPToken: (() -> Void)?
         var setOSCEnabled: ((Bool) -> Void)?
         var configureOSC: ((String, UInt16, String) -> Void)?

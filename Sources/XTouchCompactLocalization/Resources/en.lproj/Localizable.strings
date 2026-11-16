@@ -700,3 +700,11 @@
 "待发送" = "Staged";
 
 "Staged. Press Send to push it to the device." = "Staged. Press Send to push it to the device.";
+
+"Allow Agent task control" = "Allow Agent task control";
+
+"Remote write limit: 60 per second; HTTP limit: 60 requests per minute." = "Remote write limit: 60 per second; HTTP limit: 60 requests per minute.";
+
+"Recent MCP calls" = "Recent MCP calls";
+
+"Rejected" = "Rejected";

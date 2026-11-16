@@ -33,11 +33,30 @@
         }
 
         func routeMCP(_ request: [String: Any]) throws -> [String: Any] {
+            let name = (request["params"] as? [String: Any])?["name"] as? String
+            do {
+                let result = try routeMCPRequest(request)
+                if let name {
+                    recordMCPCall(name, succeeded: result["isError"] as? Bool != true)
+                }
+                return result
+            } catch {
+                if let name {
+                    recordMCPCall(name, succeeded: false)
+                }
+                throw error
+            }
+        }
+
+        private func routeMCPRequest(_ request: [String: Any]) throws -> [String: Any] {
             var tools: [[String: Any]] = [
                 ["name": "get_state", "description": "Read active layer, parameters and physical touch state.", "inputSchema": ["type": "object", "properties": [:], "additionalProperties": false]],
                 ["name": "set_parameter", "description": "Write a parameter; touched faders defer motors until release. Motors move only when the host grants Agent motor moves; otherwise motorsWithheld lists the faders left in place.", "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "value": ["type": "number"]], "required": ["id", "value"], "additionalProperties": false]],
                 ["name": "agent_primary", "description": "Start or interrupt a Mock Agent slot. Approval requires the user interface.", "inputSchema": ["type": "object", "properties": ["slot": ["type": "integer", "minimum": 1, "maximum": 8]], "required": ["slot"], "additionalProperties": false]],
             ]
+            tools += try ConsoleMCPTool.allCases.map {
+                try JSONSerialization.jsonObject(with: JSONEncoder().encode($0.definition)) as! [String: Any]
+            }
             tools += try plugins.remoteTools.map { tool in
                 try ["name": tool.name, "description": "Shared business plugin operation: " + tool.name,
                      "inputSchema": JSONSerialization.jsonObject(with: JSONEncoder().encode(tool.inputSchema)),
@@ -50,6 +69,16 @@
             guard request["method"] as? String == "tools/call" else { throw MCPError.methodNotFound }
             guard let params = request["params"] as? [String: Any], let name = params["name"] as? String else { throw MCPError.unknownTool }
             defer { logAgentCall(name) }
+            if let tool = ConsoleMCPTool(rawValue: name) {
+                let response: JSONValue
+                do {
+                    let arguments = try params["arguments"].map { try JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: $0, options: .fragmentsAllowed)) } ?? .object([:])
+                    response = try ConsoleMCPTool.result(callConsoleMCPTool(tool, arguments: arguments))
+                } catch {
+                    response = try ConsoleMCPTool.result(.object(["error": .string(error.localizedDescription)]), isError: true)
+                }
+                return try JSONSerialization.jsonObject(with: JSONEncoder().encode(response)) as! [String: Any]
+            }
             guard params["arguments"] == nil || params["arguments"] is [String: Any] else { throw MCPError.invalidRequest }
             let args = params["arguments"] as? [String: Any] ?? [:]
             if plugins.remoteTools.contains(where: { $0.name == name }) {
