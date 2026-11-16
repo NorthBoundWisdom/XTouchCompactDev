@@ -79,6 +79,17 @@ class CIJobBudgetTests(unittest.TestCase):
         self.assertFalse(failed)
         self.assertIn("no cold-cache exemption", text)
 
+    def test_post_reserve_is_stricter_without_changing_original_deadline(self):
+        _, failed = ci_job_budget.report(self.run_record(), self.job(), "", datetime(2026, 11, 16, 0, 4, 40, tzinfo=timezone.utc), 20)
+        self.assertFalse(failed)
+        text, failed = ci_job_budget.report(self.run_record(), self.job(), "", datetime(2026, 11, 16, 0, 4, 41, tzinfo=timezone.utc), 20)
+        self.assertTrue(failed)
+        self.assertIn("301.0s", text)
+        self.assertIn("hard limit remains 300s", text)
+        for reserve in (-1, 301):
+            with self.subTest(reserve=reserve), self.assertRaises(ValueError):
+                ci_job_budget.report(self.run_record(), self.job(), "", datetime(2026, 11, 16, tzinfo=timezone.utc), reserve)
+
     def test_matrix_job_is_selected_explicitly_and_summary_has_no_token(self):
         with tempfile.TemporaryDirectory() as temporary:
             summary = Path(temporary) / "summary.md"
@@ -108,10 +119,10 @@ class CIJobBudgetTests(unittest.TestCase):
     def test_workflows_report_always_and_save_after_compile_before_tests(self):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
         package = (ROOT / ".github/workflows/package.yml").read_text()
-        self.assertEqual(ci.count("name: Report whole-run wall time and enforce 300s budget"), 2)
+        self.assertEqual(ci.count("name: Report whole-run wall time and enforce 300s budget"), 3)
         self.assertEqual(package.count("name: Report whole-run wall time and enforce 300s budget"), 3)
         for text in (ci, package):
-            self.assertEqual(text.count("timeout-minutes: 20"), 2 if text == ci else 3)
+            self.assertEqual(text.count("timeout-minutes: 20"), 3)
             self.assertIn("outputs.cache-matched-key", text)
             self.assertIn("steps.compile.outcome == 'success'", text)
             self.assertIn("cold_build:", text)

@@ -86,7 +86,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RESTORED_BUILD_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
-        run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY"
+        run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY" --post-reserve-seconds 20
+  validation-macos:
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - run: xcodebuild -version
+      - run: python3 configs/check_swift_toolchain.py
+      - run: brew install swiftformat ruff
+      - run: python3 configs/format_repo.py --check
+      - run: python3 configs/restore_git_mtimes.py
+      - name: Cache both locked validation dependencies
+        uses: actions/cache@v6.1.0
+        with:
+          path: build/dependencies
+          key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
+      - run: python3 configs/setup_local_project.py
+      - run: python3 configs/check_host_layers.py
+      - run: python3 -B configs/run_python_workflow_tests.py --suite workflow
+      - name: Preserve Python per-case wall times
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: python-case-times-${{ github.job }}
+          path: build/ci-verification/tests/python-*-case-times.json
+          if-no-files-found: warn
+      - name: Report whole-run wall time and enforce 300s budget
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 configs/ci_job_budget.py --post-reserve-seconds 20
   app-macos:
     runs-on: macos-26
     timeout-minutes: 20
@@ -97,10 +132,9 @@ jobs:
         with:
           # Full history: every tracked file gets its last commit time.
           fetch-depth: 0
+          ref: ${{ github.sha }}
       - run: xcodebuild -version
       - run: python3 configs/check_swift_toolchain.py
-      - run: brew install swiftformat ruff
-      - run: python3 configs/format_repo.py --check
       # SwiftPM rebuilds any input whose mtime changed. Commit times keep a restored build incremental:
       # files untouched since the cached build look unchanged, changed files rebuild.
       - run: python3 configs/restore_git_mtimes.py
@@ -120,8 +154,6 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-${{ github.sha }}
           restore-keys: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-
       - run: python3 configs/setup_local_project.py
-      - run: python3 configs/check_host_layers.py
-      - run: python3 -B configs/run_python_workflow_tests.py --suite workflow
       # One build path for tests, executables and the app, so nothing is compiled twice.
       - name: Compile native targets and tests
         id: compile
@@ -132,6 +164,10 @@ jobs:
         with:
           path: build/swiftpm
           key: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-${{ github.sha }}
+      - name: Require exact validation success before native execution
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 configs/ci_validation_gate.py --producer validation-macos
       - run: swift test --build-path build/swiftpm --skip-build
       - name: Link every executable in the test build path
         run: swift build --build-path build/swiftpm
@@ -177,4 +213,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RESTORED_BUILD_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
-        run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY"
+        run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY" --post-reserve-seconds 20

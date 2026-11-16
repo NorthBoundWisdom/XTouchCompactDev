@@ -15,7 +15,9 @@ def instant(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def report(run, job, cache_key, now):
+def report(run, job, cache_key, now, post_reserve_seconds=0):
+    if not 0 <= post_reserve_seconds <= 300:
+        raise ValueError("Post-job reserve must be between zero and the unchanged 300s limit")
     elapsed = (now - instant(job["started_at"])).total_seconds()
     whole = (now - instant(run["created_at"])).total_seconds()
     warm = bool(cache_key)
@@ -39,16 +41,21 @@ def report(run, job, cache_key, now):
         "",
         "Scope: run creation through this live check, including queue/setup/cache time across jobs. Job wall time is diagnostic only. Other jobs and post-job cleanup may still be running; final completed created-to-updated wall time must also be independently checked after completion.",
     ]
-    failed = whole > 300
-    lines.append(
-        "**Whole-run 300s budget exceeded.**" if failed else "Whole-run live 300s budget met; no cold-cache exemption."
-    )
+    projected = whole + post_reserve_seconds
+    if post_reserve_seconds:
+        lines.append(f"Post-job reserve: {post_reserve_seconds:.1f}s; projected whole-run wall time: {projected:.1f}s (the hard limit remains 300s).")
+    failed = projected > 300
+    if failed and whole <= 300:
+        lines.append("**Required post-job reserve cannot fit inside the unchanged whole-run 300s budget.**")
+    else:
+        lines.append("**Whole-run 300s budget exceeded.**" if failed else "Whole-run live 300s budget met; no cold-cache exemption.")
     return "\n".join(lines) + "\n", failed
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-key", default="")
+    parser.add_argument("--post-reserve-seconds", type=float, default=0)
     args = parser.parse_args()
     env = os.environ
     base = f"{env.get('GITHUB_API_URL', 'https://api.github.com')}/repos/{env['GITHUB_REPOSITORY']}/actions/runs/{env['GITHUB_RUN_ID']}"
@@ -62,7 +69,7 @@ def main():
     matches = [job for job in jobs if job["name"] == env.get("CI_JOB_NAME", env["GITHUB_JOB"])]
     if len(matches) != 1:
         raise SystemExit("Cannot identify exactly one current job for timing")
-    body, failed = report(run, matches[0], args.cache_key, datetime.now(timezone.utc))
+    body, failed = report(run, matches[0], args.cache_key, datetime.now(timezone.utc), args.post_reserve_seconds)
     with Path(env["GITHUB_STEP_SUMMARY"]).open("a") as summary:
         summary.write(body)
     print(body)
