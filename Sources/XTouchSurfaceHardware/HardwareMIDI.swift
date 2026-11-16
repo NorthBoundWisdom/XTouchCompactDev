@@ -156,11 +156,19 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         private let configuration: CompactHardwareConfiguration
         private var consumed = 0
         private var words: [String] = []
+        private let timing: FileHandle?
         private var failSend = false
         private var connected = false
         private var relink = false
-        init(path: String, report: String?, configuration: CompactHardwareConfiguration) {
+        init(path: String, report: String?, timingPath: String?, configuration: CompactHardwareConfiguration) throws {
             self.path = path; self.report = report; self.configuration = configuration
+            if let timingPath {
+                let url = URL(fileURLWithPath: timingPath)
+                try Data().write(to: url, options: .withoutOverwriting)
+                timing = try FileHandle(forWritingTo: url)
+            } else {
+                timing = nil
+            }
         }
 
         func drain() throws -> [HardwareMIDIEvent] {
@@ -197,6 +205,19 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         func send(_ message: HardwareDisplayMessage) throws {
             guard !failSend else { throw ControlContractError("transport_error") }
             try words.append(String(format: "%08X", message.word(configuration: configuration)))
+            if let timing {
+                // Debug-only local transport receipt, not an observation or physical acknowledgement.
+                let kind: String, index: Int
+                switch message {
+                case let .buttonLight(button, _): kind = "indicator"; index = button
+                case let .ringDisplay(encoder, _): kind = "value"; index = encoder
+                case let .ringStyle(encoder, _): kind = "style"; index = encoder
+                }
+                let record: [String: Any] = ["event": "test-only-display-received", "server_time": ProcessInfo.processInfo.systemUptime,
+                                             "kind": kind, "index": index,
+                                             "send_index": words.count, "word": words.last!]
+                try timing.write(contentsOf: JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) + Data("\n".utf8))
+            }
             try writeReport()
         }
 

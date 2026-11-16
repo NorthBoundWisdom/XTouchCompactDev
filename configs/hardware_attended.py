@@ -142,6 +142,41 @@ def steps():
     return result
 
 
+def panel_supplement():
+    """Preparation only; the original nine-step field document stays byte-for-byte frozen."""
+    return {
+        "schema_version": 1,
+        "device": "XTouch Compact",
+        "status": "prepared only; not executed on hardware",
+        "qualification": "requires separate attended measurement; fake transport is not device evidence",
+        "steps": [
+            {
+                "id": "H-C-BUDGET",
+                "phase": "USB MIDI display delivery ceiling",
+                "sends_to_device": True,
+                "moves_motors": False,
+                "confirm_before": "User at the device has just confirmed this bounded display send stage",
+                "prerequisites": [
+                    "Explicit display permission; confirmed matching physical layer; no motor or Program Change output",
+                    "Begin with one ring; agree a small visible pattern and stop point before increasing the rate",
+                    "Do not alter device preset, learning map, channels, mode or qualification",
+                ],
+                "procedure": [
+                    "Record device/firmware/USB route and source commit; start/connection itself must send zero",
+                    "After fresh confirmation, measure 8/16/24 display targets at 5/10Hz for bounded 60s stages",
+                    "Record requested/transport-accepted counts, timestamps, captured order and human-observed pattern",
+                    "Transport acceptance is not device receipt; without device acknowledgement/readback retain delivery ceiling as unknown",
+                    "Stop on loss, reordering, wrong layer, unexpected motion or uncertainty; do not retry automatically",
+                ],
+                "expected_visible": "Only agreed rings/buttons follow the bounded pattern; faders never move",
+                "result": "unknown; real device ceiling needs attended measurement and cannot be inferred from fakes",
+                "automatic_command": None,
+                "on_fail": "Stop sending; record evidence and require a new attended plan",
+            }
+        ],
+    }
+
+
 def prepare():
     WORK.mkdir(parents=True, exist_ok=True)
     document = {
@@ -168,7 +203,15 @@ def prepare():
     (WORK / "field-context.json").write_text(
         json.dumps({"schema_version": 1, "repository_root": str(ROOT), "output_root": str(OUT)}, indent=2) + "\n"
     )
+    supplement = panel_supplement()
+    (OUT / "xtouch-panel-attended.json").write_text(json.dumps(supplement, ensure_ascii=False, indent=2) + "\n")
+    (OUT / "xtouch-panel-attended.md").write_text(
+        "# XTouch H status-panel attended supplement\n\nPrepared only; no physical stage executed.\n\n```json\n"
+        + json.dumps(supplement, ensure_ascii=False, indent=2)
+        + "\n```\n"
+    )
     return {
+        "supplements": ["xtouch-panel-attended.json", "xtouch-panel-attended.md"],
         "steps": len(document["steps"]),
         "sends": sum(row["sends_to_device"] for row in document["steps"]),
         "moves_motors": sum(row["moves_motors"] for row in document["steps"]),

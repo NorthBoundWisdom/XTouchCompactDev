@@ -220,7 +220,7 @@ private func removeOwnedReadyFile() {
                     guard let path = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] else { throw StartupError.invalidArguments }
                     audit.increment("scripted_factory_calls")
                     FileHandle.standardError.write(Data("TEST ONLY MIDI: not an entity device; no physical qualification.\n".utf8))
-                    return ScriptedHardwareMIDI(path: path, report: environment["XTOUCH_HARDWARE_TEST_REPORT"], configuration: configuration)
+                    return try ScriptedHardwareMIDI(path: path, report: environment["XTOUCH_HARDWARE_TEST_REPORT"], timingPath: environment["XTOUCH_HARDWARE_TEST_TIMING"], configuration: configuration)
                 #else
                     // A release service must never swap its device for a local script.
                     throw StartupError.testMIDIRequiresDebugBuild

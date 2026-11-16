@@ -136,6 +136,7 @@ def stage_shared_files(stage, root=ROOT, shared=SHARED):
     shutil.copy2(root / "examples/surface_simulator/minimal_consumer.py", stage)
     shutil.copy2(root / "docs/SURFACE_SIMULATOR.md", stage / "README.md")
     shutil.copy2(root / "docs/DISPLAY_TARGETS_SIMULATION.md", stage / "display-targets.md")
+    shutil.copy2(root / "docs/DISPLAY_BUDGET.md", stage / "display-budget.md")
     shutil.copy2(root / "configs/check_display_targets.py", stage / "check_display_targets.py")
     shutil.copy2(root / "configs/surface_plugins.lock.json", stage)
     for name, source in SHARED_FILES.items():

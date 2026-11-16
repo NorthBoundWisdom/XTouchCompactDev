@@ -86,6 +86,7 @@ def stage_files(stage):
         ("LICENSE", "LICENSE"),
         ("docs/SURFACE_HARDWARE.md", "README.md"),
         ("docs/DISPLAY_TARGETS_HARDWARE.md", "display-targets.md"),
+        ("docs/DISPLAY_BUDGET.md", "display-budget.md"),
         ("configs/check_display_targets.py", "check_display_targets.py"),
         ("configs/surface_plugins.lock.json", "surface_plugins.lock.json"),
         ("examples/surface_hardware/conformance-roles.json", "conformance-roles.json"),

@@ -655,3 +655,12 @@ The discover response already supplies stable IDs, feedback kinds and allowed ra
 current ring style and physical qualification are not discoverable contract fields.
 The table states those limits explicitly. No profile, simulation discovery bytes or
 physical qualification changed. Hardware faders still declare no feedback kinds.
+
+## Display budget (H-2)
+
+See packaged `display-budget.md` for 12 sustained real-process/fake-MIDI conditions,
+limits and the existing explicit feedback=300 recommendation. Defaults remain unchanged.
+Input event reading had no loss/gap but its worst measured p99 increased by 29.315ms.
+The reliable physical USB MIDI ceiling is unknown until attended measurement.
+The source checkout’s `configs/hardware_attended.py prepare` indexes the prepared-only
+`build/e/xtouch-panel-attended.{json,md}` supplement alongside the original nine steps.
