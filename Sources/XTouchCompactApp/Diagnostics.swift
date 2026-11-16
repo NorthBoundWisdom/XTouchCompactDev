@@ -13,9 +13,11 @@
             var receiveChannel: UInt8
             var lightProtocol: ButtonLightProtocol
             var listenOnly: Bool
+            var bindingGeneration: UInt64?
+            var knownHardwareLayer: CompactLayer?
         }
 
-        let id = UUID()
+        var id = UUID()
         var timestamp: Date
         var direction: Direction?
         var source: Source
@@ -31,6 +33,24 @@
         var endpointOrigin: CompactEndpointStamp?
         var deviceSource: DeviceSource?
         var dispatchContext: DispatchContext?
+        var monotonicTime: Double?
+        var transportMonotonicTime: Double?
+        var capturedBindingGeneration: UInt64?
+        var capturedHardwareLayer: CompactLayer?
+        var decodedInput: CompactInput?
+        var plannedProvenance: CompactPlannedProvenance?
+    }
+
+    struct ConsoleMutationFact: Equatable, Sendable {
+        var id: UUID
+        var operation: String
+        var targets: [String]
+        var accepted: Bool
+        var reason: String?
+        var routeGeneration: UInt64
+        var bindingGeneration: UInt64
+        var at: Double
+        var values: [String: Double]
     }
 
     struct ConsoleNotification: Identifiable, Equatable, Sendable {

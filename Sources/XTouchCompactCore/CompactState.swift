@@ -24,6 +24,8 @@ public struct CompactState: Sendable {
     // A position report becomes stale as soon as the host commands a motor movement.
     private var observedIsCurrent: Set<Int> = []
     private var pendingMotor: Set<Int> = []
+    private var pendingProvenance: [Int: CompactPlannedProvenance] = [:]
+    private var producedProvenance: [Int: CompactPlannedProvenance] = [:]
     private var desiredButtons: [Int: ButtonLight] = [:]
     private var lastSentButtons: [Int: ButtonLight] = [:]
     private var desiredRings: [Int: RingDisplay] = [:]
@@ -57,6 +59,15 @@ public struct CompactState: Sendable {
         pendingMotor.contains(index)
     }
 
+    /// Read-only native pending intent inventory, including the real desired payload.
+    public var pendingMotorFacts: [CompactPendingMotorFact] {
+        pendingMotor.sorted().map { CompactPendingMotorFact(index: $0, target: desiredFader[$0], observed: observedFaders[$0], touched: isTouched($0), provenance: pendingProvenance[$0]) }
+    }
+
+    public func producedMotorProvenance(_ index: Int) -> CompactPlannedProvenance? {
+        producedProvenance[index]
+    }
+
     public func desiredButton(_ index: Int) -> ButtonLight? {
         desiredButtons[index]
     }
@@ -87,7 +98,7 @@ public struct CompactState: Sendable {
         lastSentButtons.removeAll()
         lastSentRings.removeAll()
         lastSentStyles.removeAll()
-        pendingMotor.removeAll()
+        pendingMotor.removeAll(); pendingProvenance.removeAll(); producedProvenance.removeAll()
         pressedButtons.removeAll()
         pushedEncoders.removeAll()
         guard assertLayer else {
@@ -103,7 +114,7 @@ public struct CompactState: Sendable {
     /// Change host intent without claiming that a layer command reached the device.
     /// Used during listening and before the transport accepts an explicit assertion.
     public mutating func selectHostLayer(_ layer: CompactLayer) {
-        pendingMotor.removeAll()
+        pendingMotor.removeAll(); pendingProvenance.removeAll(); producedProvenance.removeAll()
         desiredFader.removeAll()
         invalidateMotorCommandHistory()
         self.layer = layer
@@ -142,7 +153,7 @@ public struct CompactState: Sendable {
             layerObservationRevision = observationRevision
         }
         if layerMismatch {
-            pendingMotor.removeAll()
+            pendingMotor.removeAll(); pendingProvenance.removeAll(); producedProvenance.removeAll()
         }
         switch event.control {
         case let .fader(i):
@@ -186,7 +197,9 @@ public struct CompactState: Sendable {
         guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
         guard !isTouched(index), !layerMismatch, pendingMotor.contains(index),
               let desired = desiredFader[index] else { return [] }
-        pendingMotor.remove(index)
+        let originalProvenance = pendingProvenance[index]
+        producedProvenance.removeValue(forKey: index)
+        pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index)
         if observedIsCurrent.contains(index), observedFaders[index] == desired {
             return []
         }
@@ -195,16 +208,23 @@ public struct CompactState: Sendable {
         }
         lastMotorCommands[index] = desired
         observedIsCurrent.remove(index)
-        return try [map.motorPosition(fader: index, value: desired)]
+        let command = try map.motorPosition(fader: index, value: desired)
+        producedProvenance[index] = originalProvenance
+        return [command]
     }
 
     /// When touched, only update desired state; never drive the motor against the user's hand.
-    public mutating func setFader(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
+    public mutating func setFader(_ index: Int, value: UInt8, provenance: CompactPlannedProvenance? = nil) throws -> [MIDIMessage] {
         guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
+        producedProvenance.removeValue(forKey: index)
         desiredFader[index] = value
-        guard !layerMismatch else { pendingMotor.remove(index); return [] }
+        if pendingMotor.contains(index) {
+            pendingProvenance[index] = provenance
+        }
+        guard !layerMismatch else { pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index); return [] }
         if isTouched(index) {
             pendingMotor.insert(index)
+            pendingProvenance[index] = provenance
             return []
         }
         if observedIsCurrent.contains(index) {
@@ -214,7 +234,9 @@ public struct CompactState: Sendable {
         }
         lastMotorCommands[index] = value
         observedIsCurrent.remove(index)
-        return try [map.motorPosition(fader: index, value: value)]
+        let command = try map.motorPosition(fader: index, value: value)
+        producedProvenance[index] = provenance
+        return [command]
     }
 
     /// Recheck generated feedback against the latest state before delivery. Later inputs
@@ -231,9 +253,10 @@ public struct CompactState: Sendable {
                         lastMotorCommands.removeValue(forKey: index)
                     }
                     if layerMismatch {
-                        pendingMotor.remove(index)
+                        pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index)
                     } else {
                         pendingMotor.insert(index)
+                        pendingProvenance[index] = producedProvenance[index]
                     }
                     continue
                 }
@@ -260,7 +283,7 @@ public struct CompactState: Sendable {
 
     /// Discard withheld writes without inventing a layer assertion or losing physical evidence.
     public mutating func discardPendingMotorWrites() {
-        pendingMotor.removeAll(); desiredFader.removeAll(); invalidateMotorCommandHistory()
+        pendingMotor.removeAll(); pendingProvenance.removeAll(); producedProvenance.removeAll(); desiredFader.removeAll(); invalidateMotorCommandHistory()
     }
 
     public mutating func setInputTouches(_ touches: Set<Int>) {
@@ -271,13 +294,15 @@ public struct CompactState: Sendable {
     /// touch release cannot replay an older target over a newer, motor-less write.
     public mutating func discardMotorIntent(_ index: Int) {
         desiredFader.removeValue(forKey: index)
-        pendingMotor.remove(index)
+        pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index)
+        producedProvenance.removeValue(forKey: index)
     }
 
     /// A physical fader report owns its own position. Parameter snapping must never echo a motor command.
     public mutating func acceptPhysicalFader(_ index: Int) {
         desiredFader.removeValue(forKey: index)
-        pendingMotor.remove(index)
+        pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index)
+        producedProvenance.removeValue(forKey: index)
         lastMotorCommands.removeValue(forKey: index)
     }
 
@@ -363,5 +388,22 @@ public extension CompactState {
         next.desiredRings = desiredRings
         next.desiredStyles = desiredStyles
         return next
+    }
+}
+
+public struct CompactPendingMotorFact: Equatable, Sendable {
+    public let index: Int
+    public let target: UInt8?
+    public let observed: UInt8?
+    public let touched: Bool
+    public let provenance: CompactPlannedProvenance?
+    /// Unknown origin cannot prove consumption; payload equality alone is insufficient.
+    public func matchesProducedPlan(_ message: MIDIMessage, provenance produced: CompactPlannedProvenance?, map: FactoryStandardMap) throws -> Bool {
+        guard let provenance, let produced, provenance == produced, let target else { return false }
+        return try map.motorPosition(fader: index, value: target) == message
+    }
+
+    public init(index: Int, target: UInt8?, observed: UInt8?, touched: Bool, provenance: CompactPlannedProvenance?) {
+        self.index = index; self.target = target; self.observed = observed; self.touched = touched; self.provenance = provenance
     }
 }

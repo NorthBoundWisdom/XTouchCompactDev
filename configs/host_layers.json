@@ -15,6 +15,7 @@
     "Sources/XTouchCompactApp/ConsoleModel+Panel.swift": "composition",
     "Sources/XTouchCompactApp/ConsoleModel+UIInspection.swift": "composition",
     "Sources/XTouchCompactApp/ConsoleModel.swift": "composition",
+    "Sources/XTouchCompactApp/ConsoleNeutralProjection.swift": "composition",
     "Sources/XTouchCompactApp/ContentView.swift": "composition",
     "Sources/XTouchCompactApp/ControlInspectorView.swift": "composition",
     "Sources/XTouchCompactApp/CoreMIDIService.swift": "transport",
@@ -75,6 +76,7 @@
     "Sources/XTouchCompactCore/MIDIAddress.swift": "device",
     "Sources/XTouchCompactCore/MockXTouchCompact.swift": "device",
     "Sources/XTouchCompactCore/Models.swift": "values",
+    "Sources/XTouchCompactCore/NeutralDeviceProjection.swift": "device",
     "Sources/XTouchCompactCore/NonMotorTests.swift": "device",
     "Sources/XTouchCompactCore/OSC.swift": "bridge",
     "Sources/XTouchCompactCore/ParameterConfigurationAdapter.swift": "bridge",
@@ -116,7 +118,8 @@
       "dependencies": [
         "CompactRemoteMIDI",
         "XTouchCompactCore",
-        "XTouchCompactLocalization"
+        "XTouchCompactLocalization",
+        "SurfaceDeviceContracts"
       ]
     },
     "XTouchCompactCore": {
@@ -132,7 +135,8 @@
         "RobotPlugin",
         "RobotRemoteBinding",
         "SurfaceControlContracts",
-        "SurfacePluginContracts"
+        "SurfacePluginContracts",
+        "SurfaceDeviceContracts"
       ]
     },
     "XTouchCompactLocalization": {

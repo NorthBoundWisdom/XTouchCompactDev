@@ -6,6 +6,7 @@
     import Network
     import OutputRemoteBinding
     import RemoteToolContracts
+    import SurfaceDeviceContracts
     import SurfacePluginContracts
     import SwiftUI
     import UniformTypeIdentifiers
@@ -86,7 +87,7 @@
             }
         }
 
-        private(set) var plugins = try! CompactPluginHost.agent()
+        private(set) var plugins: CompactPluginHost
         var agents: AgentPresentation {
             AgentPresentation(plugins)
         }
@@ -156,6 +157,13 @@
         @Published private(set) var libraryEntries: [SavedConfiguration] = []
         @Published private(set) var libraryWarning: LocalizedMessage?
         @Published private(set) var pendingLibraryAction: ConfigurationLibraryRequest?
+        private let makeRecordID: () -> UUID
+        private let makeOperationID: () -> UUID
+        private let eventMonotonicClock: () -> Double
+        private let plannedIntentIDFactory: () -> String
+        private let projectionInstanceID: String
+        var observeMonitorEvent: ((MonitorEvent) -> Void)?
+        var observeMutation: ((ConsoleMutationFact) -> Void)?
         private let now: () -> Date
         private let runtimeClock: () -> TimeInterval
         let offlineReplayYield: @MainActor () async -> Void
@@ -177,8 +185,17 @@
              mcpPort: UInt16 = 8765,
              offlineReplayYield: @escaping @MainActor () async -> Void = { await Task.yield() },
              runtimeSleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-             evidenceWriterFactory: @escaping (URL) throws -> any EvidenceWriting = { try ExclusiveEvidenceFile(url: $0) })
+             evidenceWriterFactory: @escaping (URL) throws -> any EvidenceWriting = { try ExclusiveEvidenceFile(url: $0) },
+             eventMonotonicClock: (() -> Double)? = nil, recordIDFactory: @escaping () -> UUID = UUID.init,
+             operationIDFactory: @escaping () -> UUID = UUID.init, pluginRegistryEpoch: String? = nil,
+             plannedIntentIDFactory: @escaping () -> String = { UUID().uuidString }, projectionInstanceID: String = "xtouch.console")
         {
+            self.plannedIntentIDFactory = plannedIntentIDFactory
+            self.projectionInstanceID = projectionInstanceID
+            makeRecordID = recordIDFactory
+            makeOperationID = operationIDFactory
+            self.eventMonotonicClock = eventMonotonicClock ?? { ProcessInfo.processInfo.systemUptime }
+            plugins = try! CompactPluginHost.agent(registryEpoch: pluginRegistryEpoch)
             self.offlineReplayYield = offlineReplayYield
             self.mcpPort = mcpPort
             self.midi = midi ?? CoreMIDIService()
@@ -186,7 +203,7 @@
             let wallClock = now ?? Date.init
             self.now = wallClock
             mcp = LocalMCPServer(now: wallClock)
-            runtimeClock = now.map { injected in { injected().timeIntervalSince1970 } } ?? { ProcessInfo.processInfo.systemUptime }
+            runtimeClock = eventMonotonicClock ?? (now.map { injected in { injected().timeIntervalSince1970 } } ?? { ProcessInfo.processInfo.systemUptime })
             self.runtimeSleep = runtimeSleep
             self.evidenceWriterFactory = evidenceWriterFactory
             self.isolated = isolated
@@ -196,7 +213,7 @@
             let map = try! FactoryStandardMap() // Constant channels are valid by construction.
             session = CompactSession(map: map, lightProtocol: .manual)
             mock = MockXTouchCompact(map: map, lightProtocol: .manual)
-            self.midi.onMessages = { [weak self] messages in self?.receive(messages) }
+            self.midi.onMessages = { [weak self] messages in self?.receive(messages, receiptAt: self?.eventMonotonicClock()) }
             if let routed = self.midi as? any RoutedMIDIService {
                 routed.onRoutedMessages = { [weak self] envelope in self?.receive(envelope) }
             }
@@ -240,7 +257,7 @@
                     }
                     observationInputID = newInput
                 }
-                appendEvent(MonitorEvent(timestamp: self.now(), direction: nil, source: .application, message: nil,
+                appendEvent(MonitorEvent(id: makeRecordID(), timestamp: self.now(), direction: nil, source: .application, message: nil,
                                          control: nil, hostLayer: layer, ignored: false, text: LocalizedMessage("MIDI connection changed"), connection: snapshot))
                 if routeChanged {
                     hardwareFeedbackNeedsSync = true
@@ -427,7 +444,7 @@
             do {
                 guard hardwareMode, isObservingHardware else { throw NonMotorTestError.permissionRevoked }
                 var candidate = nonMotorTests
-                try candidate.arm(prerequisites, context: nonMotorContext, id: UUID().uuidString)
+                try candidate.arm(prerequisites, context: nonMotorContext, id: makeOperationID().uuidString)
                 guard let approval = candidate.approval else { return }
                 recordNonMotorAudit(NonMotorTestAudit(phase: "permission-granted", approval: approval))
                 guard checkpointNonMotorEvidence() else { return }
@@ -451,7 +468,7 @@
             do {
                 guard hardwareMode, isObservingHardware else { throw NonMotorTestError.permissionRevoked }
                 let request = try nonMotorTests.authorize(command, context: nonMotorContext)
-                let id = UUID().uuidString
+                let id = makeOperationID().uuidString
                 nonMotorTests.add(request, id: id, at: now())
                 let audit = NonMotorTestAudit(phase: "command-requested", approval: request.approval,
                                               attemptID: id, command: command, message: request.message)
@@ -486,7 +503,7 @@
         }
 
         private func recordNonMotorAudit(_ audit: NonMotorTestAudit) {
-            appendEvent(MonitorEvent(timestamp: now(), direction: nil, source: .application, message: nil,
+            appendEvent(MonitorEvent(id: makeRecordID(), timestamp: now(), direction: nil, source: .application, message: nil,
                                      control: audit.command?.control, hostLayer: layer, ignored: false,
                                      text: LocalizedMessage("Nonmotor test: %@", audit.phase), nonMotorTest: audit))
         }
@@ -552,7 +569,7 @@
         func installOptionalPlugins(_ selection: Set<OptionalBusinessPlugin>) {
             do {
                 var next = plugins
-                try next.installOptional(selection, lifetimeID: UUID().uuidString, at: runtimeTime)
+                try next.installOptional(selection, lifetimeID: makeOperationID().uuidString, at: runtimeTime)
                 try commitPlugins(next)
             } catch { self.error = error }
         }
@@ -617,7 +634,7 @@
             }
             var next = plugins
             let response = try next.callRemote(name, arguments: arguments,
-                                               context: .init(time: runtimeTime, controlToken: UUID().uuidString, permitsOutputEnable: false))
+                                               context: .init(time: runtimeTime, controlToken: makeOperationID().uuidString, permitsOutputEnable: false))
             try commitPlugins(next)
             return response
         }
@@ -731,22 +748,54 @@
             }
         }
 
+        private func capturePlannedProvenance(_ origin: ParameterWriter) throws -> CompactPlannedProvenance {
+            let stamp = hardwareMode ? CompactEndpointStamp(endpoint: connection.connectedOutput, generation: connection.generation) : .simulation
+            let context = try CompactNeutralProjection.context(instanceID: projectionInstanceID,
+                                                               routeGeneration: stamp.generation, bindingGeneration: session.writeAuthorization.bindingGeneration,
+                                                               hostLayer: session.state.layer, knownHardwareLayer: session.state.observedLayer,
+                                                               hardwareEvidenceIsPrior: origin == .hardware)
+            return try CompactPlannedProvenance(id: plannedIntentIDFactory(), source: hardwareMode ? .hardware : .simulation,
+                                                endpoint: ConsoleNeutralProjection.endpoint(stamp), context: context, origin: origin, at: eventMonotonicClock())
+        }
+
+        private func mutationFact(operation: String, targets: [String], accepted: Bool, reason: String?,
+                                  scope: ParameterWriteAuthorization, at: Double, values: [String: Double]) -> ConsoleMutationFact?
+        {
+            guard observeMutation != nil else { return nil }
+            return ConsoleMutationFact(id: makeRecordID(), operation: operation, targets: targets, accepted: accepted,
+                                       reason: reason, routeGeneration: scope.routeGeneration,
+                                       bindingGeneration: scope.bindingGeneration, at: at, values: values)
+        }
+
         func setParameter(_ id: String, value: Double, fromAgent: Bool = false) {
+            let scope = session.writeAuthorization, at = eventMonotonicClock()
             do {
                 var candidate = session
-                let messages = try candidate.setParameter(id, value: value, fromAgent: fromAgent,
-                                                          drivesMotors: !fromAgent || mcpMotorWritesAllowed)
+                let provenance = try capturePlannedProvenance(fromAgent ? .remote : .interface)
+                let messages = try candidate.withPlannedProvenance(provenance) {
+                    try $0.setParameter(id, value: value, fromAgent: fromAgent, drivesMotors: !fromAgent || mcpMotorWritesAllowed)
+                }
                 try validateParameterAuthority(id, value: value, writer: fromAgent ? .remote : .interface)
                 for (linked, proposed) in candidate.parameters.values where linked != id && session.parameters.values[linked] != proposed {
                     try validateParameterAuthority(linked, value: proposed, writer: fromAgent ? .remote : .interface)
                 }
                 session = candidate
+                let fact = mutationFact(operation: "set_parameter", targets: [id], accepted: true, reason: nil,
+                                        scope: scope, at: eventMonotonicClock(), values: [id: candidate.parameters.values[id]!])
                 if fromAgent {
                     sendAgentFeedback(messages)
                 } else {
                     send(messages); updateBank()
                 }
-            } catch { self.error = error }
+                if let fact {
+                    observeMutation?(fact)
+                }
+            } catch {
+                self.error = error
+                if let fact = mutationFact(operation: "set_parameter", targets: [id], accepted: false, reason: String(describing: error), scope: scope, at: at, values: [:]) {
+                    observeMutation?(fact)
+                }
+            }
         }
 
         @Published private(set) var pendingPreset: SurfaceConfiguration?
@@ -985,7 +1034,7 @@
 
         private func performMockGesture(_ operation: (inout MockXTouchCompact) throws -> [MIDIMessage]) {
             guard !hardwareMode else { return }
-            do { try receive(operation(&mock), fromMock: true) }
+            do { try receive(operation(&mock), fromMock: true, receiptAt: eventMonotonicClock()) }
             catch { self.error = error }
         }
 
@@ -1046,10 +1095,10 @@
                 }
                 return
             }
-            receive(envelope.messages, endpointOrigin: envelope.origin)
+            receive(envelope.messages, endpointOrigin: envelope.origin, receiptAt: envelope.at)
         }
 
-        private func receive(_ messages: [MIDIMessage], fromMock: Bool = false, endpointOrigin: CompactEndpointStamp? = nil) {
+        private func receive(_ messages: [MIDIMessage], fromMock: Bool = false, endpointOrigin: CompactEndpointStamp? = nil, receiptAt: Double? = nil) {
             // Legacy injected transports have no provenance claim. Real transports always supply an envelope.
             let inputOrigin = endpointOrigin ?? (fromMock ? .simulation : .init(endpoint: nil, generation: 0))
             if fromMock, !messages.isEmpty {
@@ -1069,7 +1118,7 @@
                     }; return false
                 } == true
                 record(message, direction: .input, source: fromMock ? .mock : .hardware,
-                       ignored: !safetyOnly && (hardwareMode == fromMock || event == nil), endpointOrigin: inputOrigin)
+                       ignored: !safetyOnly && (hardwareMode == fromMock || event == nil), endpointOrigin: inputOrigin, recordedAt: receiptAt)
                 if !fromMock, isObservingHardware {
                     hardwareObserver.receive(message, map: session.state.map, at: now())
                 }
@@ -1083,7 +1132,8 @@
                 var candidate = session
                 let update: CompactSessionUpdate
                 do {
-                    update = try candidate.receive(messages)
+                    let provenance = try capturePlannedProvenance(.hardware)
+                    update = try candidate.withPlannedProvenance(provenance) { try $0.receive(messages) }
                     for (id, value) in candidate.parameters.values where session.parameters.values[id] != value {
                         try validateParameterAuthority(id, value: value, writer: .hardware)
                     }
@@ -1111,9 +1161,11 @@
         }
 
         func apply(writer: ParameterWriter = .interface, _ operation: (inout CompactSession) throws -> [MIDIMessage]) {
+            let scope = session.writeAuthorization, at = eventMonotonicClock()
             do {
                 var next = session
-                let messages = try operation(&next)
+                let provenance = try capturePlannedProvenance(writer)
+                let messages = try next.withPlannedProvenance(provenance, operation)
                 try validateHardwareLayerAssertion(messages)
                 for (id, value) in next.parameters.values where session.parameters.values[id] != value {
                     try validateParameterAuthority(id, value: value, writer: writer)
@@ -1123,10 +1175,20 @@
                     context.allowsValues = false; context.allowsDisplay = false; context.allowsMechanisms = false
                     next.configureWriteAuthorization(context)
                 }
+                let changes = next.parameters.values.filter { session.parameters.values[$0.key] != $0.value }
                 session = next
+                let fact = changes.isEmpty ? nil : mutationFact(operation: "apply", targets: changes.keys.sorted(), accepted: true, reason: nil, scope: scope, at: eventMonotonicClock(), values: changes)
                 send(messages)
                 updateBank()
-            } catch { self.error = error }
+                if let fact {
+                    observeMutation?(fact)
+                }
+            } catch {
+                self.error = error
+                if let fact = mutationFact(operation: "apply", targets: [], accepted: false, reason: String(describing: error), scope: scope, at: at, values: [:]) {
+                    observeMutation?(fact)
+                }
+            }
         }
 
         private func validateHardwareLayerAssertion(_ messages: [MIDIMessage]) throws {
@@ -1145,6 +1207,8 @@
                           testAudit: NonMotorTestAudit? = nil) -> MonitorEvent.Delivery
         {
             let authorization = session.writeAuthorization
+            let dispatchAt = eventMonotonicClock()
+            let dispatchKnownHardwareLayer = session.state.observedLayer
             let dispatchHostLayer = session.state.layer
             let dispatchHardwareMode = hardwareMode
             let dispatchListenOnly = listenOnly
@@ -1152,6 +1216,13 @@
             let dispatchAgentMotorPermission = mcpMotorWritesAllowed
             let dispatchMap = session.state.map
             let dispatchLightProtocol = session.state.lightProtocol
+            let plannedByFader = Dictionary(uniqueKeysWithValues: (1 ... 9).map { ($0, session.state.producedMotorProvenance($0)) })
+            func plannedForMessage(_ message: MIDIMessage) -> CompactPlannedProvenance? {
+                if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
+                    return plannedByFader[Int(number)] ?? nil
+                }
+                return nil
+            }
             let route = connection // Pin the entire batch, including synchronous service callbacks.
             let outputOrigin = hardwareMode ? CompactEndpointStamp(endpoint: route.connectedOutput, generation: route.generation) : .simulation
             let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
@@ -1187,7 +1258,7 @@
                         faderMotorDelivery[Int(number)] = .staged
                     }
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
-                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                 }
                 return .suppressed
             }
@@ -1210,7 +1281,7 @@
                       isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay
                 else {
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
-                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                     if hardwareMode {
                         hardwareFeedbackNeedsSync = true
                     }
@@ -1226,7 +1297,7 @@
                         faderMotorDelivery[Int(number)] = .refused
                     }
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
-                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                     continue
                 }
                 // A preceding transport call can synchronously deliver a new touch edge.
@@ -1235,18 +1306,18 @@
                     self.error = error
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
-                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                     return .suppressed
                 }
                 guard !session.filterFeedbackForDelivery([message]).isEmpty else {
                     withheldMotor = true
-                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                     continue
                 }
                 guard hardwareMode else {
                     mock.receive(message)
                     mockMIDIInAt = now()
-                    record(message, direction: .output, source: source, delivery: .sent, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                    record(message, direction: .output, source: source, delivery: .sent, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: eventMonotonicClock())
                     continue
                 }
                 if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
@@ -1257,16 +1328,19 @@
                 }
                 let observationCutoff = session.state.observationRevision
                 let receiptCutoff = hardwareReceiptRevision
+                var transportAttempted = false
                 do {
                     if let authorizedTest {
+                        transportAttempted = true
                         try midi.sendPinned(message, inputID: authorizedTest.approval.inputID, outputID: authorizedTest.approval.outputID, generation: authorizedTest.approval.generation)
                     } else {
                         guard let inputID = route.connectedInput?.id,
                               let outputID = route.connectedOutput?.id else { throw ConsoleError.noConnection }
+                        transportAttempted = true
                         try midi.sendPinned(message, inputID: inputID, outputID: outputID, generation: route.generation)
                     }
                     record(message, direction: .output, source: source, delivery: .sent,
-                           nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                           nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: eventMonotonicClock())
                     // Acceptance belongs to the pinned old scope. A synchronous callback may
                     // already own a different route/binding/mode; old completion cannot edit it.
                     guard scopeIsCurrent() else {
@@ -1279,7 +1353,7 @@
                 } catch {
                     guard scopeIsCurrent() else {
                         record(message, direction: .output, source: source, ignored: true, delivery: .failed,
-                               nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                               nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: transportAttempted ? eventMonotonicClock() : nil)
                         return .failed
                     }
                     self.error = error
@@ -1289,7 +1363,7 @@
                         faderMotorDelivery[Int(number)] = .failed
                     }
                     record(message, direction: .output, source: source, ignored: true, delivery: .failed,
-                           nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly)
+                           nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: transportAttempted ? eventMonotonicClock() : nil)
                     hardwareFeedbackNeedsSync = true
                     session.discardPendingMotorWrites()
                     session.invalidateTransportFeedback()
@@ -1323,7 +1397,7 @@
         }
 
         func recordMCPCall(_ method: String, succeeded: Bool) {
-            mcpAudit.append(MCPAuditEntry(time: now(), method: String(method.prefix(128)), succeeded: succeeded))
+            mcpAudit.append(MCPAuditEntry(id: makeRecordID(), time: now(), method: String(method.prefix(128)), succeeded: succeeded))
             if mcpAudit.count > 100 {
                 mcpAudit.removeFirst(mcpAudit.count - 100)
             }
@@ -1360,19 +1434,32 @@
         func interruptMCPAgent(_ slot: Int) throws {
             var next = plugins
             _ = try next.callRemote("surface_agent_interrupt", arguments: .object(["instance_id": .string("agent.mock"), "slot": .number(slot)]),
-                                    context: .init(time: runtimeTime, controlToken: UUID().uuidString, permitsOutputEnable: false))
+                                    context: .init(time: runtimeTime, controlToken: makeOperationID().uuidString, permitsOutputEnable: false))
             try commitPlugins(next)
         }
 
         func applyAgentParameter(_ id: String, value: Double) throws {
-            var candidate = session
-            let messages = try candidate.setParameter(id, value: value, fromAgent: true, drivesMotors: mcpMotorWritesAllowed)
-            try validateParameterAuthority(id, value: value, writer: .remote)
-            for (linked, proposed) in candidate.parameters.values where linked != id && session.parameters.values[linked] != proposed {
-                try validateParameterAuthority(linked, value: proposed, writer: .remote)
+            let scope = session.writeAuthorization, at = eventMonotonicClock()
+            do {
+                var candidate = session
+                let provenance = try capturePlannedProvenance(.remote)
+                let messages = try candidate.withPlannedProvenance(provenance) { try $0.setParameter(id, value: value, fromAgent: true, drivesMotors: mcpMotorWritesAllowed) }
+                try validateParameterAuthority(id, value: value, writer: .remote)
+                for (linked, proposed) in candidate.parameters.values where linked != id && session.parameters.values[linked] != proposed {
+                    try validateParameterAuthority(linked, value: proposed, writer: .remote)
+                }
+                session = candidate
+                let fact = mutationFact(operation: "set_parameter", targets: [id], accepted: true, reason: nil, scope: scope, at: eventMonotonicClock(), values: [id: candidate.parameters.values[id]!])
+                sendAgentFeedback(messages)
+                if let fact {
+                    observeMutation?(fact)
+                }
+            } catch {
+                if let fact = mutationFact(operation: "set_parameter", targets: [id], accepted: false, reason: String(describing: error), scope: scope, at: at, values: [:]) {
+                    observeMutation?(fact)
+                }
+                throw error
             }
-            session = candidate
-            sendAgentFeedback(messages)
         }
 
         func notificationsForOSC(_ key: String) {
@@ -1389,7 +1476,7 @@
         }
 
         func logAgentCall(_ name: String) {
-            appendEvent(MonitorEvent(timestamp: now(), direction: nil, source: .agent, message: nil, control: nil,
+            appendEvent(MonitorEvent(id: makeRecordID(), timestamp: now(), direction: nil, source: .agent, message: nil, control: nil,
                                      hostLayer: layer, ignored: false, text: LocalizedMessage("Agent call: %@", name)))
         }
 
@@ -1422,7 +1509,7 @@
             case let .encoder(index): raw = bank.encoders[index - 1]
             default: return // Buttons and pushes carry actions, not a single continuous value.
             }
-            let id = "\(layer.rawValue).\(control.shortName).\(UUID().uuidString.prefix(8))"
+            let id = "\(layer.rawValue).\(control.shortName).\(makeOperationID().uuidString.prefix(8))"
             configuration.parameters.append(XTouchCompactCore.ParameterDefinition(id: id, name: trimmed, group: "Layer \(layer.rawValue.uppercased())",
                                                                                   defaultValue: Double(raw)))
             configuration.assignments.removeAll { $0.control == control && $0.layer == layer }
@@ -1465,7 +1552,7 @@
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let existing = session.parameters.configuration.scenes?.first { $0.name == trimmed }
             do {
-                try session.captureScene(id: existing?.id ?? UUID().uuidString, name: trimmed)
+                try session.captureScene(id: existing?.id ?? makeOperationID().uuidString, name: trimmed)
                 saveWorkspace()
             } catch { self.error = error }
         }
@@ -1680,7 +1767,7 @@
         private func record(_ message: MIDIMessage, direction: MonitorEvent.Direction,
                             source: MonitorEvent.Source, ignored: Bool = false, delivery: MonitorEvent.Delivery? = nil,
                             nonMotorTest: NonMotorTestAudit? = nil, controlOverride: CompactControl? = nil, endpointOrigin: CompactEndpointStamp? = nil,
-                            recordedHostLayer: CompactLayer? = nil, outputHardwareMode: Bool? = nil, recordedMap: FactoryStandardMap? = nil, recordedLightProtocol: ButtonLightProtocol? = nil, recordedListenOnly: Bool? = nil)
+                            recordedHostLayer: CompactLayer? = nil, outputHardwareMode: Bool? = nil, recordedMap: FactoryStandardMap? = nil, recordedLightProtocol: ButtonLightProtocol? = nil, recordedListenOnly: Bool? = nil, recordedAt: Double? = nil, recordedBindingGeneration: UInt64? = nil, recordedHardwareLayer: CompactLayer? = nil, recordedPlannedProvenance: CompactPlannedProvenance? = nil, recordedTransportAt: Double? = nil)
         {
             let map = recordedMap ?? session.state.map
             let control: CompactControl?
@@ -1714,12 +1801,12 @@
                 : ((outputHardwareMode ?? hardwareMode) ? .hardware : .simulation)
             let dispatchContext: MonitorEvent.DispatchContext? = direction == .output
                 ? .init(transmitChannel: map.transmitChannel, receiveChannel: map.globalReceiveChannel,
-                        lightProtocol: recordedLightProtocol ?? session.state.lightProtocol, listenOnly: recordedListenOnly ?? listenOnly) : nil
-            appendEvent(MonitorEvent(timestamp: now(), direction: direction, source: source, message: message,
+                        lightProtocol: recordedLightProtocol ?? session.state.lightProtocol, listenOnly: recordedListenOnly ?? listenOnly, bindingGeneration: recordedBindingGeneration, knownHardwareLayer: recordedHardwareLayer) : nil
+            appendEvent(MonitorEvent(id: makeRecordID(), timestamp: now(), direction: direction, source: source, message: message,
                                      control: control, hostLayer: recordedHostLayer ?? session.state.layer,
                                      deviceLayer: direction == .input ? map.decode(message)?.layer : nil,
                                      delivery: delivery ?? (direction == .input ? .received : nil),
-                                     ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest, endpointOrigin: endpointOrigin, deviceSource: deviceSource, dispatchContext: dispatchContext))
+                                     ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest, endpointOrigin: endpointOrigin, deviceSource: deviceSource, dispatchContext: dispatchContext, monotonicTime: recordedAt, transportMonotonicTime: recordedTransportAt, capturedBindingGeneration: recordedBindingGeneration ?? (direction == .input ? session.writeAuthorization.bindingGeneration : nil), capturedHardwareLayer: recordedHardwareLayer ?? (direction == .input ? session.state.observedLayer : nil), decodedInput: direction == .input ? map.decode(message) : nil, plannedProvenance: recordedPlannedProvenance))
         }
 
         private func appendEvent(_ event: MonitorEvent) {
@@ -1732,6 +1819,7 @@
                 }
             #endif
 
+            observeMonitorEvent?(event)
             events.insert(event, at: 0); trimEvents()
             do {
                 try monitorCapture?.append(event, map: session.state.map,
@@ -1819,7 +1907,7 @@
         }
 
         func log(_ entry: LocalizedMessage) {
-            appendEvent(MonitorEvent(timestamp: now(), direction: nil, source: .application, message: nil,
+            appendEvent(MonitorEvent(id: makeRecordID(), timestamp: now(), direction: nil, source: .application, message: nil,
                                      control: nil, hostLayer: layer, ignored: false, text: entry))
         }
     }

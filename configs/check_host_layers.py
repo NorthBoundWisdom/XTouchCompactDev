@@ -20,9 +20,15 @@ ROLE_EDGES = {
     "composition": {"values", "runtime", "device", "bridge", "transport", "composition"},
 }
 PURE_IMPORTS = {
-    "values": {"Foundation", "SurfacePluginContracts"},
-    "runtime": {"Foundation", "SurfacePluginContracts", "RemoteToolContracts", "SurfaceControlContracts"},
-    "device": {"Foundation", "SurfacePluginContracts", "SurfaceControlContracts"},
+    "values": {"Foundation", "SurfacePluginContracts", "SurfaceDeviceContracts"},
+    "runtime": {
+        "Foundation",
+        "SurfacePluginContracts",
+        "RemoteToolContracts",
+        "SurfaceControlContracts",
+        "SurfaceDeviceContracts",
+    },
+    "device": {"Foundation", "SurfacePluginContracts", "SurfaceControlContracts", "SurfaceDeviceContracts"},
 }
 IMPORTS = re.compile(
     r"^[ \t]*(?:(?:@\w+(?:\([^()\n]*\))?|public|package|internal|fileprivate|private)\s+)*"
@@ -304,6 +310,8 @@ def check_tree(root, manifest, package=None):
             if name not in targets:
                 errors.append("Unclassified production module: " + name)
                 continue
+            if "SurfaceDeviceConformance" in target_dependencies(target):
+                errors.append("Test-only module in production target: " + name + " -> SurfaceDeviceConformance")
             extra = target_dependencies(target) - set(targets[name]["dependencies"])
             if extra:
                 errors.append("Forbidden module dependencies: " + name + " -> " + ",".join(sorted(extra)))
@@ -312,6 +320,8 @@ def check_tree(root, manifest, package=None):
         if roles[path] not in ROLE_EDGES:
             continue
         code = swift_code((root / path).read_text())
+        if "SurfaceDeviceConformance" in IMPORTS.findall(code):
+            errors.append("Test-only module in production source: " + path + " -> SurfaceDeviceConformance")
         parsed[path] = (code, *source_symbols(code))
         for name in parsed[path][2]:
             declarations[name].add(path)

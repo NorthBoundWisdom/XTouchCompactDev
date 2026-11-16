@@ -28,7 +28,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: build/dependencies
-          key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json') }}
+          key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
       - run: python3 configs/setup_local_project.py
       - run: python3 configs/restore_git_mtimes.py
       - name: Identify the Swift toolchain for the build cache
@@ -81,7 +81,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: build/dependencies
-          key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json') }}
+          key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
       - run: python3 configs/setup_local_project.py
       - run: python3 configs/restore_git_mtimes.py
       - name: Identify the Swift toolchain for the build cache

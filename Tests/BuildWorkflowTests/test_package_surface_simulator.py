@@ -174,6 +174,36 @@ class DeliveryContentTests(unittest.TestCase):
         for source, digest in manifest["surface_plugins_files_sha256"].items():
             self.assertEqual(hashlib.sha256((shared / source).read_bytes()).hexdigest(), digest)
 
+    def test_kernel_provenance_records_adopted_contracts_and_keeps_four_fixtures_with_plugins(self):
+        manifest = self.manifest
+        root = package_surface_simulator.ROOT
+        lock = json.loads((root / "configs/control_surface_kit.lock.json").read_text())
+        self.assertEqual(manifest["control_surface_kit_revision"], lock["revision"])
+        self.assertEqual(manifest["control_surface_kit_integration"], "contracts-and-conformance")
+        files = manifest["control_surface_kit_files_sha256"]
+        self.assertEqual(
+            set(files),
+            {
+                "Package.swift",
+                "LICENSE",
+                "Sources/SurfaceDeviceContracts/Boundary.swift",
+                "Sources/SurfaceDeviceContracts/Capabilities.swift",
+                "Sources/SurfaceDeviceContracts/DeviceContracts.swift",
+            },
+        )
+        for path, digest in files.items():
+            self.assertEqual(
+                hashlib.sha256((root / "build/dependencies/ControlSurfaceKit" / path).read_bytes()).hexdigest(), digest
+            )
+        for version in ("v1", "v1.1", "v1.2", "v1.3"):
+            path = f"fixtures/surface-control-software-{version}.json"
+            self.assertIn(path, manifest["surface_plugins_files_sha256"])
+            self.assertNotIn(path, files)
+        with zipfile.ZipFile(self.stage / package_surface_simulator.SDK_ZIP) as sdk:
+            self.assertFalse(
+                any("SurfaceDeviceConformance" in member or "ControlSurfaceKit" in member for member in sdk.namelist())
+            )
+
     def test_manifest_follows_the_shared_delivery_convention(self):
         """Field names and rules of SurfacePlugins docs/surface-control-delivery.md at the locked revision."""
         shared = package_surface_simulator.SHARED
@@ -200,6 +230,9 @@ class DeliveryContentTests(unittest.TestCase):
                 "source_ahead",
                 "source_behind",
                 "delivery_status",
+                "control_surface_kit_revision",
+                "control_surface_kit_integration",
+                "control_surface_kit_files_sha256",
             },
         )
         self.assertIs(type(manifest["schema_version"]), int)

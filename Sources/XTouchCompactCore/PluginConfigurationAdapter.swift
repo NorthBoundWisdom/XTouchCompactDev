@@ -4,8 +4,8 @@ import Foundation
 import SurfacePluginContracts
 
 public extension CompactPluginHost {
-    static func agent(at time: PluginTime = 0) throws -> Self {
-        var host = Self()
+    static func agent(at time: PluginTime = 0, registryEpoch: String? = nil) throws -> Self {
+        var host = try registryEpoch.map { try Self(registryEpoch: $0) } ?? Self()
         try host.registerBindings([AgentRemoteBinding(instanceID: AgentRemoteBinding.defaultInstanceID, plugin: AgentPlugin(approvalPolicy: .localOrigins, at: time))], at: time)
         host.configureFeedbackInstances([AgentRemoteBinding.defaultInstanceID])
         return host

@@ -7,6 +7,7 @@
     struct CompactMIDIInputEnvelope: Equatable, Sendable {
         var messages: [MIDIMessage]
         var origin: CompactEndpointStamp
+        var at: Double?
     }
 
     enum CompactMIDIError: Error, LocalizedError {
@@ -125,11 +126,12 @@
                     { [weak self] list, tag in
                         guard let self else { return }
                         let messages = Self.decode(list)
+                        let receiptAt = ProcessInfo.processInfo.systemUptime
                         let capturedGeneration = UInt64(UInt(bitPattern: tag))
                         guard !messages.isEmpty else { return }
                         queue.async { [weak self] in
                             guard let self, capturedGeneration == routeGeneration, connectedInput != 0 else { return }
-                            onMessages(.init(messages: messages, origin: .init(endpoint: connectedInputIdentity, generation: capturedGeneration)))
+                            onMessages(.init(messages: messages, origin: .init(endpoint: connectedInputIdentity, generation: capturedGeneration), at: receiptAt))
                         }
                         }, name: "Create MIDI input")
                     try check(MIDIOutputPortCreate(client, "Compact Output" as CFString, &outputPort),

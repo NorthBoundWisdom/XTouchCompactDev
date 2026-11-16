@@ -1,4 +1,5 @@
 import Foundation
+import SurfaceDeviceContracts
 import SurfacePluginContracts
 
 /// Two independent application banks. The two physical layers select which bank is exposed;
@@ -15,6 +16,7 @@ public struct CompactSessionUpdate: Equatable, Sendable {
     public var inputs: [CompactInput]
     public var feedback: [MIDIMessage]
     public var actionIntents: [ActionReference] = []
+    public var neutralInputs: [DeviceInputEvent] = []
 
     public init(inputs: [CompactInput] = [], feedback: [MIDIMessage] = []) {
         self.inputs = inputs
@@ -39,6 +41,17 @@ public struct CompactSession: Sendable {
     public private(set) var lastMacroExecution: MacroExecution?
     /// Presentation provenance only; display values remain owned by `state`.
     private var displayOnlyRingIntents: Set<Int> = []
+    private var operationProvenance: CompactPlannedProvenance?
+
+    /// A trusted caller may attach immutable planning metadata. It is never consulted by a gate.
+    public mutating func withPlannedProvenance<Result>(_ provenance: CompactPlannedProvenance?,
+                                                       _ operation: (inout CompactSession) throws -> Result) rethrows -> Result
+    {
+        let previous = operationProvenance
+        operationProvenance = provenance
+        defer { operationProvenance = previous }
+        return try operation(&self)
+    }
 
     public func hasDisplayOnlyRingIntent(_ index: Int) -> Bool {
         displayOnlyRingIntents.contains(index)
@@ -118,7 +131,7 @@ public struct CompactSession: Sendable {
     /// The state model still prevents commands while a fader is touched.
     public mutating func recallFaders() throws -> [MIDIMessage] {
         let values = bank(state.layer).faders
-        return try (1 ... 9).flatMap { try state.setFader($0, value: values[$0 - 1]) }
+        return try (1 ... 9).flatMap { try state.setFader($0, value: values[$0 - 1], provenance: operationProvenance) }
     }
 
     public mutating func setSafetyTouch(_ index: Int, touched: Bool) {
@@ -365,7 +378,7 @@ public struct CompactSession: Sendable {
             case let .fader(index):
                 banks[assignment.layer, default: .init()].faders[index - 1] = raw
                 if includeMotors, writeAuthorization.allowsMechanisms, assignment.layer == state.layer, index != excludingFader {
-                    messages += try state.setFader(index, value: raw)
+                    messages += try state.setFader(index, value: raw, provenance: operationProvenance)
                 }
             case let .encoder(index):
                 banks[assignment.layer, default: .init()].encoders[index - 1] = raw
@@ -393,7 +406,7 @@ public struct CompactSession: Sendable {
                                     undoKey: "fader:\(target.rawValue):\(index)")
         }
         banks[target, default: .init()].faders[index - 1] = value
-        return target == state.layer ? try state.setFader(index, value: value) : []
+        return target == state.layer ? try state.setFader(index, value: value, provenance: operationProvenance) : []
     }
 
     public mutating func setEncoder(_ index: Int, value: UInt8, layer: CompactLayer? = nil, writer: ParameterWriter = .interface) throws -> [MIDIMessage] {
@@ -466,11 +479,18 @@ public struct CompactSession: Sendable {
 
     /// A MIDI callback may contain many events. Apply all of them before publishing UI state.
     /// 'touch released' can yield a motor command only if host desire differs from the last observed position.
-    public mutating func receive(_ messages: [MIDIMessage]) throws -> CompactSessionUpdate {
+    public mutating func receive(_ messages: [MIDIMessage], receipt: CompactReceiptContext? = nil) throws -> CompactSessionUpdate {
         var result = CompactSessionUpdate()
         for message in messages {
             guard let event = state.receive(message) else { continue }
             result.inputs.append(event)
+            if let receipt {
+                let context = try CompactNeutralProjection.context(instanceID: receipt.instanceID,
+                                                                   routeGeneration: receipt.endpoint.connectionGeneration, bindingGeneration: writeAuthorization.bindingGeneration,
+                                                                   hostLayer: state.layer, inputFacet: event.layer, knownHardwareLayer: state.observedLayer)
+                try result.neutralInputs.append(CompactNeutralProjection.input(event, context: context,
+                                                                               endpoint: receipt.endpoint, source: receipt.source, at: receipt.at))
+            }
             if event.isPressed == false {
                 activeMacroControls.remove(event.control)
             }
@@ -570,7 +590,7 @@ public struct CompactSession: Sendable {
     /// Independent display intent for public simulation feedback. These primitives
     /// never edit parameter values, manufacture input, or acknowledge an observation.
     public mutating func setDisplayFader(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
-        try state.setFader(index, value: value)
+        try state.setFader(index, value: value, provenance: operationProvenance)
     }
 
     public mutating func setDisplayRing(_ index: Int, value: UInt8) throws -> [MIDIMessage] {

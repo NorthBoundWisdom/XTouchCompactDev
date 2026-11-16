@@ -18,6 +18,7 @@ from configs.build_environment import (
     use_build_environment,
 )
 from configs.build_paths import build_path
+from configs.control_surface_kit_dependency import ensure_dependency as ensure_control_surface_kit
 from configs.surface_plugins_dependency import ensure_dependency
 from configs.validate_repo_commands import main as validate_commands
 
@@ -32,6 +33,7 @@ def main() -> int:
         if validate_commands([str(REPO_ROOT)]):
             return 1
         ensure_dependency(REPO_ROOT)
+        ensure_control_surface_kit(REPO_ROOT)
         subprocess.run(["swift", "package", "dump-package"], cwd=REPO_ROOT, check=True, stdout=subprocess.DEVNULL)
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(json.dumps({"schema_version": 1, "app_build": settings}, indent=2) + "\n")

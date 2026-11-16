@@ -41,6 +41,28 @@ class HostLayerTests(unittest.TestCase):
         self.assertEqual(report["errors"], [])
         self.assertTrue(all(report["roles"][role] > 0 for role in ("runtime", "bridge", "device", "transport")))
 
+    def test_kernel_conformance_is_test_only_even_if_a_manifest_tries_to_allow_it(self):
+        with fixture(
+            {"Sources/Host/Runtime.swift": ("composition", "import SurfaceDeviceConformance\nstruct Runtime {}")}
+        ) as (root, manifest):
+            manifest["targets"]["Host"]["dependencies"] = ["SurfaceDeviceConformance"]
+            package = {
+                "targets": [
+                    {
+                        "name": "Host",
+                        "type": "regular",
+                        "dependencies": [{"product": ["SurfaceDeviceConformance", "ControlSurfaceKit", None, None]}],
+                    }
+                ]
+            }
+            errors = check_tree(root, manifest, package)["errors"]
+            self.assertTrue(any("Test-only module in production source" in error for error in errors))
+            self.assertTrue(any("Test-only module in production target" in error for error in errors))
+        with fixture(
+            {"Sources/Host/Runtime.swift": ("device", "import SurfaceDeviceContracts\nstruct Runtime {}")}
+        ) as (root, manifest):
+            self.assertEqual(check_tree(root, manifest)["errors"], [])
+
     def test_runtime_cannot_reference_transport_declarations_across_nested_files(self):
         with fixture(
             {

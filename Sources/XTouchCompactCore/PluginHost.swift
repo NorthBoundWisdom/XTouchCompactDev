@@ -9,7 +9,7 @@ public enum PluginHostError: Error, Equatable, Sendable {
 /// A host-local value adapter. RemoteRegistry owns each plugin exactly once.
 /// Validate the entire candidate before making any registration or update visible.
 public struct CompactPluginHost: Sendable {
-    private var registry = try! RemoteRegistry(epoch: UUID().uuidString)
+    private var registry: RemoteRegistry
     private var installed: [String: PluginManifest] = [:]
     private var feedbackInstances: [String] = []
     public var feedbackIndicators: [IndicatorID: IndicatorState] {
@@ -21,9 +21,21 @@ public struct CompactPluginHost: Sendable {
     }
 
     public private(set) var parameterValues: [String: [ParameterID: Double]] = [:]
-    public init() {}
+    public init() {
+        registry = try! RemoteRegistry(epoch: UUID().uuidString)
+    }
+
+    /// Host-owned lifetime identity. Remote callers cannot choose registry epochs.
+    public init(registryEpoch: String) throws {
+        registry = try RemoteRegistry(epoch: registryEpoch)
+    }
+
     mutating func configureFeedbackInstances(_ instances: [String]) {
         feedbackInstances = instances
+    }
+
+    public func remoteEventSnapshot() throws -> RemoteEventPage {
+        try registry.journal.read(epoch: registry.journal.epoch, after: 0, limit: 65536)
     }
 
     public var instanceIDs: [String] {

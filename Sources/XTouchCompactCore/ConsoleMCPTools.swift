@@ -13,11 +13,12 @@ public struct MCPToolFailure: Error, LocalizedError, Equatable, Sendable {
 }
 
 public struct MCPAuditEntry: Identifiable, Equatable, Sendable {
-    public let id = UUID()
+    public let id: UUID
     public let time: Date
     public let method: String
     public let succeeded: Bool
-    public init(time: Date, method: String, succeeded: Bool) {
+    public init(id: UUID = UUID(), time: Date, method: String, succeeded: Bool) {
+        self.id = id
         self.time = time; self.method = method; self.succeeded = succeeded
     }
 }

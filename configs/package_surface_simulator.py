@@ -62,6 +62,31 @@ SDK_SOURCE = "clients/python/surface_control/__init__.py"
 ARTIFACT = "surface-control-simulator"
 
 
+def kernel_provenance(root=ROOT):
+    """Real compiled-contract provenance; conformance assets stay test-only and outside the runtime SDK."""
+    try:
+        from .control_surface_kit_dependency import ensure_dependency as ensure_kit
+    except ImportError:
+        from control_surface_kit_dependency import ensure_dependency as ensure_kit
+    kernel = ensure_kit(root, verify_only=True)
+    lock = json.loads((root / "configs/control_surface_kit.lock.json").read_text())
+    sources = [
+        "Package.swift",
+        "LICENSE",
+        *(
+            str(path.relative_to(kernel))
+            for path in sorted((kernel / "Sources/SurfaceDeviceContracts").glob("*.swift"))
+        ),
+    ]
+    return {
+        "control_surface_kit_revision": lock["revision"],
+        "control_surface_kit_integration": "contracts-and-conformance",
+        "control_surface_kit_files_sha256": {
+            source: hashlib.sha256((kernel / source).read_bytes()).hexdigest() for source in sources
+        },
+    }
+
+
 def sdk_sources(shared=SHARED):
     """Stable member order and metadata match the other host's SDK archive."""
     python_root = shared / "clients/python"
@@ -207,6 +232,7 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=SHARED
         "profile_version": discovery["profile"]["version"],
         "mapping_revision": discovery["expected"]["mapping_revision"],
         "surface_plugins_revision": revision,
+        **kernel_provenance(root),
         "surface_plugins_files_sha256": shared_sources,
         "platform": os.uname().sysname,
         "architecture": os.uname().machine,
@@ -237,6 +263,7 @@ def package(output=None, configuration="release", output_root=None):
             raise RuntimeError("Output already exists; choose a new delivery path")
     parent = Path(output_root) if output_root is not None else output.parent
     subprocess.run(["python3", "configs/surface_plugins_dependency.py", "verify"], cwd=ROOT, check=True)
+    subprocess.run(["python3", "configs/control_surface_kit_dependency.py", "verify"], cwd=ROOT, check=True)
     scratch = ROOT / "build" / "surface-simulator" / configuration
     subprocess.run(
         [

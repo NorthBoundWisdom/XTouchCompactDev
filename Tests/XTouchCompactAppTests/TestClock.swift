@@ -3,6 +3,7 @@
 
     @MainActor final class TestClock {
         var time: TimeInterval = 100
+        var monotonic: TimeInterval = 1
         var date: Date {
             Date(timeIntervalSince1970: time)
         }

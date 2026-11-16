@@ -1,4 +1,6 @@
 import Foundation
+import SurfaceDeviceConformance
+import SurfaceDeviceContracts
 import Testing
 @testable import XTouchCompactCore
 
@@ -7,13 +9,22 @@ private struct BehaviorTrace {
     var session = try! CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
     var mock = try! MockXTouchCompact(map: FactoryStandardMap(), lightProtocol: .manual)
     var rows: [[String: Any]] = []
+    var neutralSamples: [ShadowSample] = []
+    private var pendingScopes: [Int: String] = [:]
 
-    mutating func step(_ operation: String, raw: [MIDIMessage] = [], fails: Bool = false,
+    mutating func step(_ operation: String, raw: [MIDIMessage] = [], fails: Bool = false, rejectionReason: String? = nil,
                        run: (inout CompactSession) throws -> [MIDIMessage]) throws
     {
         let before = session.parameters.values
         let pendingBefore = (1 ... 9).filter { session.state.isMotorPending($0) }
-        let output = try run(&session)
+        let planningAt = Double(rows.count) / 10
+        let planningEndpoint = try EndpointProvenance(endpointID: "process-owned-golden-mock", deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
+        let planningContext = try CompactNeutralProjection.context(instanceID: "golden.mock", routeGeneration: 0,
+                                                                   bindingGeneration: session.writeAuthorization.bindingGeneration, hostLayer: session.state.layer,
+                                                                   knownHardwareLayer: session.state.observedLayer, hardwareEvidenceIsPrior: !raw.isEmpty)
+        let planning = try CompactPlannedProvenance(id: "golden.operation.\(rows.count)", source: .simulation,
+                                                    endpoint: planningEndpoint, context: planningContext, origin: raw.isEmpty ? .interface : .hardware, at: planningAt)
+        let output = try session.withPlannedProvenance(planning, run)
         let permitted = session.filterFeedbackForDelivery(output)
         if fails {
             session.invalidateTransportFeedback()
@@ -43,6 +54,57 @@ private struct BehaviorTrace {
                             "fader_1_observation_current": NSNull(), "last_sent_motor": NSNull(),
                             "touched": (1 ... 9).filter { session.state.isTouched($0) }, "pending_motor": pending],
         ])
+        if let rejectionReason {
+            rows[rows.count - 1]["result"] = ["accepted": false, "rejection_reason": rejectionReason, "parameter_changes": [:], "action_count": 0]
+            rows[rows.count - 1]["output"] = ["sent": [], "deferred": [], "suppressed": [["category": "mechanism_motion", "reason": rejectionReason, "affected_controls": Array(1 ... 9)]]]
+        }
+        let at = Double(rows.count - 1) / 10
+        let endpoint = try EndpointProvenance(endpointID: "process-owned-golden-mock", deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
+        let context = try CompactNeutralProjection.context(instanceID: "golden.mock", routeGeneration: 0,
+                                                           bindingGeneration: session.writeAuthorization.bindingGeneration, hostLayer: session.state.layer,
+                                                           knownHardwareLayer: session.state.observedLayer)
+        let inputs = try raw.compactMap(session.state.map.decode).map {
+            try CompactNeutralProjection.input($0, context: context, endpoint: endpoint, source: .simulation, at: at)
+        }
+        let effects = try permitted.enumerated().map { index, message in
+            try CompactNeutralProjection.feedback(message, map: session.state.map, hostLayer: session.state.layer,
+                                                  effectID: "golden.\(rows.count - 1).\(index)", context: context, endpoint: endpoint, source: .simulation, at: at)
+        }
+        let transmissions = try effects.map {
+            try TransmissionEvidence(effectID: $0.id, targetID: $0.targetID, context: $0.context, endpoint: $0.endpoint,
+                                     source: $0.source, at: at, outcome: fails ? .rejected(reason: "fixture_transport_rejected") : .accepted)
+        }
+        let oldPending = pendingScopes
+        let actualPending = session.state.pendingMotorFacts
+        pendingScopes = pendingScopes.filter { key, _ in actualPending.contains { $0.index == key } }
+        for fact in actualPending {
+            pendingScopes[fact.index] = try traceCanonical(["physical_role": CompactNeutralProjection.elementID(.fader(fact.index)),
+                                                            "target": fact.target.map { Int($0) } as Any? ?? NSNull(), "provenance": fact.provenance.map { String(reflecting: $0) } ?? "unknown"])
+        }
+        var revoked: [String] = []
+        for index in oldPending.keys.sorted() where pendingScopes[index] == nil {
+            let identity = try #require(oldPending[index])
+            let captured = try #require(JSONSerialization.jsonObject(with: Data(identity.utf8)) as? [String: Any])
+            let produced = session.state.producedMotorProvenance(index)
+            let sameScope = produced != nil && captured["provenance"] as? String == String(reflecting: produced!)
+                && captured["physical_role"] as? String == CompactNeutralProjection.elementID(.fader(index))
+            let delivered = permitted.contains { message in
+                guard case let .controlChange(channel, number, value) = message else { return false }
+                return channel == session.state.map.globalReceiveChannel && number == UInt8(index)
+                    && Int(value) == captured["target"] as? Int
+            }
+            if !sameScope || !delivered {
+                revoked.append(identity)
+            }
+        }
+        try neutralSamples.append(.init(stepIndex: rows.count - 1, operationID: operation,
+                                        decision: rejectionReason.map { .rejected(reason: $0) } ?? (fails ? .rejected(reason: "fixture_transport_rejected") : .accepted), context: context, endpoint: endpoint,
+                                        pendingQueueItems: pendingScopes.keys.sorted().compactMap { pendingScopes[$0] }, revokedQueueItems: revoked,
+                                        observations: inputs.map(CompactNeutralProjection.observation), feedback: effects, transmissions: transmissions,
+                                        transportSequence: [traceCanonical(rows.last!), "actual-mock:" + traceCanonical([
+                                            "faders": mock.faders, "encoders": mock.encoders, "buttons": mock.buttons.map { Int($0.rawValue) },
+                                            "rings": mock.rings.map { String(describing: $0) }, "touches": mock.touchedFaders.sorted(),
+                                        ] as [String: Any])]))
     }
 
     mutating func input(_ message: MIDIMessage) throws {
@@ -226,9 +288,7 @@ private enum TraceJSONContent: Decodable, Equatable {
     }
 }
 
-@Test func mockBehaviorTracesMatchCheckedInBytes() throws {
-    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        .appendingPathComponent("Fixtures/BehaviorTraces")
+private func makeNativeBehaviorTraces() throws -> [String: BehaviorTrace] {
     var traces: [String: BehaviorTrace] = [:]
     let touch = MIDIMessage.controlChange(channel: 0, number: 101, value: 127)
     let release = MIDIMessage.controlChange(channel: 0, number: 101, value: 0)
@@ -250,9 +310,7 @@ private enum TraceJSONContent: Decodable, Equatable {
         try layer.session.state.validateLayerAssertion()
         Issue.record("Touched layer assertion was accepted")
     } catch CompactError.fadersTouched {
-        try layer.step("request_layer_b") { _ in [] }
-        layer.rows[layer.rows.count - 1]["result"] = ["accepted": false, "rejection_reason": "fadersTouched", "parameter_changes": [:], "action_count": 0]
-        layer.rows[layer.rows.count - 1]["output"] = ["sent": [], "deferred": [], "suppressed": [["category": "mechanism_motion", "reason": "fadersTouched", "affected_controls": Array(1 ... 9)]]]
+        try layer.step("request_layer_b", rejectionReason: "fadersTouched") { _ in [] }
     }
     traces["04-touched-layer-refused"] = layer
     var changed = BehaviorTrace()
@@ -282,6 +340,13 @@ private enum TraceJSONContent: Decodable, Equatable {
     try linked.input(touch)
     try linked.step("write_shared_parameter") { try $0.setParameter("a.Fader.1", value: 80) }
     traces["08-shared-parameter-touch"] = linked
+    return traces
+}
+
+@Test func mockBehaviorTracesMatchCheckedInBytes() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Fixtures/BehaviorTraces")
+    let traces = try makeNativeBehaviorTraces()
     for name in traces.keys.sorted() {
         let document: [String: Any] = try ["schema_version": 1, "scenario": name, "source": "mock", "steps": TraceDeclaration.rows(#require(traces[name]?.rows))]
         let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data([10])
@@ -291,6 +356,9 @@ private enum TraceJSONContent: Decodable, Equatable {
             try data.write(to: path)
         }
         let stored = try Data(contentsOf: path)
+        let proofRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("build/j/j2-shadow/native-golden-bytes")
+        try FileManager.default.createDirectory(at: proofRoot, withIntermediateDirectories: true)
+        try data.write(to: proofRoot.appendingPathComponent(name + ".generated.json"))
         // Foundation implementations differ in spacing and numeric spelling (0.1 vs 0.10000000000000001).
         // Compare typed JSON content with exact Double equality, retaining booleans and array order.
         let decoder = JSONDecoder()
@@ -301,4 +369,82 @@ private enum TraceJSONContent: Decodable, Equatable {
             #expect(stored == data, "Trace bytes differ: \(name)")
         #endif
     }
+}
+
+private func traceCanonical(_ value: Any) throws -> String {
+    try String(decoding: JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]), as: UTF8.self)
+}
+
+private func stableShadowLog(_ sample: ShadowSample) -> [String: Any] {
+    func context(_ value: DeviceContext) -> [String: Any] {
+        ["id": value.id, "generation": value.generation, "mapping_revision": value.mappingRevision as Any? ?? NSNull()]
+    }
+    func endpoint(_ value: EndpointProvenance) -> [String: Any] {
+        ["endpoint_id": value.endpointID as Any? ?? NSNull(), "device_id": value.deviceID as Any? ?? NSNull(),
+         "connection_generation": value.connectionGeneration, "transport_origin": value.transportOrigin.rawValue]
+    }
+    func payload(_ value: DeviceValue) -> [String: Any] {
+        switch value {
+        case let .number(n): ["kind": "number", "value": n]
+        case let .flag(b): ["kind": "flag", "value": b]
+        case let .text(s): ["kind": "text", "value": s]
+        case .none: ["kind": "none", "value": NSNull()]
+        }
+    }
+    let decision: [String: Any] = switch sample.decision {
+    case .accepted: ["kind": "accepted", "reason": NSNull()]
+    case let .rejected(reason): ["kind": "rejected", "reason": reason]
+    case let .ignored(reason): ["kind": "ignored", "reason": reason]
+    }
+    return ["step_index": sample.stepIndex, "operation_id": sample.operationID, "decision": decision,
+            "context": context(sample.context), "endpoint": endpoint(sample.endpoint),
+            "pending_queue_items": sample.pendingQueueItems, "revoked_queue_items": sample.revokedQueueItems,
+            "observations": sample.observations.map { value in
+                ["target_id": value.targetID, "value": value.value.map(payload) as Any? ?? NSNull(), "state": value.state.rawValue,
+                 "evidence": value.evidence?.rawValue as Any? ?? NSNull(), "context": context(value.context),
+                 "endpoint": endpoint(value.endpoint), "source": value.source.rawValue, "at": value.at] as [String: Any]
+            },
+            "feedback": sample.feedback.map { value in
+                let timing: [String: Any] = switch value.timing { case .immediate: ["kind": "immediate", "until": NSNull()]
+                case let .deferred(until): ["kind": "deferred", "until": until] }
+                // Only native Set fields are sorted. Every array and multiplicity remains in original order.
+                return ["id": value.id, "target_id": value.targetID, "affected_elements": value.affectedElements.sorted(),
+                        "value": payload(value.value), "classification": value.classification.rawValue,
+                        "side_effects": value.sideEffects.map(\.rawValue).sorted(), "required_directions": value.requiredDirections.map(\.rawValue).sorted(),
+                        "context": context(value.context), "endpoint": endpoint(value.endpoint), "source": value.source.rawValue,
+                        "timing": timing, "at": value.at] as [String: Any]
+            },
+            "transmissions": sample.transmissions.map { value in
+                let outcome: [String: Any] = switch value.outcome { case .accepted: ["kind": "accepted", "reason": NSNull()]
+                case let .rejected(reason): ["kind": "rejected", "reason": reason] }
+                return ["effect_id": value.effectID, "target_id": value.targetID, "context": context(value.context),
+                        "endpoint": endpoint(value.endpoint), "source": value.source.rawValue, "at": value.at, "outcome": outcome] as [String: Any]
+            }, "transport_sequence": sample.transportSequence]
+}
+
+@Test func independentNeutralGoldenOwnersRetainAllEightNativeByteTraces() throws {
+    let reference = try makeNativeBehaviorTraces(), candidate = try makeNativeBehaviorTraces()
+    #expect(reference.keys.sorted() == candidate.keys.sorted())
+    var differences: [[String: Any]] = [], raw: [[String: Any]] = []
+    var steps = 0
+    for name in reference.keys.sorted() {
+        let left = try #require(reference[name]), right = try #require(candidate[name])
+        let delta = ShadowComparator.compare(reference: left.neutralSamples, candidate: right.neutralSamples)
+        for d in delta {
+            differences.append(["golden": name, "step": d.stepIndex, "field": d.field, "reference": d.reference, "candidate": d.candidate])
+        }
+        steps += right.neutralSamples.count
+        let stableReference = left.neutralSamples.map(stableShadowLog), stableCandidate = right.neutralSamples.map(stableShadowLog)
+        let stableReferenceBytes = try JSONSerialization.data(withJSONObject: stableReference, options: [.sortedKeys])
+        let stableCandidateBytes = try JSONSerialization.data(withJSONObject: stableCandidate, options: [.sortedKeys])
+        #expect(stableReferenceBytes == stableCandidateBytes)
+        raw.append(["golden": name, "reference": left.neutralSamples.map { String(reflecting: $0) }, "candidate": right.neutralSamples.map { String(reflecting: $0) },
+                    "stable_reference": stableReference, "stable_candidate": stableCandidate, "stable_bytes_equal": stableReferenceBytes == stableCandidateBytes])
+    }
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let path = root.appendingPathComponent("build/j/j2-shadow/golden-shadow.json")
+    try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try JSONSerialization.data(withJSONObject: ["goldens": reference.count, "steps": steps, "differences": differences, "samples": raw], options: [.prettyPrinted, .sortedKeys]).write(to: path)
+    print("J2_GOLDEN goldens=\(reference.count) steps=\(steps) differences=\(differences.count)")
+    #expect(reference.count == 8 && steps == 20 && differences.isEmpty)
 }

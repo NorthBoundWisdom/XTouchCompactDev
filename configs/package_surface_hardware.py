@@ -18,6 +18,7 @@ try:
         SHARED,
         TEST_SUPPORT_ZIP,
         command,
+        kernel_provenance,
         source_provenance,
         stage_shared_files,
         stage_test_support,
@@ -33,6 +34,7 @@ except ImportError:
         SHARED,
         TEST_SUPPORT_ZIP,
         command,
+        kernel_provenance,
         source_provenance,
         stage_shared_files,
         stage_test_support,
@@ -111,6 +113,7 @@ def package(output_root, configuration="release"):
     if command("git", "status", "--porcelain"):
         raise RuntimeError("Hardware delivery requires clean committed HEAD")
     subprocess.run(["python3", "configs/surface_plugins_dependency.py", "verify"], cwd=ROOT, check=True)
+    subprocess.run(["python3", "configs/control_surface_kit_dependency.py", "verify"], cwd=ROOT, check=True)
     scratch = ROOT / "build/surface-hardware" / configuration
     subprocess.run(
         [
@@ -190,6 +193,7 @@ def package(output_root, configuration="release"):
             "source_dirty": False,
             "surface_control_contract": "1.4",
             "surface_control_sdk": "1.4.0",
+            **kernel_provenance(ROOT),
             "profile_id": discovery["profile"]["id"],
             "profile_version": discovery["profile"]["version"],
             "mapping_revision": discovery["expected"]["mapping_revision"],
