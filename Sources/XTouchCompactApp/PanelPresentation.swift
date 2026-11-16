@@ -457,6 +457,9 @@
         var encoders: [EncoderPresentation]
         var buttons: [ButtonPresentation]
         var pendingPreset: SurfaceConfiguration?
+        var armPreviewVisible = false
+        var armPreview: ArmPreviewSnapshot?
+        var workspacePanelWarning: LocalizedMessage?
         var lastMacroExecution: MacroExecution?
         var libraryEntries: [SavedConfiguration] = []
         var libraryWarning: LocalizedMessage?
@@ -544,6 +547,7 @@
         var setEncoder: (_ index: Int, _ value: UInt8) -> Void
 
         /// Nil until the backend can describe MIDI addresses per control and layer.
+        var setArmPreviewVisible: ((Bool) -> Void)?
         var saveMacro: ((SurfaceMacro) -> Void)?
         var deleteMacro: ((String) -> Void)?
         var runMacro: ((String) -> Void)?

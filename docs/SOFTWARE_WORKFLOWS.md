@@ -607,3 +607,19 @@ provided: local Run macro/buttons are explicit operator actions, and physical
 listen-only mode still refuses transmission. The core also supports the existing
 Agent/motor permission arguments for guarded callers; an ungranted Agent motor
 write is withheld without a deferred replay.
+
+## Optional panels
+
+The Panels menu enables Arm preview; it is hidden by default. This choice lives
+in `workspace-panels.json`, separately from workspace values/profiles and the
+configuration library. Hiding the selected arm tab returns to Values. Invalid,
+unknown or newer panel settings stay protected with a visible warning.
+
+Launch with `--reference-arm-example` to load the reference software parameter
+set. The panel reads only PanelSnapshot and draws illustrative side/top views
+from arm.j1–arm.j4 declared in degrees, with available J5/J6/gripper/speed/enable
+readouts. Missing/wrong-unit/nonfinite required parameters show an empty state;
+missing optional values remain unknown. This is a software pose illustration,
+not a dimensionally accurate robot model, actual feedback or a motion command.
+Showing, hiding and rendering the panel cannot write parameters, change layers,
+connect MIDI, recall motors or enable output.

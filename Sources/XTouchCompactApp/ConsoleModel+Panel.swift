@@ -69,6 +69,9 @@
                     buttonPresentation(index, observation: observation)
                 },
                 pendingPreset: pendingPreset,
+                armPreviewVisible: workspacePanels.armVisible,
+                armPreview: ArmPreviewSnapshot(configuration: session.parameters.configuration, values: session.parameters.values),
+                workspacePanelWarning: workspacePanelWarning,
                 lastMacroExecution: session.lastMacroExecution,
                 libraryEntries: libraryEntries, libraryWarning: libraryWarning, pendingLibraryAction: pendingLibraryAction,
                 configuration: session.parameters.configuration,
@@ -327,6 +330,7 @@
                 releaseButton: hardwareMode ? nil : { [weak self] index in self?.releaseButton(index) },
                 setFader: { [weak self] index, value in self?.faderChanged(index, value: Double(value)) },
                 setEncoder: { [weak self] index, value in self?.encoderChanged(index, value: Double(value)) },
+                setArmPreviewVisible: { [weak self] in self?.setArmPreviewVisible($0) },
                 saveMacro: { [weak self] in self?.saveMacro($0) },
                 deleteMacro: { [weak self] in self?.deleteMacro($0) },
                 runMacro: { [weak self] in self?.runMacro($0) },

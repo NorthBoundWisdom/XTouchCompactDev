@@ -766,3 +766,21 @@
 "rejected" = "rejected";
 
 "Value" = "Value";
+
+"Arm preview" = "Arm preview";
+
+"Panels" = "Panels";
+
+"Illustrative pose · software values only" = "Illustrative pose · software values only";
+
+"Reference-arm parameters arm.j1–arm.j4 in degrees are missing. Launch with --reference-arm-example to load the example." = "Reference-arm parameters arm.j1–arm.j4 in degrees are missing. Launch with --reference-arm-example to load the example.";
+
+"Top view" = "Top view";
+
+"Side view" = "Side view";
+
+"Panel settings are protected: %@" = "Panel settings are protected: %@";
+
+"Enabled" = "Enabled";
+
+"Disabled" = "Disabled";

@@ -134,6 +134,9 @@
         private var appliedOutputID: Int32?
         private let store: ProtectedWorkspaceStore?
         private let libraryStore: ConfigurationLibraryStore?
+        private let panelStore: WorkspacePanelStore?
+        @Published private(set) var workspacePanels = WorkspacePanelSettings()
+        @Published private(set) var workspacePanelWarning: LocalizedMessage?
         @Published private(set) var libraryEntries: [SavedConfiguration] = []
         @Published private(set) var libraryWarning: LocalizedMessage?
         @Published private(set) var pendingLibraryAction: ConfigurationLibraryRequest?
@@ -159,6 +162,7 @@
             self.isolated = isolated
             store = storageRoot.map { ProtectedWorkspaceStore(directory: $0) }
             libraryStore = storageRoot.map(ConfigurationLibraryStore.init(directory:))
+            panelStore = storageRoot.map(WorkspacePanelStore.init(directory:))
             let map = try! FactoryStandardMap() // Constant channels are valid by construction.
             session = CompactSession(map: map, lightProtocol: .manual)
             mock = MockXTouchCompact(map: map, lightProtocol: .manual)
@@ -235,6 +239,10 @@
             if let libraryStore {
                 do { libraryEntries = try libraryStore.load() }
                 catch { libraryWarning = LocalizedMessage("Configuration library is protected: %@", error.localizedDescription) }
+            }
+            if let panelStore {
+                do { workspacePanels = try panelStore.load() }
+                catch { workspacePanelWarning = LocalizedMessage("Panel settings are protected: %@", error.localizedDescription) }
             }
             if startsMIDI {
                 do { try self.midi.start() } catch { self.error = error }
@@ -710,6 +718,15 @@
                 try libraryStore?.save(candidate)
                 libraryEntries = candidate; libraryWarning = nil
             } catch { libraryWarning = LocalizedMessage("Configuration library is protected: %@", error.localizedDescription) }
+        }
+
+        func setArmPreviewVisible(_ visible: Bool) {
+            var candidate = workspacePanels
+            candidate.setArmVisible(visible)
+            do {
+                try panelStore?.save(candidate)
+                workspacePanels = candidate; workspacePanelWarning = nil
+            } catch { workspacePanelWarning = LocalizedMessage("Panel settings are protected: %@", error.localizedDescription) }
         }
 
         func saveMacro(_ macro: SurfaceMacro) {

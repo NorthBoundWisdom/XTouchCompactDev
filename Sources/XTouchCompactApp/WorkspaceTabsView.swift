@@ -4,7 +4,7 @@
     import XTouchCompactLocalization
 
     enum WorkspaceTab: String, CaseIterable, Identifiable {
-        case values, parameters, organize, agents, monitor, offlineCapture, connection
+        case values, parameters, organize, agents, monitor, offlineCapture, connection, arm
 
         var id: String {
             rawValue
@@ -12,6 +12,7 @@
 
         var title: String {
             switch self {
+            case .arm: "Arm preview"
             case .values: "数值"
             case .parameters: "Parameters"
             case .organize: "Organize"
@@ -24,6 +25,7 @@
 
         var systemImage: String {
             switch self {
+            case .arm: "point.3.connected.trianglepath.dotted"
             case .values: "slider.horizontal.3"
             case .parameters: "list.bullet.rectangle"
             case .organize: "square.stack.3d.up"
@@ -60,6 +62,7 @@
                 .frame(maxWidth: 680)
 
                 switch tab {
+                case .arm: ArmPreviewView(snapshot: snapshot)
                 case .agents:
                     VStack {
                         ForEach(snapshot.businessPlugins) { plugin in
@@ -92,11 +95,16 @@
                 }
             }
             .panelStyle()
+            .onChange(of: snapshot.armPreviewVisible) {
+                _, visible in if !visible, tab == .arm {
+                    tab = .values
+                }
+            }
         }
 
         private var workspacePicker: some View {
             Picker(l.text("工作区"), selection: $tab) {
-                ForEach(WorkspaceTab.allCases) { Label(l.text($0.title), systemImage: $0.systemImage).tag($0) }
+                ForEach(WorkspaceTab.allCases.filter { $0 != .arm || snapshot.armPreviewVisible }) { Label(l.text($0.title), systemImage: $0.systemImage).tag($0) }
             }
             .labelsHidden()
         }

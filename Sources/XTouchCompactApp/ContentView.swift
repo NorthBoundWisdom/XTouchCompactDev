@@ -35,6 +35,9 @@
         private var console: some View {
             VStack(spacing: 0) {
                 HeaderBar(snapshot: snapshot, intents: intents)
+                if let warning = snapshot.workspacePanelWarning {
+                    Text(l.text(warning)).foregroundStyle(.orange).padding(.horizontal)
+                }
                 ForEach(snapshot.notifications) { notification in
                     HStack {
                         ErrorBanner(text: notification.message.map { l.text($0) } ?? snapshot.runtimeError.map { l.text($0) } ?? "", level: notification.level)

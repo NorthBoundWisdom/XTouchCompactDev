@@ -176,6 +176,11 @@
             width = 1600; height = 1000
             model.setOSCEnabled(true) // No trusted actual/heartbeat: refused with a visible notice.
             content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents))
+        case "arm-preview":
+            width = 760; height = 650
+            model.loadReferenceArmExample()
+            model.setArmPreviewVisible(true)
+            content = AnyView(ArmPreviewView(snapshot: model.panelSnapshot).background(Theme.background).preferredColorScheme(.dark))
         case "macros":
             width = 900; height = 800
             model.saveMacro(.init(id: "demo", name: "Cue", actions: [.set("a.Fader.1", 70), .step("a.Fader.1", 10), .toggle("a.Encoder.1")]))

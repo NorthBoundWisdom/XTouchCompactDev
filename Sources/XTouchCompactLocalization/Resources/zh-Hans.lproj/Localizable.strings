@@ -766,3 +766,21 @@
 "rejected" = "已拒绝";
 
 "Value" = "数值";
+
+"Arm preview" = "机械臂预览";
+
+"Panels" = "面板";
+
+"Illustrative pose · software values only" = "姿态示意 · 仅软件参数值";
+
+"Reference-arm parameters arm.j1–arm.j4 in degrees are missing. Launch with --reference-arm-example to load the example." = "缺少以度为单位的 arm.j1–arm.j4 参考机械臂参数。使用 --reference-arm-example 启动可加载示例。";
+
+"Top view" = "俯视";
+
+"Side view" = "侧视";
+
+"Panel settings are protected: %@" = "面板设置已保护：%@";
+
+"Enabled" = "已使能";
+
+"Disabled" = "未使能";

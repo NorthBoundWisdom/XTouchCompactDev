@@ -83,6 +83,9 @@
             .windowStyle(.hiddenTitleBar)
             .defaultSize(width: 1260, height: 920)
             .commands {
+                CommandMenu(language.localizer.text("Panels")) {
+                    PanelMenu(snapshot: model.panelSnapshot, intents: model.panelIntents).environmentObject(language)
+                }
                 CommandGroup(replacing: .appSettings) {
                     SettingsLink { Text(language.localizer.text("Settings") + "…") }
                         .keyboardShortcut(",", modifiers: .command)
