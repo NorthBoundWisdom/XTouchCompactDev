@@ -18,6 +18,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 
 # Checks below rely on assert; refuse to run where python -O would strip them.
@@ -25,16 +26,27 @@ if not __debug__:
     raise SystemExit("Run without -O: these checks rely on assert")
 
 
+@contextmanager
+def anonymous_token_pipe(token):
+    """One fresh pipe per consumer. /dev/fd/N is a public descriptor path, not a disk file."""
+    read_fd, write_fd = os.pipe()
+    try:
+        try:
+            os.write(write_fd, token.encode())
+        finally:
+            os.close(write_fd)
+        yield read_fd
+    finally:
+        os.close(read_fd)
+
+
 class RunningOfflineHardware:
     def __init__(self, binary, directory, instance="offline.hardware", feedback=True):
         self.directory = Path(directory)
         self.ready_path = self.directory / "ready.json"
-        self.token_path = self.directory / "token"
         self.log_path = self.directory / "device-access.jsonl"
         self.stdout_path = self.directory / "stdout.jsonl"
         self.token = secrets.token_hex(32)
-        self.token_path.write_text(self.token)
-        self.token_path.chmod(0o600)
         arguments = [
             str(Path(binary).resolve()),
             "--device-access",
@@ -47,8 +59,7 @@ class RunningOfflineHardware:
             instance,
             "--port",
             "0",
-            "--token-file",
-            str(self.token_path),
+            "--token-stdin",
             "--ready-file",
             str(self.ready_path),
         ]
@@ -60,8 +71,16 @@ class RunningOfflineHardware:
         self._log = self.log_path.open("w")
         self._stdout = self.stdout_path.open("w")
         self.process = subprocess.Popen(
-            arguments, cwd=directory, env=self.environment, stdout=self._stdout, stderr=self._log
+            arguments,
+            cwd=directory,
+            env=self.environment,
+            stdin=subprocess.PIPE,
+            stdout=self._stdout,
+            stderr=self._log,
+            text=True,
         )
+        self.process.stdin.write(self.token + "\n")
+        self.process.stdin.close()
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             if self.ready_path.exists():
@@ -106,7 +125,6 @@ class RunningOfflineHardware:
             self.process.wait(timeout=5)
         self._log.close()
         self._stdout.close()
-        self.token_path.unlink(missing_ok=True)
 
     def audit(self):
         rows = [json.loads(line) for line in self.log_path.read_text().splitlines() if line]
@@ -237,35 +255,37 @@ def verify(directory, evidence):
             capture_report = evidence / "disconnected-verification.json"
             environment = {**host.environment, "PYTHONPATH": str(sdk_zip)}
             before_capture = len(host.log_path.read_text().splitlines())
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    "-B",
-                    "-m",
-                    "surface_control_diagnostics",
-                    "capture",
-                    "--url",
-                    host.ready["url"],
-                    "--token-file",
-                    str(host.token_path),
-                    "--instance-id",
-                    host.instance,
-                    "--profile-id",
-                    manifest["profile_id"],
-                    "--profile-version",
-                    manifest["profile_version"],
-                    "--output",
-                    str(capture),
-                    "--accept-hardware",
-                    "--max-polls",
-                    "1",
-                ],
-                cwd=temporary,
-                env=environment,
-                text=True,
-                capture_output=True,
-                timeout=30,
-            )
+            with anonymous_token_pipe(host.token) as token_fd:
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-B",
+                        "-m",
+                        "surface_control_diagnostics",
+                        "capture",
+                        "--url",
+                        host.ready["url"],
+                        "--token-file",
+                        "/dev/fd/" + str(token_fd),
+                        "--instance-id",
+                        host.instance,
+                        "--profile-id",
+                        manifest["profile_id"],
+                        "--profile-version",
+                        manifest["profile_version"],
+                        "--output",
+                        str(capture),
+                        "--accept-hardware",
+                        "--max-polls",
+                        "1",
+                    ],
+                    pass_fds=(token_fd,),
+                    cwd=temporary,
+                    env=environment,
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
+                )
             assert completed.returncode == 1 and capture.is_file()
             recorded = json.loads(capture.read_text())
             assert recorded["snapshot"]["link"]["state"] == "disconnected"

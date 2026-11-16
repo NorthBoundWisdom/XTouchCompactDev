@@ -309,3 +309,12 @@ renderer has been checked through the same CompactSession display intent, PanelS
 RingLEDs fields that SurfacePanelView uses. Its separate legacy MCP endpoint does not expose the
 control-contract demo entry point: the CLI currently connects to standalone XTouchSurfaceSimulator
 or XTouchSurfaceHardware, and does not directly drive the GUI window. No GUI network API was added.
+
+## Credential handling in the packaged offline verifier (H support)
+
+`verify_hardware_http.py` starts the permanently device-access-disabled host with an anonymous
+stdin pipe. Each shared diagnostic CLI capture receives a separate fresh anonymous pipe through
+an inherited descriptor; its existing `--token-file /dev/fd/N` argument names only that public
+pipe descriptor, and creates no credential file. Offline verify requires no credential. Synthetic
+test credentials stay in memory/pipes and are checked absent from process arguments and regular
+files. Legacy product token-file authentication and its dedicated safety tests are unchanged.

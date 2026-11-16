@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "build/dependencies/SurfacePlugins/clients/python"))
-from configs.verify_hardware_http import RunningOfflineHardware
+from configs.verify_hardware_http import RunningOfflineHardware, anonymous_token_pipe
 from surface_control import Client, SurfaceError
 
 # Resolved at import: the service runs with each test's temporary directory as cwd.
@@ -23,6 +23,43 @@ BINARY = Path(os.environ.get("XTOUCH_HARDWARE_BINARY", ROOT / ".build/debug/XTou
 
 @unittest.skipUnless(sys.platform == "darwin", "XTouchSurfaceHardware target is macOS-only")
 class OfflineHardwareHTTPTests(unittest.TestCase):
+    def test_offline_helper_keeps_credentials_in_anonymous_pipes_not_regular_files_or_argv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            host = RunningOfflineHardware(BINARY, directory)
+            try:
+                self.assertFalse((Path(directory) / 'token').exists())
+                for path in Path(directory).rglob('*'):
+                    if path.is_file():
+                        self.assertTrue(host.token not in path.read_text(errors='replace'), 'Credential reached a regular file')
+                arguments = subprocess.check_output(['/bin/ps', '-p', str(host.process.pid), '-o', 'command='], text=True)
+                self.assertTrue(host.token not in arguments, 'Credential reached process arguments')
+                self.assertIn('--token-stdin', arguments)
+            finally:
+                host.close()
+            self.assertTrue(all(host.token not in path.read_text(errors='replace')
+                                for path in Path(directory).rglob('*') if path.is_file()))
+
+    def test_shared_diagnostic_cli_reads_a_fresh_anonymous_descriptor_without_a_token_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            host = RunningOfflineHardware(BINARY, directory)
+            try:
+                capture = Path(directory) / 'capture.json'
+                with anonymous_token_pipe(host.token) as descriptor:
+                    completed = subprocess.run([sys.executable, '-B', '-m', 'surface_control_diagnostics', 'capture',
+                        '--url', host.ready['url'], '--token-file', '/dev/fd/' + str(descriptor),
+                        '--instance-id', host.instance, '--profile-id', 'xtouch.compact.standard.hardware',
+                        '--profile-version', '1.4', '--output', str(capture), '--accept-hardware', '--max-polls', '1'],
+                        pass_fds=(descriptor,), cwd=directory, env={**os.environ, 'PYTHONPATH': str(ROOT / 'build/dependencies/SurfacePlugins/clients/python')},
+                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(completed.returncode, 1, 'Disconnected diagnostics must remain explicitly incomplete')
+                self.assertEqual(json.loads(capture.read_text())['snapshot']['link']['state'], 'disconnected')
+                self.assertTrue(host.token not in completed.stdout + completed.stderr)
+                self.assertFalse((Path(directory) / 'token').exists())
+                self.assertTrue(all(host.token not in path.read_text(errors='replace')
+                                    for path in Path(directory).rglob('*') if path.is_file()))
+            finally:
+                host.close()
+
     def test_disabled_device_access_has_unknown_inputs_and_fixed_remote_rejections(self):
         with tempfile.TemporaryDirectory() as directory:
             host = RunningOfflineHardware(BINARY, directory)
