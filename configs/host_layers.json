@@ -23,6 +23,7 @@
     "Sources/XTouchCompactApp/InputReviewExporter.swift": "composition",
     "Sources/XTouchCompactApp/LanguageSettings.swift": "composition",
     "Sources/XTouchCompactApp/LocalMCPServer.swift": "transport",
+    "Sources/XTouchCompactApp/MCPIntegrationCommand.swift": "composition",
     "Sources/XTouchCompactApp/ModeBar.swift": "composition",
     "Sources/XTouchCompactApp/MonitorCapture.swift": "composition",
     "Sources/XTouchCompactApp/NonMotorTestPresentation.swift": "composition",

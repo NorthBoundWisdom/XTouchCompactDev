@@ -195,4 +195,36 @@
         model.mcpWritesAllowed = false
         #expect(throws: MCPError.self) { _ = try model.routeMCP(call("set_parameter", ["id": "a.Fader.1", "value": 5])) }
     }
+
+    @Test @MainActor func mockConstrainedHTTPWritesKeepTouchAndAuthorizationGates() throws {
+        for motors in [false, true] {
+            let clock = TestClock()
+            let model = ConsoleModel(startsMIDI: false, now: { clock.date }, isolated: true)
+            let server = LocalMCPServer(authenticationToken: "t", now: { clock.date })
+            server.handler = { try model.routeMCP($0) }
+            server.readSource = { "mock" }
+            var write = try request(["jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                     "params": ["name": "set_parameter", "arguments": ["id": "a.Fader.1", "value": 90]]])
+            write.headers["xtouch-require-source"] = "mock"
+            let denied = server.respond(write)
+            let deniedRPC = try #require(JSONSerialization.jsonObject(with: denied.1) as? [String: Any])
+            #expect((deniedRPC["error"] as? [String: Any])?["code"] as? Int == -32602)
+            #expect(model.bank.faders[0] == 0)
+            model.mcpWritesAllowed = true; model.mcpMotorWritesAllowed = motors
+            model.touchFader(1, isTouched: true)
+            model.clearMonitor()
+            #expect(server.respond(write).0 == 200)
+            #expect(model.bank.faders[0] == 90)
+            #expect(model.session.state.isMotorPending(1) == motors)
+            #expect(!model.events.contains { $0.direction == .output && $0.control == .fader(1) })
+            model.touchFader(1, isTouched: false)
+            #expect(model.mock.faders[0] == (motors ? 90 : 0))
+            model.clearMonitor()
+            server.readSource = { "hardware" }
+            #expect(server.respond(write).0 == 409)
+            server.readSource = nil
+            #expect(server.respond(write).0 == 409)
+            #expect(model.events.isEmpty)
+        }
+    }
 #endif

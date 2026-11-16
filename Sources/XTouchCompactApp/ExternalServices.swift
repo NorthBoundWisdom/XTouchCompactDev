@@ -14,6 +14,7 @@
             }
             do {
                 let token = try accessToken()
+                mcp.readSource = { [weak self] in self?.hardwareMode == false ? "mock" : "hardware" }
                 mcp.handler = { [weak self] request in
                     guard let self else { throw MCPError.denied }
                     return try routeMCP(request)

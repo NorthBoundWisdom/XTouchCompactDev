@@ -34,6 +34,8 @@
 
         var handler: (([String: Any]) throws -> [String: Any])?
         var onError: ((any Error) -> Void)?
+        var onReady: ((UInt16) -> Void)?
+        var readSource: (() -> String)?
         private var ready = false
         var boundPort: UInt16? {
             guard ready, let port = listener?.port?.rawValue, port != 0 else { return nil }
@@ -56,7 +58,11 @@
                     // Named owners keep member access explicit under Swift 6.1 and SwiftFormat.
                     guard let server = self, server.peers.count < 16 else { connection.cancel(); return }
                     let id = UUID()
-                    let peer = MCPPeer(connection: connection) { [weak self] request in self?.response(request) ?? MCPReply(status: 503) }
+                    let peer = MCPPeer(connection: connection, respond: { [weak self] request in
+                        self?.response(request) ?? MCPReply(status: 503)
+                    }, responseHeaders: { [weak self] in
+                        self?.readSource.map { ["XTouch-Source": $0()] } ?? [:]
+                    })
                     server.peers[id] = peer
                     peer.finished = { [weak self] in self?.peers.removeValue(forKey: id) }
                     peer.start()
@@ -64,7 +70,13 @@
             }
             listener.stateUpdateHandler = { [weak self] state in
                 if case .ready = state {
-                    Task { @MainActor [weak self] in self?.ready = true }
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        ready = true
+                        if let port = boundPort {
+                            onReady?(port)
+                        }
+                    }
                 }
                 if case let .failed(error) = state {
                     Task { @MainActor [weak self] in self?.stop(); self?.onError?(error) }
@@ -92,6 +104,9 @@
             guard request.path == "/mcp" else { return MCPReply(status: 404) }
             guard request.headers["origin"] == nil else { return MCPReply(status: 403) }
             guard request.headers["authorization"] == "Bearer \(token)", !token.isEmpty else { return MCPReply(status: 401) }
+            if let required = request.headers["xtouch-require-source"], required != readSource?() {
+                return MCPReply(status: 409)
+            }
             if request.method == "DELETE" {
                 return router.deleteSession(request.headers["mcp-session-id"])
             }
@@ -147,11 +162,12 @@
     @MainActor private final class MCPPeer {
         let connection: NWConnection
         let respond: (HTTPRequest) -> MCPReply
+        let responseHeaders: () -> [String: String]
         var finished: (() -> Void)?
         var bytes = Data()
         private var timeout: Task<Void, Never>?
-        init(connection: NWConnection, respond: @escaping (HTTPRequest) -> MCPReply) {
-            self.connection = connection; self.respond = respond
+        init(connection: NWConnection, respond: @escaping (HTTPRequest) -> MCPReply, responseHeaders: @escaping () -> [String: String]) {
+            self.connection = connection; self.respond = respond; self.responseHeaders = responseHeaders
         }
 
         func start() {
@@ -180,7 +196,8 @@
                             let reply = peer.respond(request)
                             let body = try reply.encodedBody()
                             let sessionHeader = reply.sessionID.map { "Mcp-Session-Id: \($0)\r\n" } ?? ""
-                            let header = "HTTP/1.1 \(reply.status) Response\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\n" + sessionHeader + "Connection: close\r\n\r\n"
+                            let sourceHeaders = peer.responseHeaders().map { "\($0.key): \($0.value)\r\n" }.joined()
+                            let header = "HTTP/1.1 \(reply.status) Response\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\n" + sessionHeader + sourceHeaders + "Connection: close\r\n\r\n"
                             peer.connection.send(content: Data(header.utf8) + body, completion: .contentProcessed { [weak peer] _ in Task { @MainActor [weak peer] in peer?.cancel() } })
                         } else if complete || error != nil {
                             peer.cancel()

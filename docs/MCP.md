@@ -15,3 +15,22 @@ Requests are single JSON-RPC 2.0 objects. IDs must be strings or finite numbers 
 `tools/list` returns tools and their schemas. `tools/call` returns content/isError and structuredContent where supplied by the tool. Shared `surface_` schemas and raw result/error shapes remain unchanged; see [shared tools](SHARED_REMOTE.md). The three original GUI tools (`get_state`, `set_parameter`, `agent_primary`) retain their text result and permission/error behavior. Future aligned console tools use BCR's `{data: ...}` in text and structuredContent; tool errors use `isError: true`, `{data: {error: reason}}`. Transport/JSON-RPC errors remain distinct.
 
 The core `MCPRouter` owns typed requests, response/error envelopes, negotiation and sessions with injected time. `LocalMCPServer` owns loopback HTTP, bearer authentication, connection bounds and the existing 60 requests/minute limit. No external runtime dependency is added.
+
+## stdio bridge and smoke
+
+Use only a token environment variable (never argv or a file):
+
+```sh
+export XTOUCH_MCP_TOKEN='<token copied from Settings>'
+python3 tools/mcp_stdio.py --url http://127.0.0.1:8765/mcp
+python3 tools/mcp_smoke.py
+python3 tools/mcp_smoke.py --legacy
+python3 tools/mcp_smoke.py --write --parameter a.Fader.1 --value 90
+python3 tools/verify_stdio_bridge.py --url http://127.0.0.1:8765/mcp
+```
+
+Smoke defaults read-only: discover/handshake, list tools, read one parameter. `--write` writes then restores a value only after a confirmed Mock source; hardware and unknown sources are refused with a reason. An authenticated `XTouch-Source` HTTP response header reports the GUI's actual selected source. Smoke also sets `XTouch-Require-Source: mock`; the GUI checks it synchronously before tool dispatch (including restoration), rejecting a local source-switch race with HTTP 409. This is a host safety constraint, not a writable source selector or permission grant. Write/motor permissions and touch handling still use the existing route. Before aligned get_parameter/get_status tools are installed, smoke reads get_state and uses the authenticated source header; unknown sources fail closed.
+
+CLI names match BCR: `--url`, `--token-env`, `--legacy`, `--parameter`, `--value`, with product-prefixed `XTOUCH_MCP_TOKEN` / `XTOUCH_MCP_URL`. XTouch additionally requires `--write` (BCR's probe writes by default). The bridge accepts newline JSON-RPC; stdout contains responses only. Notifications produce no line; EOF deletes legacy sessions. It handles legacy handshake and forwards modern mirrored metadata, disables proxies/redirects and accepts only IPv4 loopback HTTP `/mcp`. Diagnostics omit credentials and request/response content. Bridge verification uses the always-present get_state (BCR uses get_status).
+
+`python3 -B -m unittest discover -s Tests/SimulatorIntegration -p test_gui_mcp.py -v` starts the Debug executable with `--integration-test --mcp-test-server` on an ephemeral port. This separate process entry creates no AppKit application/window, UserDefaults, user workspace or CoreMIDI client, and uses an in-memory token supplied by the test environment. Release refuses this entry. `--allow-writes` is an explicit isolated-test option, with motor permission still off. It exercises both protocol versions, read-only and Mock write/restore probes, and the real stdio bridge. The ordinary GUI starts with MCP/writes/motors disabled.

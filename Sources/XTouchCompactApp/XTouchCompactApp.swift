@@ -11,7 +11,9 @@
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
                 exit(2)
             }
-            if ProcessInfo.processInfo.arguments.contains("--snapshot-output") {
+            if ProcessInfo.processInfo.arguments.contains("--mcp-test-server") {
+                MCPIntegrationCommand.run()
+            } else if ProcessInfo.processInfo.arguments.contains("--snapshot-output") {
                 PreviewCommand.run()
             } else {
                 XTouchCompactDevApp.main()
