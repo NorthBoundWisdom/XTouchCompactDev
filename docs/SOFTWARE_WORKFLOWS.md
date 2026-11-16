@@ -204,7 +204,7 @@ OSC safety gate; last transmitted commands are never physical observations.
 The default composition installs only Agent. Launch flags explicitly add modules:
 
 ```sh
-swift run XTouchCompactApp --robot-plugin --chassis-plugin --output-plugin
+swift run XTouchCompactApp --robot-sim --chassis-sim --output-sim
 ```
 
 Each module can be selected alone. Reference robot and Ackermann chassis are

@@ -87,9 +87,11 @@ python3 configs/macos_workflow.py package   # Release ZIP and DMG under build/pa
 | --- | --- |
 | `--hardware-observe` | Open hardware observation with output locked and no saved workspace. Add `--capture-path <file>` to record. |
 | `--hardware-control` | Start on hardware with fresh writes allowed. No motor is recalled. |
-| `--robot-plugin`, `--chassis-plugin`, `--output-plugin` | Install the optional simulated modules. |
+| `--robot-sim`, `--chassis-sim`, `--output-sim` | Install the optional simulated modules. |
 | `--reference-arm-example` | Load the version-2 reference-arm parameter set, with no assignments. |
 | `--startup-smoke`, `--integration-test` | Isolated checks: no CoreMIDI, no user workspace, no Keychain. |
+
+The GUI rejects the retired `--robot-plugin`, `--chassis-plugin` and `--output-plugin` flags with an error and replacement name before startup. Headless service flags are unchanged.
 
 ## Using the app
 

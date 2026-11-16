@@ -5,6 +5,12 @@
     @main
     enum XTouchLauncher {
         @MainActor static func main() {
+            do {
+                _ = try GUIPluginOptions(arguments: ProcessInfo.processInfo.arguments)
+            } catch {
+                FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+                exit(2)
+            }
             if ProcessInfo.processInfo.arguments.contains("--snapshot-output") {
                 PreviewCommand.run()
             } else {
@@ -27,16 +33,8 @@
             let languageSettings = LanguageSettings(defaults: defaults)
             _language = StateObject(wrappedValue: languageSettings)
             let model = ConsoleModel(startsMIDI: !isolated, storageRoot: root, isolated: isolated)
-            var selection = Set<OptionalBusinessPlugin>()
-            if arguments.contains("--robot-plugin") {
-                selection.insert(.robot)
-            }
-            if arguments.contains("--chassis-plugin") {
-                selection.insert(.chassis)
-            }
-            if arguments.contains("--output-plugin") {
-                selection.insert(.output)
-            }
+            // Validated by the launcher before AppKit, storage or MIDI starts.
+            let selection = (try? GUIPluginOptions(arguments: arguments))?.selection ?? []
             if !selection.isEmpty {
                 model.installOptionalPlugins(selection)
             }

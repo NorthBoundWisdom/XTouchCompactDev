@@ -10,8 +10,6 @@ import RobotPlugin
 import RobotRemoteBinding
 import SurfacePluginContracts
 
-public enum OptionalBusinessPlugin: String, CaseIterable, Sendable { case robot, chassis, output }
-
 /// Explicit static composition. Nothing here changes control assignments or recalls motors.
 public extension CompactPluginHost {
     static var maximumSimulationCatchUpGap: Double {

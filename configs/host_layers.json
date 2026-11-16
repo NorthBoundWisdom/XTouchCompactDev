@@ -50,6 +50,7 @@
     "Sources/XTouchCompactCore/CompactSurfaceSimulator.swift": "bridge",
     "Sources/XTouchCompactCore/DeviceConfigurationValidation.swift": "device",
     "Sources/XTouchCompactCore/FactoryStandardMap.swift": "device",
+    "Sources/XTouchCompactCore/GUIPluginOptions.swift": "values",
     "Sources/XTouchCompactCore/HardwareDeviceAccess.swift": "transport",
     "Sources/XTouchCompactCore/HardwareValueCache.swift": "device",
     "Sources/XTouchCompactCore/InputCoverage.swift": "device",
