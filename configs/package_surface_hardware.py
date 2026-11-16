@@ -85,6 +85,8 @@ def stage_files(stage):
     for source, name in (
         ("LICENSE", "LICENSE"),
         ("docs/SURFACE_HARDWARE.md", "README.md"),
+        ("docs/DISPLAY_TARGETS_HARDWARE.md", "display-targets.md"),
+        ("configs/check_display_targets.py", "check_display_targets.py"),
         ("configs/surface_plugins.lock.json", "surface_plugins.lock.json"),
         ("examples/surface_hardware/conformance-roles.json", "conformance-roles.json"),
         ("configs/verify_hardware_delivery.py", "verify_hardware_delivery.py"),
@@ -137,6 +139,17 @@ def package(output_root, configuration="release"):
         (simulation / "control-contract.json").write_bytes(
             subprocess.check_output([str(simulation / "XTouchSurfaceSimulator"), "--describe"])
         )
+        subprocess.run(
+            [
+                "python3",
+                str(simulation / "check_display_targets.py"),
+                "--contract",
+                str(simulation / "control-contract.json"),
+                "--table",
+                str(simulation / "display-targets.md"),
+            ],
+            check=True,
+        )
         write_simulator_manifest(simulation, command("git", "rev-parse", "HEAD"), configuration)
         described = subprocess.check_output(
             [
@@ -150,6 +163,17 @@ def package(output_root, configuration="release"):
             text=True,
         )
         (stage / "control-contract.json").write_text(described)
+        subprocess.run(
+            [
+                "python3",
+                str(stage / "check_display_targets.py"),
+                "--contract",
+                str(stage / "control-contract.json"),
+                "--table",
+                str(stage / "display-targets.md"),
+            ],
+            check=True,
+        )
         discovery = json.loads(described)["discovery"]
         if discovery["source"] != "hardware" or discovery["contract_version"] != "1.4":
             raise RuntimeError("Hardware binary discovery mismatch")

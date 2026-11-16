@@ -135,6 +135,8 @@ def stage_shared_files(stage, root=ROOT, shared=SHARED):
     shutil.copy2(root / "LICENSE", stage)
     shutil.copy2(root / "examples/surface_simulator/minimal_consumer.py", stage)
     shutil.copy2(root / "docs/SURFACE_SIMULATOR.md", stage / "README.md")
+    shutil.copy2(root / "docs/DISPLAY_TARGETS_SIMULATION.md", stage / "display-targets.md")
+    shutil.copy2(root / "configs/check_display_targets.py", stage / "check_display_targets.py")
     shutil.copy2(root / "configs/surface_plugins.lock.json", stage)
     for name, source in SHARED_FILES.items():
         shutil.copy2(shared / source, stage / name)
@@ -259,6 +261,17 @@ def package(output=None, configuration="release", output_root=None):
         stage_shared_files(stage)
         (stage / "control-contract.json").write_text(
             subprocess.check_output([str(stage / "XTouchSurfaceSimulator"), "--describe"], text=True)
+        )
+        subprocess.run(
+            [
+                "python3",
+                str(stage / "check_display_targets.py"),
+                "--contract",
+                str(stage / "control-contract.json"),
+                "--table",
+                str(stage / "display-targets.md"),
+            ],
+            check=True,
         )
         write_manifest(stage, command("git", "rev-parse", "HEAD"), configuration)
         if output_root is None:

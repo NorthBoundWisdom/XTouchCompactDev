@@ -232,3 +232,18 @@ zero CoreMIDI access. Evidence stays outside the immutable delivery. The manifes
 `source_ahead`/`source_behind` counts, plus `delivery_status: local-unpushed-candidate` when ahead (otherwise `remote-head-unreleased-candidate`). They
 do not claim a push or release. Fast-forwarding those exact SHAs preserves this artifact;
 rebasing to different SHAs requires rebuilding and updating consumer pins.
+
+## Display catalogue (H-1)
+
+The delivery includes `display-targets.md`, generated from its default discovery profile.
+It lists every non-fader display target, range, style knowledge and qualification boundary.
+Check the table without any device access:
+
+```sh
+python3 check_display_targets.py --contract control-contract.json --table display-targets.md
+```
+
+The discover response already supplies stable IDs, feedback kinds and allowed ranges;
+current ring style and physical qualification are not discoverable contract fields.
+The table states those limits explicitly. No profile, simulation discovery bytes or
+physical qualification changed. Hardware faders still declare no feedback kinds.

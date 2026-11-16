@@ -640,3 +640,18 @@ local fake MIDI adapter. Concurrent slow-connection expiry is separately asserte
 `SurfaceSimulatorHTTPTests.test_lease_expiry_bound_with_concurrent_slow_connections`;
 its report is `build/f/concurrent-slow-expiry.json`, with four peers active before and
 after three hold deadlines and an unchanged 0.5-second upper bound.
+
+## Display catalogue (H-1)
+
+The delivery includes `display-targets.md`, generated from its default discovery profile.
+It lists every non-fader display target, range, style knowledge and qualification boundary.
+Check the table without any device access:
+
+```sh
+python3 check_display_targets.py --contract control-contract.json --table display-targets.md
+```
+
+The discover response already supplies stable IDs, feedback kinds and allowed ranges;
+current ring style and physical qualification are not discoverable contract fields.
+The table states those limits explicitly. No profile, simulation discovery bytes or
+physical qualification changed. Hardware faders still declare no feedback kinds.
