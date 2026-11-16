@@ -42,9 +42,9 @@
                     HStack {
                         ErrorBanner(text: notification.message.map { l.text($0) } ?? snapshot.runtimeError.map { l.text($0) } ?? "", level: notification.level)
                         if notification.persistent {
-                            Button(l.text("Retry save")) { intents.retrySave?() }
+                            Button(l.text("Retry save")) { intents.retrySave?() }.accessibilityIdentifier("contentView.retrySave.\(notification.id)")
                         } else {
-                            Button(l.text("Dismiss")) { intents.dismissNotification?(notification.id) }
+                            Button(l.text("Dismiss")) { intents.dismissNotification?(notification.id) }.accessibilityIdentifier("contentView.dismiss.\(notification.id)")
                         }
                     }
                     .padding(.horizontal, 18)
@@ -184,18 +184,18 @@
 
                 Button { confirmsRecall = true } label: {
                     Label(l.text("电机归位…"), systemImage: "arrow.up.and.down.and.sparkles")
-                }
-                .buttonStyle(BarButtonStyle())
-                .disabled(snapshot.isMock || snapshot.listenOnly || !snapshot.connection.isConnected)
-                .help(l.text("把九个电动推子移动到当前层的软件数值；只在你确认后执行"))
-                .confirmationDialog(l.text("移动全部九个实体推子？"), isPresented: $confirmsRecall) {
-                    Button(l.text("移动九个电动推子")) { intents.recallMotors?() }
-                    Button(l.text("取消"), role: .cancel) {}
-                } message: {
-                    Text(l.text("连接或换层后不会自动移动电机。请确认推子行程内没有遮挡；被触摸的推子不会移动。"))
-                }
+                }.accessibilityIdentifier("contentView.buttonf5972b")
+                    .buttonStyle(BarButtonStyle())
+                    .disabled(snapshot.isMock || snapshot.listenOnly || !snapshot.connection.isConnected)
+                    .help(l.text("把九个电动推子移动到当前层的软件数值；只在你确认后执行"))
+                    .confirmationDialog(l.text("移动全部九个实体推子？"), isPresented: $confirmsRecall) {
+                        Button(l.text("移动九个电动推子")) { intents.recallMotors?() }.accessibilityIdentifier("contentView.buttondb51dc")
+                        Button(l.text("取消"), role: .cancel) {}.accessibilityIdentifier("contentView.button2cd0f3")
+                    } message: {
+                        Text(l.text("连接或换层后不会自动移动电机。请确认推子行程内没有遮挡；被触摸的推子不会移动。"))
+                    }
 
-                SettingsLink { Label(l.text("Settings"), systemImage: "gearshape") }
+                SettingsLink { Label(l.text("Settings"), systemImage: "gearshape") }.accessibilityIdentifier("contentView.settings")
                     .labelStyle(.iconOnly).buttonStyle(BarButtonStyle()).help(l.text("Settings"))
                 DeviceStatus(snapshot: snapshot)
             }

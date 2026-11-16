@@ -67,6 +67,7 @@
         @EnvironmentObject private var language: LanguageSettings
         var body: some View {
             Toggle(language.localizer.text("Arm preview"), isOn: Binding(get: { snapshot.armPreviewVisible }, set: { intents.setArmPreviewVisible?($0) }))
+                .accessibilityIdentifier("workspace.panel.armPreview")
         }
     }
 #endif

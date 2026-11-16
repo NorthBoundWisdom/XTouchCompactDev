@@ -11,7 +11,8 @@
             let l = language.localizer
             Section(l.text("Configuration library")) {
                 TextField(l.text("Configuration name"), text: $name)
-                Button(l.text("Save configuration")) { intents.saveLibraryConfiguration?(name) }
+                    .accessibilityIdentifier("configuration.library.configurationName")
+                Button(l.text("Save configuration")) { intents.saveLibraryConfiguration?(name) }.accessibilityIdentifier("configuration.library.saveConfiguration")
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Text(l.text("Library entries exclude device profiles and runtime values. Loading never recalls motors."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -22,8 +23,8 @@
                     HStack {
                         Text(entry.name)
                         Spacer()
-                        Button(l.text("Load")) { intents.requestLibraryLoad?(entry.id) }
-                        Button(l.text("Delete"), role: .destructive) { intents.requestLibraryDelete?(entry.id) }
+                        Button(l.text("Load")) { intents.requestLibraryLoad?(entry.id) }.accessibilityIdentifier("configuration.library.load.\(entry.id)")
+                        Button(l.text("Delete"), role: .destructive) { intents.requestLibraryDelete?(entry.id) }.accessibilityIdentifier("configuration.library.delete.\(entry.id)")
                     }
                 }
             }
@@ -35,9 +36,9 @@
                 }
             ), titleVisibility: .visible) {
                 if let request = snapshot.pendingLibraryAction {
-                    Button(l.text(request.kind == .load ? "Load" : "Delete"), role: request.kind == .delete ? .destructive : nil) { intents.confirmLibraryAction?() }
+                    Button(l.text(request.kind == .load ? "Load" : "Delete"), role: request.kind == .delete ? .destructive : nil) { intents.confirmLibraryAction?() }.accessibilityIdentifier("configuration.library.confirm")
                 }
-                Button(l.text("Cancel"), role: .cancel) { intents.cancelLibraryAction?() }
+                Button(l.text("Cancel"), role: .cancel) { intents.cancelLibraryAction?() }.accessibilityIdentifier("configuration.library.cancel")
             } message: {
                 if let request = snapshot.pendingLibraryAction {
                     Text(request.name)

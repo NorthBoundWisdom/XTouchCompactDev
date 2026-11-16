@@ -37,9 +37,9 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Button { intents.undo?() } label: { Label(l.text("Undo"), systemImage: "arrow.uturn.backward") }
+                    Button { intents.undo?() } label: { Label(l.text("Undo"), systemImage: "arrow.uturn.backward") }.accessibilityIdentifier("organizeWorkspace.undo")
                         .disabled(!snapshot.canUndo)
-                    Button { intents.redo?() } label: { Label(l.text("Redo"), systemImage: "arrow.uturn.forward") }
+                    Button { intents.redo?() } label: { Label(l.text("Redo"), systemImage: "arrow.uturn.forward") }.accessibilityIdentifier("organizeWorkspace.redo")
                         .disabled(!snapshot.canRedo)
                     Text(l.text("Undo restores values like any software write: touched faders wait for release."))
                         .font(.caption).foregroundStyle(.secondary)
@@ -60,8 +60,8 @@
                                     Circle().fill(Theme.tag($0)).frame(width: 8, height: 8)
                                 }
                             }
-                        }
-                        .buttonStyle(.plain)
+                        }.accessibilityIdentifier("organizeWorkspace.button.\(group.name)")
+                            .buttonStyle(.plain)
                     }
                 }
                 section(l.text("Fader links")) {
@@ -73,42 +73,43 @@
                             Text(name(link.leader) + " → " + link.members.map(name).joined(separator: ", "))
                                 .font(.caption).lineLimit(1)
                             Spacer()
-                            Button { load(link) } label: { Image(systemName: "pencil") }
+                            Button { load(link) } label: { Image(systemName: "pencil") }.accessibilityIdentifier("organizeWorkspace.button.2.\(link.id)")
                                 .buttonStyle(.plain).help(l.text("Edit link"))
                             Button(role: .destructive) {
                                 intents.deleteLink?(link.id)
                                 if editingLink == link.id {
                                     clearLinkForm()
                                 }
-                            } label: { Image(systemName: "trash") }
+                            } label: { Image(systemName: "trash") }.accessibilityIdentifier("organizeWorkspace.button.3.\(link.id)")
                                 .buttonStyle(.plain).help(l.text("Delete link"))
                         }
                     }
                     HStack {
-                        TextField(l.text("Link name"), text: $linkName).frame(width: 120)
+                        TextField(l.text("Link name"), text: $linkName).accessibilityIdentifier("organizeWorkspace.linkName").frame(width: 120)
                         Picker(l.text("Leader"), selection: $leader) {
                             Text("—").tag("")
                             ForEach(parameters) { Text($0.name + " · " + $0.id).tag($0.id) }
-                        }
+                        }.accessibilityIdentifier("organizeWorkspace.leader")
                     }
                     Menu(members.isEmpty ? l.text("Choose members") : members.map(name).sorted().joined(separator: ", ")) {
                         ForEach(parameters.filter { $0.id != leader }) { parameter in
                             Button { toggle(parameter.id) } label: {
                                 Label(parameter.name + " · " + parameter.id, systemImage: members.contains(parameter.id) ? "checkmark" : "")
-                            }
+                            }.accessibilityIdentifier("organizeWorkspace.button.4.\(parameter.id)")
                         }
-                    }
+                    }.accessibilityIdentifier("organizeWorkspace.chooseMembers")
                     HStack {
                         Button(l.text(editingLink == nil ? "Add link" : "Save link")) {
                             intents.saveLink?(ParameterLink(id: editingLink ?? UUID().uuidString,
                                                             name: linkName.trimmingCharacters(in: .whitespaces),
                                                             leader: leader, members: members.subtracting([leader]).sorted()))
                             clearLinkForm()
-                        }
-                        .disabled(linkName.trimmingCharacters(in: .whitespaces).isEmpty || leader.isEmpty
-                            || members.subtracting([leader]).isEmpty)
+                        }.accessibilityIdentifier("organizeWorkspace.button.5")
+                            .disabled(linkName.trimmingCharacters(in: .whitespaces).isEmpty || leader.isEmpty
+                                || members.subtracting([leader]).isEmpty)
                         if editingLink != nil {
                             Button(l.text("Cancel"), action: clearLinkForm)
+                                .accessibilityIdentifier("organizeWorkspace.cancel")
                         }
                     }
                 }
@@ -119,30 +120,30 @@
                         HStack {
                             if renamingScene == scene.id {
                                 TextField(l.text("Scene name"), text: $sceneRename)
-                                    .frame(maxWidth: 180)
+                                    .accessibilityIdentifier("organizeWorkspace.sceneName.\(scene.id)").frame(maxWidth: 180)
                                     .onSubmit { commitSceneRename(scene.id) }
-                                Button(l.text("Rename")) { commitSceneRename(scene.id) }
+                                Button(l.text("Rename")) { commitSceneRename(scene.id) }.accessibilityIdentifier("organizeWorkspace.rename.\(scene.id)")
                                     .disabled(sceneRename.trimmingCharacters(in: .whitespaces).isEmpty)
-                                Button(l.text("Cancel")) { renamingScene = nil }
+                                Button(l.text("Cancel")) { renamingScene = nil }.accessibilityIdentifier("organizeWorkspace.cancel.2.\(scene.id)")
                             } else {
                                 Text(scene.name).bold()
                                 Text(l.text("%@ values", String(scene.values.count))).font(.caption).foregroundStyle(.secondary)
-                                Button { renamingScene = scene.id; sceneRename = scene.name } label: { Image(systemName: "pencil") }
+                                Button { renamingScene = scene.id; sceneRename = scene.name } label: { Image(systemName: "pencil") }.accessibilityIdentifier("organizeWorkspace.button.6.\(scene.id)")
                                     .buttonStyle(.plain).help(l.text("Rename scene"))
                             }
                             Spacer()
-                            Button(l.text("Recall")) { intents.recallScene?(scene.id) }
-                            Button(l.text("Update")) { intents.captureScene?(scene.name) }
+                            Button(l.text("Recall")) { intents.recallScene?(scene.id) }.accessibilityIdentifier("organizeWorkspace.recall.\(scene.id)")
+                            Button(l.text("Update")) { intents.captureScene?(scene.name) }.accessibilityIdentifier("organizeWorkspace.update.\(scene.id)")
                                 .help(l.text("Replace this scene with the current values"))
-                            Button(role: .destructive) { intents.deleteScene?(scene.id) } label: { Image(systemName: "trash") }
+                            Button(role: .destructive) { intents.deleteScene?(scene.id) } label: { Image(systemName: "trash") }.accessibilityIdentifier("organizeWorkspace.button.7.\(scene.id)")
                                 .buttonStyle(.plain).help(l.text("Delete scene"))
                         }
                     }
                     HStack {
                         TextField(l.text("Scene name"), text: $sceneName)
-                            .onSubmit(saveScene)
+                            .accessibilityIdentifier("organizeWorkspace.sceneName.2").onSubmit(saveScene)
                         Button(l.text("Save current values"), action: saveScene)
-                            .disabled(sceneName.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .accessibilityIdentifier("organizeWorkspace.saveCurrentValues").disabled(sceneName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
             }

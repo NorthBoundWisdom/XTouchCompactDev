@@ -82,7 +82,7 @@
                                 Spacer()
                                 Button(l.text(slot.primaryActionLabelKey)) {
                                     intents.agentPrimary?(slot.id)
-                                }
+                                }.accessibilityIdentifier("agents.primary.\(slot.id)")
                             }
                         }
                     }
@@ -104,9 +104,9 @@
 
         private var workspacePicker: some View {
             Picker(l.text("工作区"), selection: $tab) {
-                ForEach(WorkspaceTab.allCases.filter { $0 != .arm || snapshot.armPreviewVisible }) { Label(l.text($0.title), systemImage: $0.systemImage).tag($0) }
-            }
-            .labelsHidden()
+                ForEach(WorkspaceTab.allCases.filter { $0 != .arm || snapshot.armPreviewVisible }) { Label(l.text($0.title), systemImage: $0.systemImage).tag($0).accessibilityIdentifier("workspace.tab.\($0.rawValue)") }
+            }.accessibilityIdentifier("workspace.selection")
+                .labelsHidden()
         }
     }
 
@@ -172,7 +172,7 @@
             let isDimmed = snapshot.highlightedGroup.map { $0 != group } ?? false
             return HStack(spacing: 10) {
                 Capsule().fill(color.map(Theme.tag) ?? Color.clear).frame(width: 3, height: 16)
-                Button(control.shortName) { selection = control }
+                Button(control.shortName) { selection = control }.accessibilityIdentifier("values.select.\(control.accessibilityID)")
                     .buttonStyle(.plain)
                     .font(.caption2.monospaced().bold())
                     .frame(width: 34)
@@ -191,7 +191,7 @@
                     value: Binding(get: { Double(value) }, set: { onChange(UInt8($0.rounded())) }),
                     in: 0 ... 127
                 )
-                .accessibilityLabel(l.text("%@ 软件数值", String(name)))
+                .accessibilityIdentifier("values.value.\(control.accessibilityID)").accessibilityLabel(l.text("%@ 软件数值", String(name)))
                 if let badge {
                     Text(badge).font(.caption2).foregroundStyle(Theme.touch)
                 }
@@ -221,12 +221,12 @@
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack {
-                    Button(l.text("Clear monitor")) { intents.clearMonitor?() }
+                    Button(l.text("Clear monitor")) { intents.clearMonitor?() }.accessibilityIdentifier("workspace.clearMonitor")
                     if let path = snapshot.capturePath {
-                        Button(l.text("Stop capture")) { intents.stopCapture?() }
+                        Button(l.text("Stop capture")) { intents.stopCapture?() }.accessibilityIdentifier("workspace.stopCapture")
                         Text(path).font(.caption).textSelection(.enabled)
                     } else {
-                        Button(l.text("Start capture…")) { intents.startCapture?() }
+                        Button(l.text("Start capture…")) { intents.startCapture?() }.accessibilityIdentifier("workspace.startCapture")
                     }
                 }
                 Text(l.text("Capture saves every event to JSONL; the screen retains only 120 events."))
@@ -282,18 +282,18 @@
                         Picker(l.text("输入"), selection: $input) {
                             Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
                             ForEach(snapshot.connection.inputs) { Text(portLabel($0)).tag($0.id) }
-                        }
-                        .labelsHidden()
+                        }.accessibilityIdentifier("connection.input")
+                            .labelsHidden()
                     }
                     row(l.text("输出")) {
                         Picker(l.text("输出"), selection: $output) {
                             Text(l.text("自动匹配 X-TOUCH COMPACT")).tag(Int32(0))
                             ForEach(snapshot.connection.outputs) { Text(portLabel($0)).tag($0.id) }
-                        }
-                        .labelsHidden()
+                        }.accessibilityIdentifier("connection.output")
+                            .labelsHidden()
                     }
                     applyRow(l.text("连接所选端口"), changed: portsChanged,
-                             help: l.text("按上面的选择重新连接 MIDI 输入与输出")) { intents.selectPorts?(input, output) }
+                             help: l.text("按上面的选择重新连接 MIDI 输入与输出"), identifier: "connection.ports.apply") { intents.selectPorts?(input, output) }
                     if let host = snapshot.connection.remoteBridgeHost {
                         Label(l.text("Remote hardware via %@ (development). Evidence from this route is not a USB sign-off.", host),
                               systemImage: "network")
@@ -304,32 +304,33 @@
                     Text(l.text("These must match the controller. The app never reads or rewrites the device's own settings."))
                         .font(.caption).foregroundStyle(.secondary)
                     row(l.text("Device sends on")) {
-                        channelPicker($tx)
+                        channelPicker($tx, identifier: "connection.tx")
                         Text(l.text("device → app")).font(.caption).foregroundStyle(.secondary)
                     }
                     row(l.text("Device receives on")) {
-                        channelPicker($rx)
+                        channelPicker($rx, identifier: "connection.rx")
                         Text(l.text("app → device (Global RX); may differ from the send channel")).font(.caption).foregroundStyle(.secondary)
                     }
                     row(l.text("Button LEDs")) {
                         Picker(l.text("Button LEDs"), selection: $observed) {
                             Text(l.text("Manual: 0 off · 1 on · 2 blink")).tag(false)
                             Text(l.text("Firmware 1.14: 0 off · 2 on · 3 blink")).tag(true)
-                        }
-                        .labelsHidden().fixedSize()
+                        }.accessibilityIdentifier("connection.ledEncoding")
+                            .labelsHidden().fixedSize()
                     }
                     applyRow(l.text("应用配置"), changed: profileChanged,
-                             help: l.text("Profile applied; parameter values preserved")) { intents.configureDevice?(tx, rx, observed) }
+                             help: l.text("Profile applied; parameter values preserved"), identifier: "connection.profile.apply") { intents.configureDevice?(tx, rx, observed) }
                 }
                 card(l.text("Output"), icon: "arrow.up.right.circle") {
                     Toggle(l.text("Listen only — send no MIDI"), isOn: Binding(
                         get: { snapshot.listenOnly }, set: { intents.setListenOnly?($0) }
                     ))
+                    .accessibilityIdentifier("workspace.listenOnlySendNoMidi")
                     Text(l.text("Hardware starts passively. Turning listening off sends nothing; realign explicitly before output tests."))
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button(l.text("Realign current layer"), action: { intents.realignLayer?() })
-                            .disabled(!snapshot.isMock && snapshot.listenOnly)
+                            .accessibilityIdentifier("workspace.realignCurrentLayer").disabled(!snapshot.isMock && snapshot.listenOnly)
                             .help(l.text("Reassert the selected layer and clear mismatch evidence. No motor command is sent, but the device cycles its faders on a layer change. Touch state is kept."))
                         Text(l.text("Sends the layer selection and LED/ring feedback, no motor command. The device may cycle its faders when the layer changes."))
                             .font(.caption).foregroundStyle(.secondary)
@@ -405,22 +406,22 @@
             }
         }
 
-        private func channelPicker(_ value: Binding<Int>) -> some View {
+        private func channelPicker(_ value: Binding<Int>, identifier: String) -> some View {
             Picker("", selection: value) {
                 ForEach(1 ... 16, id: \.self) { Text(String($0)).tag($0) }
-            }
-            .labelsHidden().frame(width: 64)
+            }.accessibilityIdentifier(identifier)
+                .labelsHidden().frame(width: 64)
         }
 
         /// The apply button is prominent only while the form differs from what is in force.
-        private func applyRow(_ title: String, changed: Bool, help: String, action: @escaping () -> Void) -> some View {
+        private func applyRow(_ title: String, changed: Bool, help: String, identifier: String, action: @escaping () -> Void) -> some View {
             HStack(spacing: 8) {
                 if changed {
-                    Button(title, action: action).buttonStyle(.borderedProminent).help(help)
+                    Button(title, action: action).accessibilityIdentifier(identifier).buttonStyle(.borderedProminent).help(help)
                     Label(l.text("Unapplied changes"), systemImage: "exclamationmark.circle.fill")
                         .font(.caption).foregroundStyle(Theme.touch)
                 } else {
-                    Button(title, action: action).disabled(true).help(help)
+                    Button(title, action: action).accessibilityIdentifier(identifier).disabled(true).help(help)
                     Label(l.text("Applied"), systemImage: "checkmark.circle")
                         .font(.caption).foregroundStyle(.secondary)
                 }

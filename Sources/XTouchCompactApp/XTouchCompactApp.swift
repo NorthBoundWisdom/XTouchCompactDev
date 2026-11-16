@@ -87,16 +87,16 @@
                     PanelMenu(snapshot: model.panelSnapshot, intents: model.panelIntents).environmentObject(language)
                 }
                 CommandGroup(replacing: .appSettings) {
-                    SettingsLink { Text(language.localizer.text("Settings") + "…") }
+                    SettingsLink { Text(language.localizer.text("Settings") + "…") }.accessibilityIdentifier("app.settings")
                         .keyboardShortcut(",", modifiers: .command)
                 }
                 // Parameter value history, beside (not replacing) the system Undo so text fields
                 // keep ⌘Z while editing.
                 CommandGroup(after: .undoRedo) {
-                    Button(language.localizer.text("Undo value change")) { model.undo() }
+                    Button(language.localizer.text("Undo value change")) { model.undo() }.accessibilityIdentifier("app.undoValueChange")
                         .keyboardShortcut("z", modifiers: [.command, .option])
                         .disabled(!model.session.canUndo)
-                    Button(language.localizer.text("Redo value change")) { model.redo() }
+                    Button(language.localizer.text("Redo value change")) { model.redo() }.accessibilityIdentifier("app.redoValueChange")
                         .keyboardShortcut("z", modifiers: [.command, .option, .shift])
                         .disabled(!model.session.canRedo)
                 }

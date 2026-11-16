@@ -16,9 +16,9 @@
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Button(l.text("Open capture…")) { intents.openOfflineCapture?() }
+                        Button(l.text("Open capture…")) { intents.openOfflineCapture?() }.accessibilityIdentifier("offlineCaptureView.openCapture")
                             .disabled(intents.openOfflineCapture == nil)
-                        Button(l.text("Clear offline review")) { intents.clearOfflineCapture?() }
+                        Button(l.text("Clear offline review")) { intents.clearOfflineCapture?() }.accessibilityIdentifier("offlineCaptureView.clearOfflineReview")
                             .disabled(intents.clearOfflineCapture == nil || snapshot.offlineCapture?.name == nil && snapshot.offlineCapture?.isLoading != true)
                         if snapshot.offlineCapture?.isLoading == true {
                             ProgressView().controlSize(.small)
@@ -58,13 +58,13 @@
                     Text(l.text("Replay uses neutral parameters, not the original assignments or software writes. Actions are not executed; timing follows sequence order."))
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        Button(l.text("Step replay")) { intents.stepOfflineReplay?() }
+                        Button(l.text("Step replay")) { intents.stepOfflineReplay?() }.accessibilityIdentifier("offlineCaptureView.stepReplay")
                             .disabled(loading || replay.isPlaying || replay.cursor >= replay.eventCount || intents.stepOfflineReplay == nil)
-                        Button(l.text("Run to end")) { intents.runOfflineReplay?() }
+                        Button(l.text("Run to end")) { intents.runOfflineReplay?() }.accessibilityIdentifier("offlineCaptureView.runToEnd")
                             .disabled(loading || replay.isPlaying || replay.cursor >= replay.eventCount || intents.runOfflineReplay == nil)
-                        Button(l.text("Pause replay")) { intents.pauseOfflineReplay?() }
+                        Button(l.text("Pause replay")) { intents.pauseOfflineReplay?() }.accessibilityIdentifier("offlineCaptureView.pauseReplay")
                             .disabled(!replay.isPlaying || intents.pauseOfflineReplay == nil)
-                        Button(l.text("Reset replay")) { intents.resetOfflineReplay?() }
+                        Button(l.text("Reset replay")) { intents.resetOfflineReplay?() }.accessibilityIdentifier("offlineCaptureView.resetReplay")
                             .disabled(loading || intents.resetOfflineReplay == nil)
                     }
                     ProgressView(value: Double(replay.cursor), total: Double(max(replay.eventCount, 1)))
@@ -95,7 +95,7 @@
                                 Slider(value: Binding(get: { Double(fader.target) }, set: {
                                     intents.setOfflineReplayFader?(fader.index, UInt8($0.rounded()))
                                 }), in: 0 ... 127)
-                                    .disabled(loading || replay.isPlaying || intents.setOfflineReplayFader == nil)
+                                    .accessibilityIdentifier("offlineCaptureView.slider.\(fader.index)").disabled(loading || replay.isPlaying || intents.setOfflineReplayFader == nil)
                                     .accessibilityLabel(l.text("Replay test target F%@", String(fader.index)))
                                 Text(String(fader.target)).font(.caption.monospacedDigit()).frame(width: 30)
                                 if fader.touched {

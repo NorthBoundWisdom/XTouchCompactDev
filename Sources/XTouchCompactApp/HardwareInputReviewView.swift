@@ -41,12 +41,12 @@
                     HStack(spacing: 16) {
                         Picker(l.text("Review layer"), selection: Binding(get: { layer }, set: { layer = $0; followsInputLayer = false })) {
                             ForEach(CompactLayer.allCases, id: \.self) { Text($0.rawValue.uppercased()).tag($0) }
-                        }.pickerStyle(.segmented).frame(width: 180)
+                        }.accessibilityIdentifier("hardwareInputReviewView.reviewLayer").pickerStyle(.segmented).frame(width: 180)
                         Picker(l.text("Control group"), selection: $group) {
                             ForEach(CompactInputGroup.allCases, id: \.self) { Text(l.text($0.titleKey)).tag($0) }
-                        }.frame(width: 250)
-                        Toggle(l.text("Follow input layer"), isOn: $followsInputLayer).toggleStyle(.checkbox)
-                        Toggle(l.text("Show incomplete only"), isOn: $incompleteOnly).toggleStyle(.checkbox)
+                        }.accessibilityIdentifier("hardwareInputReviewView.controlGroup").frame(width: 250)
+                        Toggle(l.text("Follow input layer"), isOn: $followsInputLayer).accessibilityIdentifier("hardwareInputReviewView.followInputLayer").toggleStyle(.checkbox)
+                        Toggle(l.text("Show incomplete only"), isOn: $incompleteOnly).accessibilityIdentifier("hardwareInputReviewView.showIncompleteOnly").toggleStyle(.checkbox)
                         Spacer()
                     }
                     rows

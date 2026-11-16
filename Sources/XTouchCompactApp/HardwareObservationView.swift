@@ -44,16 +44,16 @@
                         Text(l.text("Live panel")).tag(ObservationWorkspaceTab.panel)
                         Text(l.text("A/B input review")).tag(ObservationWorkspaceTab.review)
                         Text(l.text("Nonmotor tests")).tag(ObservationWorkspaceTab.nonMotor)
-                    }.pickerStyle(.segmented).frame(width: 410)
+                    }.accessibilityIdentifier("hardwareObservationView.observationWorkspace").pickerStyle(.segmented).frame(width: 410)
                     Spacer()
                     if snapshot.capturePath != nil {
                         Label(l.text("Recording inputs"), systemImage: "record.circle.fill")
                             .font(.caption).foregroundStyle(Theme.value)
-                        Button(l.text("Stop capture")) { intents.stopCapture?() }
+                        Button(l.text("Stop capture")) { intents.stopCapture?() }.accessibilityIdentifier("hardwareObservationView.stopCapture")
                     } else {
-                        Button(l.text("Start capture…")) { intents.startCapture?() }
+                        Button(l.text("Start capture…")) { intents.startCapture?() }.accessibilityIdentifier("hardwareObservationView.startCapture")
                     }
-                    Button(l.text("Export input review…")) { intents.exportInputReview?() }
+                    Button(l.text("Export input review…")) { intents.exportInputReview?() }.accessibilityIdentifier("hardwareObservationView.exportInputReview")
                         .disabled(observation.messageCount == 0)
                 }.padding(.horizontal, 20).padding(.bottom, 12)
                 if let error = snapshot.runtimeError {
@@ -120,7 +120,7 @@
                 Label(l.text(snapshot.nonMotorTests.approval == nil ? "Input only · motors locked" : "Nonmotor output enabled · motor commands blocked"), systemImage: "lock.shield.fill")
                     .font(.callout.bold()).foregroundStyle(snapshot.nonMotorTests.approval == nil ? Theme.value : Theme.touch)
                     .padding(10).background(Theme.value.opacity(0.1), in: Capsule())
-                Button(l.text("Reset observations")) { intents.resetHardwareObservation?() }
+                Button(l.text("Reset observations")) { intents.resetHardwareObservation?() }.accessibilityIdentifier("hardwareObservationView.resetObservations")
             }
             .padding(.horizontal, 20).padding(.vertical, 16)
         }
@@ -260,20 +260,20 @@
                 if let path = snapshot.capturePath {
                     Label(l.text("Recording inputs"), systemImage: "record.circle.fill").foregroundStyle(Theme.value)
                     Text(URL(fileURLWithPath: path).lastPathComponent).font(.caption2).textSelection(.enabled)
-                    Button(l.text("Stop capture")) { intents.stopCapture?() }
+                    Button(l.text("Stop capture")) { intents.stopCapture?() }.accessibilityIdentifier("hardwareObservationView.stopCapture.2")
                 } else {
-                    Button(l.text("Start capture…")) { intents.startCapture?() }
+                    Button(l.text("Start capture…")) { intents.startCapture?() }.accessibilityIdentifier("hardwareObservationView.startCapture.2")
                 }
                 DisclosureGroup(l.text("MIDI input")) {
                     Picker(l.text("Input"), selection: $inputChoice) {
                         Text(l.text("Auto X-TOUCH COMPACT")).tag(Int32(0))
                         ForEach(snapshot.connection.inputs) { Text($0.name).tag($0.id) }
-                    }
-                    .labelsHidden()
-                    Button(l.text("Connect input")) { intents.selectPorts?(inputChoice, snapshot.outputChoice) }
+                    }.accessibilityIdentifier("hardwareObservationView.input")
+                        .labelsHidden()
+                    Button(l.text("Connect input")) { intents.selectPorts?(inputChoice, snapshot.outputChoice) }.accessibilityIdentifier("hardwareObservationView.connectInput")
                     Text(l.text("Configured TX: %@ · Global RX: %@", String(snapshot.transmitChannel), String(snapshot.feedbackChannel)))
                         .font(.caption2).foregroundStyle(.secondary)
-                }
+                }.accessibilityIdentifier("hardwareObservationView.midiInput")
                 if let error = snapshot.runtimeError {
                     Text(l.text(error)).font(.caption).foregroundStyle(.orange)
                 }

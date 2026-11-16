@@ -70,20 +70,25 @@
             VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(l.text("Operator prerequisites"), icon: "checklist")
                 Toggle(l.text("I confirmed factory Standard MIDI mode"), isOn: $prerequisites.standardModeConfirmed)
+                    .accessibilityIdentifier("nonMotorTestView.iConfirmedFactoryStandardMidiMode")
                 Toggle(l.text("I reviewed complete Stage 1 input and cross-layer evidence"), isOn: $prerequisites.stage1Reviewed)
+                    .accessibilityIdentifier("nonMotorTestView.iReviewedCompleteStage1InputAndCrossLayerEvidence")
                 TextField(l.text("Stage 1 evidence file or review reference"), text: $prerequisites.stage1Evidence)
+                    .accessibilityIdentifier("nonMotorTestView.stage1EvidenceFileOrReviewReference")
                 HStack {
                     TextField(l.text("Firmware version read from the device/editor"), text: $prerequisites.firmware)
+                        .accessibilityIdentifier("nonMotorTestView.firmwareVersionReadFromTheDeviceEditor")
                     Picker(l.text("Independently confirmed Global RX"), selection: $prerequisites.receiveChannel) {
                         Text("—").tag(UInt8?.none)
                         ForEach(0 ..< 16, id: \.self) { Text("ch\($0 + 1)").tag(Optional(UInt8($0))) }
-                    }.frame(width: 380)
+                    }.accessibilityIdentifier("nonMotorTestView.independentlyConfirmedGlobalRx").frame(width: 380)
                 }
                 TextField(l.text("Where Global RX was independently checked"), text: $prerequisites.receiveChannelEvidence)
+                    .accessibilityIdentifier("nonMotorTestView.whereGlobalRxWasIndependentlyChecked")
                 Text(l.text("Do not use incoming TX as proof of Global RX. Test settings do not rewrite the device profile."))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Button(l.text("Enable nonmotor test output")) { intents.armNonMotorTests?(prerequisites) }
+                    Button(l.text("Enable nonmotor test output")) { intents.armNonMotorTests?(prerequisites) }.accessibilityIdentifier("nonMotorTestView.enableNonmotorTestOutput")
                         .disabled(!state.canRequestPermission || !prerequisites.isComplete)
                     if !state.canRequestPermission {
                         Text(l.text("Connect both endpoints and start recording first.")).font(.caption).foregroundStyle(.orange)
@@ -102,7 +107,7 @@
                     Text(approval.prerequisites.receiveChannelEvidence).font(.caption).textSelection(.enabled)
                 }
                 Spacer()
-                Button(l.text("Lock test output")) { intents.lockNonMotorTests?() }.tint(.orange)
+                Button(l.text("Lock test output")) { intents.lockNonMotorTests?() }.accessibilityIdentifier("nonMotorTestView.lockTestOutput").tint(.orange)
             }.panelStyle()
         }
 
@@ -111,42 +116,44 @@
                 SectionTitle(l.text("Single command"), icon: "slider.horizontal.3")
                 Picker(l.text("Test type"), selection: $command.kind) {
                     ForEach(NonMotorCommandKind.allCases) { Text(l.text($0.titleKey)).tag($0) }
-                }
+                }.accessibilityIdentifier("nonMotorTestView.testType")
                 switch command.kind {
                 case .button:
                     Stepper(l.text("Button %@", String(command.button)), value: $command.button, in: 1 ... 39)
+                        .accessibilityIdentifier("nonMotorTestView.button")
                     Picker(l.text("LED encoding"), selection: $command.variant) {
                         Text(l.text("Manual · 0/1/2")).tag(ButtonLightProtocol.manual)
                         Text(l.text("Observed 1.14 · 0/2/3")).tag(ButtonLightProtocol.observed114)
-                    }
+                    }.accessibilityIdentifier("nonMotorTestView.ledEncoding")
                     Picker(l.text("Desired light"), selection: $command.light) {
                         Text(l.text("Off")).tag(ButtonLight.off)
                         Text(l.text("On")).tag(ButtonLight.on)
                         Text(l.text("Blink")).tag(ButtonLight.blink)
-                    }.pickerStyle(.segmented)
+                    }.accessibilityIdentifier("nonMotorTestView.desiredLight").pickerStyle(.segmented)
                 case .ring:
                     encoderSelector
                     Picker(l.text("Ring command"), selection: $command.ring) {
                         ForEach(NonMotorRingChoice.allCases) { Text(l.text($0.rawValue)).tag($0) }
-                    }
+                    }.accessibilityIdentifier("nonMotorTestView.ringCommand")
                     if command.ring == .position || command.ring == .blinkingPosition {
                         Stepper(l.text("Segment %@ / 13", String(command.segment)), value: $command.segment, in: 1 ... 13)
+                            .accessibilityIdentifier("nonMotorTestView.segment13")
                     }
                 case .style:
                     encoderSelector
                     Picker(l.text("Ring style"), selection: $command.style) {
                         ForEach(RingStyle.allCases, id: \.self) { Text(l.text(String(describing: $0))).tag($0) }
-                    }
+                    }.accessibilityIdentifier("nonMotorTestView.ringStyle")
                 case .layer:
                     Picker(l.text("Requested layer"), selection: $command.layer) {
                         ForEach(CompactLayer.allCases, id: \.self) { Text($0.rawValue.uppercased()).tag($0) }
-                    }.pickerStyle(.segmented)
+                    }.accessibilityIdentifier("nonMotorTestView.requestedLayer").pickerStyle(.segmented)
                     Text(l.text("After the assertion, turn E1 to check the received input layer."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
-                    Button(l.text("Preview command")) { intents.previewNonMotorTest?(command.command, prerequisites.receiveChannel) }
-                    Button(l.text("Send once")) { intents.performNonMotorTest?(command.command) }
+                    Button(l.text("Preview command")) { intents.previewNonMotorTest?(command.command, prerequisites.receiveChannel) }.accessibilityIdentifier("nonMotorTestView.previewCommand")
+                    Button(l.text("Send once")) { intents.performNonMotorTest?(command.command) }.accessibilityIdentifier("nonMotorTestView.sendOnce")
                         .disabled(state.approval == nil || !previewMatches || snapshot.listenOnly)
                 }
                 if let preview = state.preview {
@@ -164,6 +171,7 @@
 
         private var encoderSelector: some View {
             Stepper(l.text("Encoder %@", String(command.encoder)), value: $command.encoder, in: 1 ... 16)
+                .accessibilityIdentifier("nonMotorTestView.encoder")
         }
 
         private var latestAttempt: some View {
@@ -175,10 +183,10 @@
                     Text(l.text("Operator response: %@", attempt.reportedResponse.map { l.text($0.rawValue) } ?? l.text("Not reported")))
                         .foregroundStyle(attempt.reportedResponse == .matches ? Theme.value : Color.secondary)
                     TextField(l.text("Actual LED, ring pattern, blink period or layer response"), text: $responseNote, axis: .vertical)
-                        .textFieldStyle(.roundedBorder).lineLimit(2 ... 5)
+                        .accessibilityIdentifier("nonMotorTestView.actualLedRingPatternBlinkPeriodOrLayerResponse").textFieldStyle(.roundedBorder).lineLimit(2 ... 5)
                     HStack {
                         ForEach(NonMotorReportedResponse.allCases, id: \.self) { result in
-                            Button(l.text(result.rawValue)) { intents.recordNonMotorObservation?(attempt.id, result, responseNote) }
+                            Button(l.text(result.rawValue)) { intents.recordNonMotorObservation?(attempt.id, result, responseNote) }.accessibilityIdentifier("nonMotorTestView.button.2.\(result.rawValue)")
                                 .disabled(!state.canRecordObservation)
                         }
                     }

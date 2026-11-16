@@ -224,7 +224,7 @@
                     value: Binding(get: { Double(value) }, set: { onChange(UInt8($0.rounded())) }),
                     in: 0 ... 127
                 )
-                .accessibilityLabel(l.text("软件写入数值"))
+                .accessibilityIdentifier("inspector.slider").accessibilityLabel(l.text("软件写入数值"))
             }
         }
 
@@ -285,8 +285,8 @@
                 SectionTitle(l.text("Name and organize"), icon: "tag")
                 HStack {
                     TextField(l.text("Name"), text: $name)
-                        .onSubmit { intents.renameControl?(control, name) }
-                    Button(l.text("Rename")) { intents.renameControl?(control, name) }
+                        .accessibilityIdentifier("inspector.name").onSubmit { intents.renameControl?(control, name) }
+                    Button(l.text("Rename")) { intents.renameControl?(control, name) }.accessibilityIdentifier("inspector.rename")
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if parameterID == nil {
@@ -297,28 +297,28 @@
                         Text(l.text("Color")).font(.caption).foregroundStyle(.secondary)
                         Button { intents.setControlColor?(control, nil) } label: {
                             Image(systemName: color == nil ? "circle.slash.fill" : "circle.slash")
-                        }
-                        .buttonStyle(.plain).help(l.text("No color"))
+                        }.accessibilityIdentifier("inspector.button")
+                            .buttonStyle(.plain).help(l.text("No color"))
                         ForEach(ParameterColor.allCases, id: \.self) { option in
                             Button { intents.setControlColor?(control, option) } label: {
                                 Circle().fill(Theme.tag(option)).frame(width: 14, height: 14)
                                     .overlay { Circle().stroke(Color.white, lineWidth: color == option ? 2 : 0) }
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(option.rawValue)
-                            .accessibilityAddTraits(color == option ? .isSelected : [])
+                            }.accessibilityIdentifier("inspector.button.2.\(option.rawValue)")
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(option.rawValue)
+                                .accessibilityAddTraits(color == option ? .isSelected : [])
                         }
                     }
                     HStack {
                         TextField(l.text("Group"), text: $group)
-                            .onSubmit { intents.setControlGroup?(control, group) }
+                            .accessibilityIdentifier("inspector.group").onSubmit { intents.setControlGroup?(control, group) }
                         Menu(l.text("Existing")) {
                             ForEach(groups, id: \.self) { existing in
-                                Button(existing) { group = existing; intents.setControlGroup?(control, existing) }
+                                Button(existing) { group = existing; intents.setControlGroup?(control, existing) }.accessibilityIdentifier("inspector.button.3.\(existing)")
                             }
-                        }
-                        .fixedSize()
-                        Button(l.text("Set")) { intents.setControlGroup?(control, group) }
+                        }.accessibilityIdentifier("inspector.existing")
+                            .fixedSize()
+                        Button(l.text("Set")) { intents.setControlGroup?(control, group) }.accessibilityIdentifier("inspector.set")
                             .disabled(group.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }

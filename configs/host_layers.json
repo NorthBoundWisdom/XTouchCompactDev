@@ -56,6 +56,7 @@
     "Sources/XTouchCompactCore/CompactSurfaceSimulator.swift": "bridge",
     "Sources/XTouchCompactCore/ConfigurationLibrary.swift": "transport",
     "Sources/XTouchCompactCore/ConsoleMCPTools.swift": "values",
+    "Sources/XTouchCompactCore/ControlAccessibility.swift": "values",
     "Sources/XTouchCompactCore/DeviceConfigurationValidation.swift": "device",
     "Sources/XTouchCompactCore/FactoryStandardMap.swift": "device",
     "Sources/XTouchCompactCore/GUIPluginOptions.swift": "values",

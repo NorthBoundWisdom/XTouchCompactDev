@@ -30,21 +30,21 @@
             ScrollView {
                 VStack(alignment: .leading) {
                     HStack {
-                        Button(l.text("Edit configuration")) { draft = snapshot.configuration }
-                        Button(l.text("Apply configuration")) { intents.applyConfiguration?(draft) }
+                        Button(l.text("Edit configuration")) { draft = snapshot.configuration }.accessibilityIdentifier("parameters.editConfiguration")
+                        Button(l.text("Apply configuration")) { intents.applyConfiguration?(draft) }.accessibilityIdentifier("parameters.applyConfiguration")
                         Menu(l.text("Load preset…")) {
-                            Button(l.text("Audio example")) { intents.loadPreset?(.audioExample) }
-                            Button(l.text("Neutral preset")) { intents.loadPreset?(.neutral) }
-                        }
+                            Button(l.text("Audio example")) { intents.loadPreset?(.audioExample) }.accessibilityIdentifier("parameters.audioExample")
+                            Button(l.text("Neutral preset")) { intents.loadPreset?(.neutral) }.accessibilityIdentifier("parameters.neutralPreset")
+                        }.accessibilityIdentifier("parameters.loadPreset")
                     }
                     HStack {
-                        Button(l.text("Import configuration…")) { intents.importConfiguration?() }
-                        Button(l.text("Export configuration…")) { intents.exportConfiguration?() }
+                        Button(l.text("Import configuration…")) { intents.importConfiguration?() }.accessibilityIdentifier("parameters.importConfiguration")
+                        Button(l.text("Export configuration…")) { intents.exportConfiguration?() }.accessibilityIdentifier("parameters.exportConfiguration")
                     }
-                    Button(l.text("Reset parameter values…")) { confirmsReset = true }
+                    Button(l.text("Reset parameter values…")) { confirmsReset = true }.accessibilityIdentifier("parameters.resetParameterValues")
                         .confirmationDialog(l.text("Reset all parameter values to defaults?"), isPresented: $confirmsReset) {
-                            Button(l.text("Reset values"), role: .destructive) { intents.resetParameters?() }
-                            Button(l.text("Cancel"), role: .cancel) {}
+                            Button(l.text("Reset values"), role: .destructive) { intents.resetParameters?() }.accessibilityIdentifier("parameters.resetValues")
+                            Button(l.text("Cancel"), role: .cancel) {}.accessibilityIdentifier("parameters.cancel")
                         }
                     Text(l.text("Configuration edits preserve values; resetting defaults requires confirmation."))
                         .font(.caption).foregroundStyle(.secondary)
@@ -52,7 +52,7 @@
                         .font(.caption).foregroundStyle(.secondary)
                     Button(l.text("Add parameter")) {
                         draft.parameters.append(ParameterDefinition(id: UUID().uuidString, name: "Parameter"))
-                    }
+                    }.accessibilityIdentifier("parameters.addParameter")
                     ForEach(Array(draft.parameters.indices), id: \.self) { index in
                         let definition = draft.parameters[index]
                         VStack(alignment: .leading) {
@@ -60,24 +60,30 @@
                                 // Color tag is edited in the inspector; shown here for orientation.
                                 Capsule().fill(definition.color.map(Theme.tag) ?? Color.clear).frame(width: 4, height: 18)
                                 TextField(l.text("Name"), text: $draft.parameters[index].name)
-                                TextField(l.text("Unit"), text: $draft.parameters[index].unit).frame(width: 55)
+                                    .accessibilityIdentifier("parameters.name.\(definition.id)")
+                                TextField(l.text("Unit"), text: $draft.parameters[index].unit).accessibilityIdentifier("parameters.unit.\(definition.id)").frame(width: 55)
                                 Toggle(l.text("Agent write"), isOn: $draft.parameters[index].agentWritable)
+                                    .accessibilityIdentifier("parameters.agentWrite.\(definition.id)")
                             }
                             HStack {
-                                labeled(l.text("Group")) { TextField(l.text("Group"), text: $draft.parameters[index].group) }
+                                labeled(l.text("Group")) { TextField(l.text("Group"), text: $draft.parameters[index].group).accessibilityIdentifier("parameters.group.\(definition.id)") }
                                 labeled(l.text("Default")) {
                                     TextField(l.text("Default"), value: $draft.parameters[index].defaultValue, format: .number)
+                                        .accessibilityIdentifier("parameters.default.\(definition.id)")
                                 }
                                 Toggle(l.text("Switch"), isOn: $draft.parameters[index].isSwitch)
+                                    .accessibilityIdentifier("parameters.switch.\(definition.id)")
                             }
                             HStack {
                                 labeled(l.text("Minimum")) {
                                     TextField(l.text("Minimum"), value: $draft.parameters[index].minimum, format: .number)
+                                        .accessibilityIdentifier("parameters.minimum.\(definition.id)")
                                 }
                                 labeled(l.text("Maximum")) {
                                     TextField(l.text("Maximum"), value: $draft.parameters[index].maximum, format: .number)
+                                        .accessibilityIdentifier("parameters.maximum.\(definition.id)")
                                 }
-                                labeled(l.text("Step")) { TextField(l.text("Step"), value: $draft.parameters[index].step, format: .number) }
+                                labeled(l.text("Step")) { TextField(l.text("Step"), value: $draft.parameters[index].step, format: .number).accessibilityIdentifier("parameters.step.\(definition.id)") }
                             }
                             if let applied = snapshot.configuration.parameters.first(where: { $0.id == definition.id }),
                                let value = snapshot.parameterValues[definition.id], applied.minimum < applied.maximum
@@ -86,7 +92,7 @@
                                     Slider(value: Binding(get: { value },
                                                           set: { intents.setParameter?(definition.id, $0) }),
                                            in: applied.minimum ... applied.maximum)
-                                        .accessibilityLabel(definition.name)
+                                        .accessibilityIdentifier("parameters.slider.\(definition.id)").accessibilityLabel(definition.name)
                                     Text(value.formatted(.number.precision(.fractionLength(0 ... 3))) + (applied.unit.isEmpty ? "" : " " + applied.unit))
                                         .font(.caption.monospaced())
                                         .foregroundStyle(Theme.value)
@@ -106,24 +112,27 @@
                         Text(l.text("Encoder push")).tag("push")
                         Text(l.text("表情踏板")).tag("expression")
                         Text(l.text("脚踏开关")).tag("footswitch")
-                    }
+                    }.accessibilityIdentifier("parameters.control")
                     Stepper(l.text("First: %@", String(first)), value: $first, in: 1 ... 39)
+                        .accessibilityIdentifier("parameters.first")
                     Stepper(l.text("Last: %@", String(last)), value: $last, in: 1 ... 39)
+                        .accessibilityIdentifier("parameters.last")
                     Picker(l.text("Action"), selection: $action) {
                         ForEach(["parameter", "agent", "step", "set", "cycle", "resetGroup", "runMacro"], id: \.self) { Text(l.text($0)).tag($0) }
-                    }
+                    }.accessibilityIdentifier("parameters.action")
                     Picker(l.text("Parameter"), selection: $target) {
                         Text("—").tag("")
                         ForEach(draft.parameters) { Text($0.name).tag($0.id) }
-                    }
+                    }.accessibilityIdentifier("parameters.parameter")
                     if action == "runMacro" {
                         Picker(l.text("Macro"), selection: $macroID) {
                             Text("—").tag("")
                             ForEach(snapshot.configuration.macros ?? []) { Text($0.name).tag($0.id) }
-                        }
+                        }.accessibilityIdentifier("parameters.macro")
                     }
                     TextField(l.text("Value / Agent slot"), value: $amount, format: .number)
-                    Button(l.text("Assign range on current layer")) { assign() }
+                        .accessibilityIdentifier("parameters.valueAgentSlot")
+                    Button(l.text("Assign range on current layer")) { assign() }.accessibilityIdentifier("parameters.assignRangeOnCurrentLayer")
                 }
             }
             .preferredColorScheme(.dark)
@@ -137,8 +146,8 @@
                     }
                 }
             )) {
-                Button(l.text("Reset values"), role: .destructive) { intents.confirmLoadPreset?() }
-                Button(l.text("Cancel"), role: .cancel) { intents.cancelLoadPreset?() }
+                Button(l.text("Reset values"), role: .destructive) { intents.confirmLoadPreset?() }.accessibilityIdentifier("parameters.resetValues.2")
+                Button(l.text("Cancel"), role: .cancel) { intents.cancelLoadPreset?() }.accessibilityIdentifier("parameters.cancel.2")
             }
         }
 

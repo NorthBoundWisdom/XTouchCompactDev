@@ -33,10 +33,10 @@
                 // Two devices; whether output is armed is a switch on the hardware side, so
                 // picking Hardware always lands on listening and never sends by itself.
                 HStack(spacing: 4) {
-                    modeButton(title: "Mock 设备", icon: "cpu", color: Theme.value, selected: snapshot.mode == .mock) {
+                    modeButton(identifier: "mode.mock", title: "Mock 设备", icon: "cpu", color: Theme.value, selected: snapshot.mode == .mock) {
                         intents.setMode?(.mock)
                     }
-                    modeButton(title: "Hardware", icon: "cable.connector", color: barColor, selected: snapshot.mode != .mock) {
+                    modeButton(identifier: "mode.hardware", title: "Hardware", icon: "cable.connector", color: barColor, selected: snapshot.mode != .mock) {
                         if snapshot.mode == .mock {
                             intents.setMode?(.hardwareListen)
                         }
@@ -49,10 +49,10 @@
                 if snapshot.mode != .mock {
                     // Manual: edits are staged until Send. Live: every edit is transmitted.
                     HStack(spacing: 4) {
-                        modeButton(title: "Manual send", icon: "hand.tap", color: Theme.touch, selected: snapshot.mode == .hardwareListen) {
+                        modeButton(identifier: "mode.manualSend", title: "Manual send", icon: "hand.tap", color: Theme.touch, selected: snapshot.mode == .hardwareListen) {
                             intents.setMode?(.hardwareListen)
                         }
-                        modeButton(title: "Live send", icon: "bolt.fill", color: .green, selected: snapshot.mode == .hardwareSend) {
+                        modeButton(identifier: "mode.liveSend", title: "Live send", icon: "bolt.fill", color: .green, selected: snapshot.mode == .hardwareSend) {
                             intents.setMode?(.hardwareSend)
                         }
                         .disabled(!connected)
@@ -65,10 +65,10 @@
                     if snapshot.mode == .hardwareListen, !isChecking {
                         Button { intents.sendStaged?() } label: {
                             Label(l.text("Send"), systemImage: "paperplane.fill")
-                        }
-                        .buttonStyle(BarButtonStyle(tint: Theme.touch))
-                        .disabled(!connected)
-                        .help(l.text("Sends this layer's lights, rings and the nine fader targets once. Touched faders are not moved."))
+                        }.accessibilityIdentifier("mode.send")
+                            .buttonStyle(BarButtonStyle(tint: Theme.touch))
+                            .disabled(!connected)
+                            .help(l.text("Sends this layer's lights, rings and the nine fader targets once. Touched faders are not moved."))
                         Text(l.text("Edits are staged until you press Send."))
                             .font(.caption).foregroundStyle(Theme.touch).lineLimit(1)
                     }
@@ -89,11 +89,11 @@
                     Button { intents.realignLayer?() } label: {
                         Label(l.text(needsSync ? "Lights not synchronized" : "Sync lights to device"),
                               systemImage: needsSync ? "exclamationmark.triangle.fill" : "lightbulb.max")
-                    }
-                    .buttonStyle(BarButtonStyle(tint: needsSync ? Color.orange : nil))
-                    .disabled(!connected)
-                    .help((needsSync ? l.text("Lights not synchronized; use Sync lights to assert the layer.") + "\n" : "")
-                        + l.text("Sends the layer selection and LED/ring feedback, no motor command. The device may cycle its faders when the layer changes."))
+                    }.accessibilityIdentifier("mode.syncLights")
+                        .buttonStyle(BarButtonStyle(tint: needsSync ? Color.orange : nil))
+                        .disabled(!connected)
+                        .help((needsSync ? l.text("Lights not synchronized; use Sync lights to assert the layer.") + "\n" : "")
+                            + l.text("Sends the layer selection and LED/ring feedback, no motor command. The device may cycle its faders when the layer changes."))
                 }
                 Button {
                     if isChecking {
@@ -103,9 +103,9 @@
                     }
                 } label: {
                     Label(l.text(isChecking ? "Close input check" : "Input check tool"), systemImage: "hand.point.up.left.fill")
-                }
-                .buttonStyle(BarButtonStyle(tint: isChecking ? Theme.touch : nil))
-                .help(l.text("A diagnostic view of what the controller sends. Opening it switches to Hardware · listen."))
+                }.accessibilityIdentifier("mode.inputCheck")
+                    .buttonStyle(BarButtonStyle(tint: isChecking ? Theme.touch : nil))
+                    .help(l.text("A diagnostic view of what the controller sends. Opening it switches to Hardware · listen."))
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 8)
@@ -129,7 +129,7 @@
             }
         }
 
-        private func modeButton(title: String, icon: String, color: Color, selected: Bool, action: @escaping () -> Void) -> some View {
+        private func modeButton(identifier: String, title: String, icon: String, color: Color, selected: Bool, action: @escaping () -> Void) -> some View {
             Button(action: action) {
                 Label(l.text(title), systemImage: icon)
                     .font(.callout.weight(selected ? .bold : .regular))
@@ -140,9 +140,9 @@
                     .background(selected ? color : Color.clear,
                                 in: RoundedRectangle(cornerRadius: BarMetrics.radius - BarMetrics.segmentInset + 1))
                     .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(selected ? .isSelected : [])
+            }.accessibilityIdentifier(identifier)
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
         }
     }
 #endif

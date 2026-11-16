@@ -17,25 +17,27 @@
             GroupBox(l.text("Macros")) {
                 VStack(alignment: .leading) {
                     TextField(l.text("Macro name"), text: $name)
+                        .accessibilityIdentifier("macros.macroName")
                     HStack {
                         Picker(l.text("Action"), selection: $kind) {
                             ForEach(["set", "step", "toggle", "resetGroup"], id: \.self) { Text(l.text($0)).tag($0) }
-                        }
+                        }.accessibilityIdentifier("macros.action")
                         Picker(l.text("Parameter"), selection: $target) {
                             Text("—").tag("")
                             ForEach(snapshot.configuration.parameters) { Text($0.name).tag($0.id) }
-                        }
+                        }.accessibilityIdentifier("macros.parameter")
                         TextField(l.text("Value"), value: $amount, format: .number)
-                        Button(l.text("Add step")) { addStep() }.disabled(actions.count >= 64 || target.isEmpty || !amount.isFinite || (kind == "step" && amount == 0))
+                            .accessibilityIdentifier("macros.value")
+                        Button(l.text("Add step")) { addStep() }.accessibilityIdentifier("macros.addStep").disabled(actions.count >= 64 || target.isEmpty || !amount.isFinite || (kind == "step" && amount == 0))
                     }
                     ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
                         HStack {
                             Text("\(index + 1). " + label(action, l: l)).font(.caption.monospaced())
                             Spacer()
-                            Button(l.text("Remove")) { actions.remove(at: index) }
+                            Button(l.text("Remove")) { actions.remove(at: index) }.accessibilityIdentifier("macros.remove.\(index)")
                         }
                     }
-                    Button(l.text("Save macro")) { intents.saveMacro?(.init(name: name, actions: actions)) }
+                    Button(l.text("Save macro")) { intents.saveMacro?(.init(name: name, actions: actions)) }.accessibilityIdentifier("macros.saveMacro")
                         .disabled(actions.isEmpty || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Text(l.text("Up to 64 steps, executed in order. Rejected steps are reported; later steps continue. One macro is one undo."))
                         .font(.caption).foregroundStyle(.secondary)
@@ -43,8 +45,8 @@
                         HStack {
                             Text(macro.name)
                             Spacer()
-                            Button(l.text("Run macro")) { intents.runMacro?(macro.id) }
-                            Button(l.text("Delete"), role: .destructive) { intents.deleteMacro?(macro.id) }
+                            Button(l.text("Run macro")) { intents.runMacro?(macro.id) }.accessibilityIdentifier("macros.runMacro.\(macro.id)")
+                            Button(l.text("Delete"), role: .destructive) { intents.deleteMacro?(macro.id) }.accessibilityIdentifier("macros.delete.\(macro.id)")
                         }
                     }
                     if let result = snapshot.lastMacroExecution {

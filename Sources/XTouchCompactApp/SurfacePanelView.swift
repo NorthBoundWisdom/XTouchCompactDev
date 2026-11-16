@@ -178,11 +178,11 @@
                                 .foregroundStyle(isActive ? Color.black : Color.secondary)
                                 .background(isActive ? Theme.touch : Color.white.opacity(0.07),
                                             in: RoundedRectangle(cornerRadius: m(6)))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(l.text("层 %@", String(layer.rawValue.uppercased())))
-                        .accessibilityAddTraits(isActive ? .isSelected : [])
-                        .help(l.text("切换到 Layer %@；软件不发电机指令，但设备切层时会自行把推子走一遍", String(layer.rawValue.uppercased())))
+                        }.accessibilityIdentifier("surfacePanelView.button.\(layer.rawValue)")
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(l.text("层 %@", String(layer.rawValue.uppercased())))
+                            .accessibilityAddTraits(isActive ? .isSelected : [])
+                            .help(l.text("切换到 Layer %@；软件不发电机指令，但设备切层时会自行把推子走一遍", String(layer.rawValue.uppercased())))
                     }
                 }
             }
@@ -313,6 +313,10 @@
             VStack(spacing: m(4)) {
                 linkBadge
                 slot
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityIdentifier(CompactControl.faderTouch(fader.index).accessibilityID)
+                    .accessibilityLabel(CompactControl.faderTouch(fader.index).localizedName(using: l))
+                    .accessibilityValue(fader.isTouched.map { l.text($0 ? "Touched" : "Released") } ?? l.text("Not reported"))
                 colorStrip(fader.color)
                 Text(fader.label ?? (fader.isMaster ? "MAIN" : "F\(fader.index)"))
                     .font(.system(size: m(9), weight: .semibold))
@@ -341,7 +345,8 @@
                 RoundedRectangle(cornerRadius: m(8))
                     .stroke(isTouched ? Theme.touch : isSelected ? Theme.selection : Color.clear, lineWidth: isTouched ? 2.5 : 1.5)
             }
-            .accessibilityElement(children: .ignore)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(CompactControl.fader(fader.index).accessibilityID)
             .accessibilityLabel("\(CompactControl.fader(fader.index).localizedName(using: l)) \(fader.label ?? "")")
             .accessibilityValue(accessibleValue)
             .accessibilityAdjustableAction { direction in
@@ -528,7 +533,8 @@
         /// Split for the type checker: one long modifier chain timed out on CI's Swift 6.3.
         var body: some View {
             framedBody
-                .accessibilityElement(children: .ignore)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(CompactControl.encoder(encoder.index).accessibilityID)
                 .accessibilityLabel(accessibilityName)
                 .accessibilityValue(encoder.cellValue.map { String($0) } ?? l.text("Not reported"))
                 .accessibilityAdjustableAction { (direction: AccessibilityAdjustmentDirection) in
@@ -574,6 +580,7 @@
                     .font(.system(size: m(10), design: .monospaced))
                     .lineLimit(1)
                 pushCap
+                    .accessibilityIdentifier(CompactControl.encoderPush(encoder.index).accessibilityID)
             }
         }
 
@@ -729,6 +736,7 @@
                     }
             )
             .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier(CompactControl.button(button.index).accessibilityID)
             .accessibilityLabel("\(PanelLayout.buttonName(button.index, using: l)) \(button.label ?? "")")
             .accessibilityValue(lightName)
             .accessibilityAddTraits(.isButton)
@@ -801,6 +809,7 @@
                     .frame(width: m(30), height: m(18))
                     .foregroundStyle(pedals.footswitchDown ? Color.black : .secondary)
                     .background(pedals.footswitchDown ? Theme.ring : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: m(4)))
+                    .accessibilityIdentifier(CompactControl.footswitch.accessibilityID)
                     .gesture(DragGesture(minimumDistance: 0)
                         .onChanged {
                             _ in if !pedals.footswitchDown {
@@ -828,7 +837,7 @@
                                dragged = nil
                            }
                        })
-                       .frame(width: m(90))
+                       .accessibilityIdentifier(CompactControl.expression.accessibilityID).frame(width: m(90))
                        .controlSize(.mini)
                        .accessibilityLabel(l.text("表情踏板"))
                 Text(pedals.expression.map { String($0) } ?? "—")
