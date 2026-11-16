@@ -27,15 +27,23 @@ all GUI/headless startup checks on both runner architectures. Offscreen native
 acceptance remains local, outside CI. Record every cold/warm measurement and
 three consecutive CI runs, including unsuccessful measurements, in ALIGN_C.md.
 
-C-15's original serial cold package took 336 seconds and failed the named budget
-step before downstream smoke jobs could run. Both architectures now compile in
-parallel jobs. Each saves its compiler cache immediately, then publishes a slice
-with source/dependency/architecture and payload hashes. Assembly accepts only
-verified release slices of its own clean commit and lock, merges with lipo and
-runs the existing package validation. No Swift compilation runs in assembly.
-Both ZIP and DMG still receive GUI and headless startup validation on ARM and
-Intel smoke runners. Slice jobs and downstream jobs share the original run
-creation timestamp; parallelism does not reset or exempt the budget.
+Release packaging has two parallel matrix producers (ARM and Intel slices).
+Both save successfully compiled caches before checks. Each slice carries the
+clean source SHA, locked dependency SHA, architecture and every payload hash;
+Intel also stages the generated icon in that hashed payload. ARM merges the two
+verified artifacts and packages on its already-prepared runner, without another
+compile or dependency acquisition. Both final assets still receive all existing
+GUI/headless checks, followed by the ARM and Intel smoke matrix.
+
+Artifacts are selected only by exact names scoped to this run and attempt. The
+ARM producer's late wait fails on producer failure or the original run's 300s
+deadline. Consumers never reserve runners ahead of compile producers. Final
+release binaries are also checked for Debug acceptance identifiers before bundle
+assembly and again inside each extracted ZIP/DMG payload.
+
+The earlier 336s serial cold measurement, 306s split-plus-assembly measurement,
+and cancelled early-consumer experiment are retained in the handoff. Cancellation
+followed observed runner starvation, not a replacement of an unsuccessful result.
 
 ## Python case evidence
 
@@ -56,11 +64,3 @@ the DNS-denial test. No in-scope HTTP fixture had that defect. Real slow-reader
 and lease deadlines remain measured against real sockets and process clocks;
 their waits and safety bounds were preserved.
 
-The first split cold run still took 306s before downstream smoke could run:
-216s for the slower slice, then 83s for assembly and its setup. Consumers now
-start concurrently, prepare dependencies/icon or checkout, and wait for exact
-artifact names scoped to the current run and attempt. Waits stop when producers
-fail or the original 300s run deadline expires. No artifacts from an older
-attempt can unblock a consumer. The original full ZIP/DMG GUI/headless assertions
-remain in assembly and on both native smoke runners. Icon reuse is keyed by its
-source SHA-256; no compiler or dependency cache policy was relaxed.

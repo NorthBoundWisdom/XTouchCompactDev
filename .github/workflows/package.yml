@@ -12,7 +12,7 @@ permissions:
   contents: read
   actions: read
 jobs:
-  compile-slices:
+  package-macos:
     strategy:
       fail-fast: false
       matrix:
@@ -63,46 +63,26 @@ jobs:
           if-no-files-found: error
           retention-days: 2
           compression-level: 0
-      - name: Report whole-run wall time and enforce 300s budget
-        if: always()
+      # ARM packages in its already-prepared runner. Both compile producers start first;
+      # no early waiting consumer can occupy a runner ahead of a producer.
+      - name: Wait for this run and attempt's Intel slice
+        if: matrix.arch == 'arm64'
         env:
           GH_TOKEN: ${{ github.token }}
-          CI_JOB_NAME: compile-slices (${{ matrix.arch }})
-          RESTORED_BUILD_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
-        run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY"
-  package-macos:
-    runs-on: macos-26
-    timeout-minutes: 20
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Cache the locked SurfacePlugins checkout
-        uses: actions/cache@v6.1.0
-        with:
-          path: build/dependencies
-          key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json') }}
-      - run: python3 configs/setup_local_project.py
-      - name: Prepare the app icon while slices compile
-        run: python3 -c 'from configs.macos_workflow import prepare_icon; prepare_icon()'
-      - name: Wait for this run and attempt's release slices
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 configs/ci_artifact_wait.py --name "xtouch-release-arm64-attempt-$GITHUB_RUN_ATTEMPT" --name "xtouch-release-x86_64-attempt-$GITHUB_RUN_ATTEMPT" --producer compile-slices
+        run: python3 configs/ci_artifact_wait.py --name "xtouch-release-x86_64-attempt-$GITHUB_RUN_ATTEMPT" --producer package-macos
       - uses: actions/download-artifact@v8.0.2
+        if: matrix.arch == 'arm64'
         with:
-          pattern: xtouch-release-*-attempt-${{ github.run_attempt }}
+          name: xtouch-release-x86_64-attempt-${{ github.run_attempt }}
           path: build/native-slices
-          merge-multiple: true
       - name: Require a main commit for a pushed tag
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && matrix.arch == 'arm64'
         run: git merge-base --is-ancestor HEAD origin/main
       - name: Merge verified slices and build ad-hoc ZIP and DMG with final-payload checks
+        if: matrix.arch == 'arm64'
         run: python3 configs/macos_workflow.py package --architecture universal --prebuilt-slices build/native-slices
       - uses: actions/upload-artifact@v7.0.2
+        if: matrix.arch == 'arm64'
         with:
           name: xtouch-compact-universal-attempt-${{ github.run_attempt }}
           path: build/package/*
@@ -113,9 +93,11 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          RESTORED_BUILD_KEY: ''
+          CI_JOB_NAME: package-macos (${{ matrix.arch }})
+          RESTORED_BUILD_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
         run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY"
   package-smoke:
+    needs: package-macos
     strategy:
       fail-fast: false
       matrix:
@@ -126,10 +108,6 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Wait for this run and attempt's final package
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 configs/ci_artifact_wait.py --name "xtouch-compact-universal-attempt-$GITHUB_RUN_ATTEMPT" --producer package-macos
       - uses: actions/download-artifact@v8.0.2
         with:
           name: xtouch-compact-universal-attempt-${{ github.run_attempt }}

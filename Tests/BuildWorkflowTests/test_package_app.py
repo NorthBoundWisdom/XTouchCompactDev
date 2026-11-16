@@ -103,7 +103,7 @@ class AppPackageTests(unittest.TestCase):
     def test_parallel_package_waits_for_both_slice_artifacts_and_preserves_all_smokes(self):
         text = (workflow.REPO_ROOT / ".github/workflows/package.yml").read_text()
         self.assertIn("arch: [arm64, x86_64]", text)
-        self.assertIn("--producer compile-slices", text)
+        self.assertIn("needs: package-macos", text)
         self.assertIn("--prebuilt-slices build/native-slices", text)
         self.assertLess(text.index("Save compiled release slice"), text.index("Stage exact-commit slice"))
         self.assertIn("os: [macos-26, macos-15-intel]", text)
@@ -202,7 +202,7 @@ class AppPackageTests(unittest.TestCase):
             "package --architecture universal",
             "macos-26",
             "macos-15-intel",
-            "--producer package-macos",
+            "needs: package-macos",
             "GITHUB_SHA",
             "expected_plugins_revision",
             "require_clean=True",

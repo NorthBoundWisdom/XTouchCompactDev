@@ -127,6 +127,8 @@ def stage_release_slice(architecture: str) -> Path:
     shutil.copy2(source / PRODUCT, destination / PRODUCT)
     resources = "XTouchCompactDev_XTouchCompactLocalization.bundle"
     shutil.copytree(source / resources, destination / resources)
+    if architecture == "x86_64":
+        shutil.copy2(prepare_icon(), destination / "AppIcon.icns")
     (destination / "slice.json").write_text(
         json.dumps({**identity, "files_sha256": slice_hashes(destination)}, indent=2) + "\n"
     )
@@ -205,7 +207,8 @@ def build(configuration: str, architecture: str = "native", prebuilt_slices: Pat
     if not localization.is_dir():
         raise ValueError(f"Missing localization resources: {localization}")
     shutil.copytree(localization, resources / localization.name)
-    shutil.copy2(prepare_icon(), resources / "AppIcon.icns")
+    icon = prebuilt_slices / "x86_64/AppIcon.icns" if prebuilt_slices is not None else prepare_icon()
+    shutil.copy2(icon, resources / "AppIcon.icns")
     info = {
         "CFBundleDevelopmentRegion": "en",
         "CFBundleLocalizations": ["en", "zh-Hans", "zh-Hant"],
@@ -528,7 +531,9 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error("check-package requires --archive")
             check_package(args.archive)
             return 0
-        ensure_dependency(REPO_ROOT)
+        # Verified slices already pin the dependency and carry all compiled resources.
+        if args.prebuilt_slices is None:
+            ensure_dependency(REPO_ROOT)
         if args.action == "test":
             run(["swift", "test", "--build-path", SWIFTPM_ROOT])
         elif args.action == "core":
