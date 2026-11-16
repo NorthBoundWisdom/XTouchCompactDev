@@ -3,8 +3,14 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      cold_build:
+        description: Measure cold compilation without restoring project build caches
+        type: boolean
+        default: false
 permissions:
   contents: read
+  actions: read
 jobs:
   package-macos:
     runs-on: macos-26
@@ -17,7 +23,34 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: python3 configs/check_swift_toolchain.py
+      - name: Cache the locked SurfacePlugins checkout
+        uses: actions/cache@v6.1.0
+        with:
+          path: build/dependencies
+          key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json') }}
       - run: python3 configs/setup_local_project.py
+      - run: python3 configs/restore_git_mtimes.py
+      - name: Identify the Swift toolchain for the build cache
+        run: python3 -c "import hashlib, subprocess; v = subprocess.run(['swift', '--version'], capture_output=True); print('SWIFT_ID=' + hashlib.sha256(v.stdout + v.stderr).hexdigest()[:16])" >> "$GITHUB_ENV"
+      - name: Restore the latest universal SwiftPM build
+        id: build-cache
+        if: github.event_name != 'workflow_dispatch' || inputs.cold_build != true
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: build/swiftpm
+          key: package-${{ runner.os }}-${{ env.SWIFT_ID }}-${{ github.sha }}
+          restore-keys: package-${{ runner.os }}-${{ env.SWIFT_ID }}-
+      - name: Compile universal native slices
+        id: compile
+        run: |
+          swift build --build-path build/swiftpm/arm64 --configuration release --triple arm64-apple-macosx14.0 --product XTouchCompactApp
+          swift build --build-path build/swiftpm/x86_64 --configuration release --triple x86_64-apple-macosx14.0 --product XTouchCompactApp
+      - name: Save compiled universal cache even if later checks fail
+        if: always() && steps.compile.outcome == 'success'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: build/swiftpm
+          key: package-${{ runner.os }}-${{ env.SWIFT_ID }}-${{ github.sha }}
       - name: Require a main commit for a pushed tag
         if: github.event_name == 'push'
         run: git merge-base --is-ancestor HEAD origin/main
@@ -30,6 +63,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+      - name: Report wall time and enforce warm-cache 300s budget
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESTORED_BUILD_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
+        run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY"
   package-smoke:
     needs: package-macos
     strategy:
@@ -60,3 +99,10 @@ jobs:
               check_package(asset, expected_commit=os.environ['GITHUB_SHA'],
                             expected_plugins_revision=lock['revision'], require_clean=True)
           PY
+      - name: Report wall time and enforce warm-cache 300s budget
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_JOB_NAME: package-smoke (${{ matrix.os }})
+          RESTORED_BUILD_KEY: ''
+        run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY"
