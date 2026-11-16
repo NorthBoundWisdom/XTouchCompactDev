@@ -2,13 +2,16 @@
     import Foundation
     import Testing
     @testable import XTouchCompactApp
+    import XTouchCompactCore
 
     @Test @MainActor func mcpAuthenticationOriginRateAndPermissions() throws {
         let server = LocalMCPServer(authenticationToken: "test-token")
         let model = ConsoleModel(startsMIDI: false)
         server.handler = { try model.routeMCP($0) }
         let body = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 1, "method": "tools/list"])
-        var request = HTTPRequest(method: "POST", path: "/mcp", headers: ["content-type": "application/json"], body: body)
+        var request = try request(["jsonrpc": "2.0", "id": 1, "method": "tools/list"])
+        request.headers.removeValue(forKey: "authorization")
+        #expect(!body.isEmpty)
         #expect(server.respond(request).0 == 401)
         request.headers["authorization"] = "Bearer test-token"
         request.headers["origin"] = "https://example.com"
@@ -33,7 +36,19 @@
     }
 
     @MainActor private func request(_ object: Any) throws -> HTTPRequest {
-        try HTTPRequest(method: "POST", path: "/mcp", headers: ["authorization": "Bearer t", "content-type": "application/json"], body: JSONSerialization.data(withJSONObject: object))
+        var headers = ["authorization": "Bearer t", "content-type": "application/json"]
+        var payload = object
+        if var message = object as? [String: Any], let method = message["method"] as? String {
+            var params = message["params"] as? [String: Any] ?? [:]
+            params["_meta"] = ["io.modelcontextprotocol/protocolVersion": MCPVersions.current,
+                               "io.modelcontextprotocol/clientCapabilities": [:]] as [String: Any]
+            message["params"] = params
+            headers["mcp-protocol-version"] = MCPVersions.current
+            headers["mcp-method"] = method
+            headers["mcp-name"] = params["name"] as? String
+            payload = message
+        }
+        return try HTTPRequest(method: "POST", path: "/mcp", headers: headers, body: JSONSerialization.data(withJSONObject: payload))
     }
 
     @Test @MainActor func injectedMCPClockPreservesStrictSixtySecondBudgetBoundary() throws {
@@ -50,7 +65,7 @@
         #expect(server.respond(ping).0 == 200)
     }
 
-    @Test @MainActor func batchPreflightAndBudgetRejectBeforeAnyWriteAndReportPerItemErrors() throws {
+    @Test @MainActor func batchAndMalformedPreflightRejectBeforeAnyWriteAndBudgetRemainsStrict() throws {
         let server = LocalMCPServer(authenticationToken: "t")
         var writes = 0
         server.handler = { object in
@@ -69,19 +84,26 @@
         for _ in 0 ..< 59 {
             #expect(try server.respond(request(ping)).0 == 200)
         }
-        #expect(try server.respond(request([call, call])).0 == 429)
+        #expect(try server.respond(request([call, call])).0 == 400)
+        #expect(try server.respond(request(ping)).0 == 200)
+        #expect(try server.respond(request(call)).0 == 429)
         #expect(writes == 0)
         let fresh = LocalMCPServer(authenticationToken: "t")
         fresh.handler = server.handler
         let unknown: [String: Any] = ["jsonrpc": "2.0", "id": 2, "method": "unknown"]
         let notification: [String: Any] = ["jsonrpc": "2.0", "method": "notifications/initialized"]
         let (status, data) = try fresh.respond(request([call, unknown, notification]))
-        #expect(status == 200)
-        #expect(writes == 1)
-        let responses = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
-        #expect(responses.count == 2)
-        #expect(responses[0]["result"] != nil)
-        #expect((responses[1]["error"] as? [String: Any])?["code"] as? Int == -32601)
+        #expect(status == 400)
+        #expect(writes == 0)
+        let response = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect((response["error"] as? [String: Any])?["code"] as? Int == -32600)
+        let (unknownStatus, unknownData) = try fresh.respond(request(unknown))
+        #expect(unknownStatus == 404)
+        let failure = try #require(JSONSerialization.jsonObject(with: unknownData) as? [String: Any])
+        #expect((failure["error"] as? [String: Any])?["code"] as? Int == -32601)
+        let accepted = try fresh.respond(request(notification))
+        #expect(accepted.0 == 202 && accepted.1.isEmpty)
+        #expect(writes == 0)
     }
 
     @Test @MainActor func agentCannotApproveItselfAndStateExposesDeferredMotors() throws {

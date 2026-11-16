@@ -120,15 +120,12 @@ parameter-level `agentWritable` is checked as well. HTTP requests containing
 Origin are rejected. Authentication applies to all endpoints; there is no CORS
 allow-list or unauthenticated discovery. Limits are 60 authenticated requests per
 minute, 16 concurrent connections, 8 KiB headers, 16 KiB body and a five-second
-connection deadline. Batches are bounded to 16 items and reserve the full per-item budget before execution. Invalid request envelopes
-or insufficient budget reject the entire batch before any tool executes. Once
-accepted, tool-level failures are per-item JSON-RPC errors alongside successful
-results; batches are not transactions. Unknown RPC methods return -32601.
+connection deadline. Requests are single JSON-RPC objects; batches are rejected before
+any tool executes. Unknown RPC methods return -32601 (HTTP 404 for modern requests).
 
-The stateless JSON Streamable HTTP endpoint supports `initialize`, `ping`,
-`tools/list`, `tools/call` and notification acceptance. It pins protocol version
-2025-03-26, returns JSON rather than SSE, and returns 405 to GET. Transport basis:
-[official MCP specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports).
+The GUI supports `2026-07-28` stateless discovery with required mirrored metadata,
+and the `2025-11-25` initialize/session handshake. See [MCP protocol and migration](MCP.md).
+Responses are JSON; GET returns 405. The old `2025-03-26` transport is no longer supported.
 The legacy tools remain `get_state`, `set_parameter` and `agent_primary`. State exposes
 layer, parameter permissions, touched and deferred faders. Writes use the same
 parameter/session pipeline as UI writes; they do not bypass touch ownership.

@@ -21,11 +21,17 @@
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer isolated-test-token", forHTTPHeaderField: "Authorization")
-        request.httpBody = Data(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#.utf8)
+        request.httpBody = Data(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"neutral-test","version":"1"}}}"#.utf8)
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect((object["result"] as? [String: Any])?["protocolVersion"] as? String == "2025-03-26")
+        #expect((object["result"] as? [String: Any])?["protocolVersion"] as? String == MCPVersions.legacy)
+        let session = try #require((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Mcp-Session-Id"))
+        request.setValue(session, forHTTPHeaderField: "Mcp-Session-Id")
+        request.setValue(MCPVersions.legacy, forHTTPHeaderField: "MCP-Protocol-Version")
+        request.httpBody = Data(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.utf8)
+        let (notificationBody, notificationResponse) = try await URLSession.shared.data(for: request)
+        #expect((notificationResponse as? HTTPURLResponse)?.statusCode == 202 && notificationBody.isEmpty)
         request.httpBody = Data(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"surface_capabilities","arguments":{}}}"#.utf8)
         let (surfaceData, surfaceResponse) = try await URLSession.shared.data(for: request)
         #expect((surfaceResponse as? HTTPURLResponse)?.statusCode == 200)
@@ -61,5 +67,10 @@
         request.setValue("https://evil.invalid", forHTTPHeaderField: "Origin")
         let (_, denied) = try await URLSession.shared.data(for: request)
         #expect((denied as? HTTPURLResponse)?.statusCode == 403)
+        request.setValue(nil, forHTTPHeaderField: "Origin")
+        request.httpMethod = "DELETE"; request.httpBody = nil
+        let (_, deleted) = try await URLSession.shared.data(for: request)
+        #expect((deleted as? HTTPURLResponse)?.statusCode == 200)
+        #expect(server.router.sessionCount == 0)
     }
 #endif

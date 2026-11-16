@@ -2,6 +2,8 @@
     import Foundation
     import Network
     import Security
+    import SurfacePluginContracts
+    import XTouchCompactCore
 
     @MainActor final class LocalMCPServer {
         private var listener: NWListener?
@@ -9,9 +11,25 @@
         private var token = ""
         private var requests: [Date] = []
         private let now: () -> Date
-        init(authenticationToken: String = "", now: @escaping () -> Date = Date.init) {
+        let router: MCPRouter
+        init(authenticationToken: String = "", serverVersion: String? = nil, now: @escaping () -> Date = Date.init) {
             token = authenticationToken
             self.now = now
+            let info = Bundle.main.infoDictionary ?? [:]
+            let build = (info["CFBundleVersion"] as? String) ?? "unbundled"
+            let version = (info["CFBundleShortVersionString"] as? String).map { $0 + "+" + build } ?? build
+            router = MCPRouter(serverVersion: serverVersion ?? version, now: now)
+            router.handler = { [weak self] request in
+                guard let self, let handler else {
+                    throw MCPRPCError(code: -32601, message: "Method not found")
+                }
+                let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request.jsonValue)) as! [String: Any]
+                do {
+                    return try JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: handler(object)))
+                } catch let error as MCPError {
+                    throw MCPRPCError(code: error == .methodNotFound ? -32601 : -32602, message: String(describing: error))
+                }
+            }
         }
 
         var handler: (([String: Any]) throws -> [String: Any])?
@@ -38,7 +56,7 @@
                     // Named owners keep member access explicit under Swift 6.1 and SwiftFormat.
                     guard let server = self, server.peers.count < 16 else { connection.cancel(); return }
                     let id = UUID()
-                    let peer = MCPPeer(connection: connection) { [weak self] request in self?.respond(request) ?? (503, Data()) }
+                    let peer = MCPPeer(connection: connection) { [weak self] request in self?.response(request) ?? MCPReply(status: 503) }
                     server.peers[id] = peer
                     peer.finished = { [weak self] in self?.peers.removeValue(forKey: id) }
                     peer.start()
@@ -57,6 +75,8 @@
 
         func stop() {
             ready = false
+            router.stop()
+            requests.removeAll()
             listener?.cancel(); listener = nil
             for peer in Array(peers.values) {
                 peer.cancel()
@@ -64,62 +84,29 @@
         }
 
         func respond(_ request: HTTPRequest) -> (Int, Data) {
-            guard request.path == "/mcp" else { return (404, Data()) }
-            guard request.headers["origin"] == nil else { return (403, Data()) }
-            guard request.headers["authorization"] == "Bearer \(token)", !token.isEmpty else { return (401, Data()) }
-            guard request.method == "POST" else { return (405, Data()) }
-            guard request.headers["content-type"]?.hasPrefix("application/json") == true,
-                  let json = try? JSONSerialization.jsonObject(with: request.body) else { return (400, Data()) }
-            let isBatch = json is [Any]
-            let items: [[String: Any]]
-            if isBatch {
-                guard let batch = json as? [[String: Any]], !batch.isEmpty, batch.count <= 16 else { return (400, Data()) }
-                items = batch
-            } else {
-                guard let object = json as? [String: Any] else { return (400, Data()) }
-                items = [object]
-            }
-            // Preflight and reserve the complete batch budget before any side effects.
-            guard items.allSatisfy(validEnvelope) else { return (400, Data()) }
-            requests = requests.filter { now().timeIntervalSince($0) < 60 }
-            guard requests.count + items.count <= 60 else { return (429, Data()) }
-            requests.append(contentsOf: Array(repeating: now(), count: items.count))
-            let responses = items.compactMap { execute($0) }
-            guard !responses.isEmpty else { return (202, Data()) }
-            let result: Any = isBatch ? responses : responses[0]
-            return (200, (try? JSONSerialization.data(withJSONObject: result)) ?? Data())
+            let reply = response(request)
+            return (reply.status, (try? reply.encodedBody()) ?? Data())
         }
 
-        private func validEnvelope(_ object: [String: Any]) -> Bool {
-            guard object["jsonrpc"] as? String == "2.0", object["method"] is String else { return false }
-            guard let id = object["id"] else { return true }
-            if id is String || id is NSNull {
-                return true
+        func response(_ request: HTTPRequest) -> MCPReply {
+            guard request.path == "/mcp" else { return MCPReply(status: 404) }
+            guard request.headers["origin"] == nil else { return MCPReply(status: 403) }
+            guard request.headers["authorization"] == "Bearer \(token)", !token.isEmpty else { return MCPReply(status: 401) }
+            if request.method == "DELETE" {
+                return router.deleteSession(request.headers["mcp-session-id"])
             }
-            if let number = id as? NSNumber {
-                return CFGetTypeID(number) != CFBooleanGetTypeID() && number.doubleValue.isFinite
+            guard request.method == "POST" else { return MCPReply(status: 405) }
+            guard request.headers["content-type"]?.hasPrefix("application/json") == true else { return MCPReply(status: 400) }
+            // The aligned protocol accepts one message, never a JSON-RPC batch.
+            // Reject the whole array before charging the request budget or invoking any tool.
+            if let value = try? JSONDecoder().decode(JSONValue.self, from: request.body), value.arrayValue != nil {
+                return router.handle(request.body, headers: request.headers)
             }
-            return false
-        }
-
-        private func execute(_ object: [String: Any]) -> [String: Any]? {
-            guard object["id"] != nil, let method = object["method"] as? String else { return nil }
-            let id = object["id"]!
-            let response: [String: Any]
-            do {
-                let result: [String: Any] = if method == "initialize" {
-                    ["protocolVersion": "2025-03-26", "capabilities": ["tools": [:]],
-                     "serverInfo": ["name": "XTouchCompactDev", "version": "0.1.0"]]
-                } else if method == "ping" {
-                    [:]
-                } else {
-                    try handler?(object) ?? { throw MCPError.methodNotFound }()
-                }
-                response = ["jsonrpc": "2.0", "id": id, "result": result]
-            } catch {
-                response = ["jsonrpc": "2.0", "id": id, "error": ["code": (error as? MCPError == .methodNotFound ? -32601 : -32602), "message": String(describing: error)]]
-            }
-            return response
+            let time = now()
+            requests = requests.filter { time.timeIntervalSince($0) < 60 }
+            guard requests.count < 60 else { return MCPReply(status: 429) }
+            requests.append(time)
+            return router.handle(request.body, headers: request.headers)
         }
     }
 
@@ -159,11 +146,11 @@
 
     @MainActor private final class MCPPeer {
         let connection: NWConnection
-        let respond: (HTTPRequest) -> (Int, Data)
+        let respond: (HTTPRequest) -> MCPReply
         var finished: (() -> Void)?
         var bytes = Data()
         private var timeout: Task<Void, Never>?
-        init(connection: NWConnection, respond: @escaping (HTTPRequest) -> (Int, Data)) {
+        init(connection: NWConnection, respond: @escaping (HTTPRequest) -> MCPReply) {
             self.connection = connection; self.respond = respond
         }
 
@@ -190,8 +177,10 @@
                     }
                     do {
                         if let request = try HTTPRequest.parse(peer.bytes) {
-                            let (status, body) = peer.respond(request)
-                            let header = "HTTP/1.1 \(status) Response\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+                            let reply = peer.respond(request)
+                            let body = try reply.encodedBody()
+                            let sessionHeader = reply.sessionID.map { "Mcp-Session-Id: \($0)\r\n" } ?? ""
+                            let header = "HTTP/1.1 \(reply.status) Response\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\n" + sessionHeader + "Connection: close\r\n\r\n"
                             peer.connection.send(content: Data(header.utf8) + body, completion: .contentProcessed { [weak peer] _ in Task { @MainActor [weak peer] in peer?.cancel() } })
                         } else if complete || error != nil {
                             peer.cancel()

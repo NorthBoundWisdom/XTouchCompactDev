@@ -124,6 +124,7 @@ controllers, including the BCR2000, are rejected on import. Details:
 4. Agent writes move motors only with **Allow Agent motor moves** on. It is off by default and never
    restored at launch.
 
+The GUI supports MCP `2026-07-28` and the `2025-11-25` handshake; see [protocol and migration](docs/MCP.md).
 Legacy tools are `get_state`, `set_parameter` and `agent_primary`. The shared `surface_` tools add
 discovery, snapshots, actions and cursor-based events; see [shared tools](docs/SHARED_REMOTE.md).
 Agent writes use the same touch gate as your own input, and a remote agent cannot approve a waiting

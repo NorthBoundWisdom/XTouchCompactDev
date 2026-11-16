@@ -54,6 +54,7 @@
     "Sources/XTouchCompactCore/HardwareDeviceAccess.swift": "transport",
     "Sources/XTouchCompactCore/HardwareValueCache.swift": "device",
     "Sources/XTouchCompactCore/InputCoverage.swift": "device",
+    "Sources/XTouchCompactCore/MCPProtocol.swift": "transport",
     "Sources/XTouchCompactCore/MIDI1UMPCodec.swift": "device",
     "Sources/XTouchCompactCore/MIDIAddress.swift": "device",
     "Sources/XTouchCompactCore/MockXTouchCompact.swift": "device",
