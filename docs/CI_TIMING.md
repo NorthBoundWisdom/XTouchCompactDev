@@ -55,3 +55,12 @@ unchanged here; H must apply BCR 9fc56ae's TCPServer.server_bind override and ad
 the DNS-denial test. No in-scope HTTP fixture had that defect. Real slow-reader
 and lease deadlines remain measured against real sockets and process clocks;
 their waits and safety bounds were preserved.
+
+The first split cold run still took 306s before downstream smoke could run:
+216s for the slower slice, then 83s for assembly and its setup. Consumers now
+start concurrently, prepare dependencies/icon or checkout, and wait for exact
+artifact names scoped to the current run and attempt. Waits stop when producers
+fail or the original 300s run deadline expires. No artifacts from an older
+attempt can unblock a consumer. The original full ZIP/DMG GUI/headless assertions
+remain in assembly and on both native smoke runners. Icon reuse is keyed by its
+source SHA-256; no compiler or dependency cache policy was relaxed.

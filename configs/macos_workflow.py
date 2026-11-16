@@ -151,6 +151,38 @@ def verify_release_slice(directory: Path, architecture: str) -> Path:
     return executable
 
 
+def prepare_icon() -> Path:
+    output = build_path(REPO_ROOT, "icons/AppIcon.icns")
+    marker = build_path(REPO_ROOT, "icons/source.sha256")
+    digest = sha256(REPO_ROOT / "configs/app_icon.swift")
+    if output.is_file() and marker.is_file() and marker.read_text() == digest:
+        return output
+    iconroot = BUILD_ROOT / "icons"
+    run(["swift", REPO_ROOT / "configs/app_icon.swift", iconroot])
+    iconset = iconroot / "AppIcon.iconset"
+    iconset.mkdir(parents=True, exist_ok=True)
+    for size in (16, 32, 128, 256, 512):
+        for scale in (1, 2):
+            pixels = str(size * scale)
+            suffix = "@2x" if scale == 2 else ""
+            build_path(REPO_ROOT, f"icons/AppIcon.iconset/icon_{size}x{size}{suffix}.png")
+            run(
+                [
+                    "sips",
+                    "-z",
+                    pixels,
+                    pixels,
+                    iconroot / "AppIcon.png",
+                    "--out",
+                    iconset / f"icon_{size}x{size}{suffix}.png",
+                ],
+                capture=True,
+            )
+    run(["iconutil", "-c", "icns", iconset, "-o", output])
+    marker.write_text(digest)
+    return output
+
+
 def build(configuration: str, architecture: str = "native", prebuilt_slices: Path | None = None) -> Path:
     settings = load_app_build_settings(REPO_ROOT)
     for relative in ("swiftpm", f"app/{configuration}/{PRODUCT}.app", "icons/AppIcon.iconset", "icons/AppIcon.png"):
@@ -173,29 +205,7 @@ def build(configuration: str, architecture: str = "native", prebuilt_slices: Pat
     if not localization.is_dir():
         raise ValueError(f"Missing localization resources: {localization}")
     shutil.copytree(localization, resources / localization.name)
-    iconroot = BUILD_ROOT / "icons"
-    run(["swift", REPO_ROOT / "configs/app_icon.swift", iconroot])
-    iconset = iconroot / "AppIcon.iconset"
-    iconset.mkdir(parents=True, exist_ok=True)
-    for size in (16, 32, 128, 256, 512):
-        for scale in (1, 2):
-            pixels = str(size * scale)
-            suffix = "@2x" if scale == 2 else ""
-            build_path(REPO_ROOT, f"icons/AppIcon.iconset/icon_{size}x{size}{suffix}.png")
-            run(
-                [
-                    "sips",
-                    "-z",
-                    pixels,
-                    pixels,
-                    iconroot / "AppIcon.png",
-                    "--out",
-                    iconset / f"icon_{size}x{size}{suffix}.png",
-                ],
-                capture=True,
-            )
-    build_path(REPO_ROOT, str((resources / "AppIcon.icns").relative_to(BUILD_ROOT)))
-    run(["iconutil", "-c", "icns", iconset, "-o", resources / "AppIcon.icns"])
+    shutil.copy2(prepare_icon(), resources / "AppIcon.icns")
     info = {
         "CFBundleDevelopmentRegion": "en",
         "CFBundleLocalizations": ["en", "zh-Hans", "zh-Hant"],

@@ -58,7 +58,7 @@ jobs:
         run: python3 -c 'import os; from configs.macos_workflow import stage_release_slice; stage_release_slice(os.environ["SLICE_ARCH"])'
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: xtouch-release-${{ matrix.arch }}
+          name: xtouch-release-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
           path: build/native-slices/
           if-no-files-found: error
           retention-days: 2
@@ -71,7 +71,6 @@ jobs:
           RESTORED_BUILD_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
         run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY"
   package-macos:
-    needs: compile-slices
     runs-on: macos-26
     timeout-minutes: 20
     env:
@@ -87,9 +86,15 @@ jobs:
           path: build/dependencies
           key: dependencies-${{ hashFiles('configs/surface_plugins.lock.json') }}
       - run: python3 configs/setup_local_project.py
+      - name: Prepare the app icon while slices compile
+        run: python3 -c 'from configs.macos_workflow import prepare_icon; prepare_icon()'
+      - name: Wait for this run and attempt's release slices
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 configs/ci_artifact_wait.py --name "xtouch-release-arm64-attempt-$GITHUB_RUN_ATTEMPT" --name "xtouch-release-x86_64-attempt-$GITHUB_RUN_ATTEMPT" --producer compile-slices
       - uses: actions/download-artifact@v8.0.2
         with:
-          pattern: xtouch-release-*
+          pattern: xtouch-release-*-attempt-${{ github.run_attempt }}
           path: build/native-slices
           merge-multiple: true
       - name: Require a main commit for a pushed tag
@@ -99,7 +104,7 @@ jobs:
         run: python3 configs/macos_workflow.py package --architecture universal --prebuilt-slices build/native-slices
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: xtouch-compact-universal
+          name: xtouch-compact-universal-attempt-${{ github.run_attempt }}
           path: build/package/*
           if-no-files-found: error
           retention-days: 14
@@ -111,7 +116,6 @@ jobs:
           RESTORED_BUILD_KEY: ''
         run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY"
   package-smoke:
-    needs: package-macos
     strategy:
       fail-fast: false
       matrix:
@@ -122,9 +126,13 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+      - name: Wait for this run and attempt's final package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 configs/ci_artifact_wait.py --name "xtouch-compact-universal-attempt-$GITHUB_RUN_ATTEMPT" --producer package-macos
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: xtouch-compact-universal
+          name: xtouch-compact-universal-attempt-${{ github.run_attempt }}
           path: build/package
       - name: Verify final ZIP and DMG with isolated GUI and headless startup
         run: |
