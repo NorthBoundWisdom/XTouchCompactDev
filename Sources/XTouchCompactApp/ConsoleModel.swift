@@ -169,8 +169,10 @@
         let offlineReplayYield: @MainActor () async -> Void
         private let runtimeSleep: @MainActor (Duration) async throws -> Void
         private let evidenceWriterFactory: (URL) throws -> any EvidenceWriting
+        private var canonicalSessionRevision: UInt64 = 0
         private(set) var session: CompactSession {
             didSet {
+                canonicalSessionRevision &+= 1
                 guard explicitWriteContext,
                       session.writeAuthorization.bindingGeneration != oldValue.writeAuthorization.bindingGeneration else { return }
                 var context = session.writeAuthorization
@@ -713,9 +715,11 @@
             try session.parameters.validateWrite(id, writer: writer)
             guard let parameterAuthority else { return }
             let context = session.writeAuthorization
+            let ownerRevision = canonicalSessionRevision
             let decision = try parameterAuthority(.init(parameterID: id, proposedValue: value, writer: writer,
                                                         routeGeneration: context.routeGeneration, bindingGeneration: context.bindingGeneration))
-            guard decision.routeGeneration == context.routeGeneration, decision.bindingGeneration == context.bindingGeneration,
+            guard canonicalSessionRevision == ownerRevision,
+                  decision.routeGeneration == context.routeGeneration, decision.bindingGeneration == context.bindingGeneration,
                   context == session.writeAuthorization else { throw ParameterWriteAuthorizationError.staleContext }
             guard decision.actualValue.isFinite else { throw ParameterWriteAuthorizationError.invalidAuthorityValue }
             if !decision.accepted {
@@ -769,6 +773,7 @@
 
         func setParameter(_ id: String, value: Double, fromAgent: Bool = false) {
             let scope = session.writeAuthorization, at = eventMonotonicClock()
+            let ownerRevision = canonicalSessionRevision
             do {
                 var candidate = session
                 let provenance = try capturePlannedProvenance(fromAgent ? .remote : .interface)
@@ -779,6 +784,7 @@
                 for (linked, proposed) in candidate.parameters.values where linked != id && session.parameters.values[linked] != proposed {
                     try validateParameterAuthority(linked, value: proposed, writer: fromAgent ? .remote : .interface)
                 }
+                guard canonicalSessionRevision == ownerRevision else { throw ParameterWriteAuthorizationError.staleContext }
                 session = candidate
                 let fact = mutationFact(operation: "set_parameter", targets: [id], accepted: true, reason: nil,
                                         scope: scope, at: eventMonotonicClock(), values: [id: candidate.parameters.values[id]!])
@@ -1129,17 +1135,26 @@
             }
             guard hardwareMode != fromMock else { return }
             do {
+                let baseRevision = canonicalSessionRevision
                 var candidate = session
                 let update: CompactSessionUpdate
                 do {
                     let provenance = try capturePlannedProvenance(.hardware)
                     update = try candidate.withPlannedProvenance(provenance) { try $0.receive(messages) }
+                    guard canonicalSessionRevision == baseRevision else { throw ParameterWriteAuthorizationError.staleContext }
+                    // Publish actual physical observations before calling the external authority.
+                    // The candidate alone still owns the proposed business writes and feedback.
+                    session.observeInputs(messages)
+                    let observedRevision = canonicalSessionRevision
                     for (id, value) in candidate.parameters.values where session.parameters.values[id] != value {
                         try validateParameterAuthority(id, value: value, writer: .hardware)
                     }
+                    guard canonicalSessionRevision == observedRevision else { throw ParameterWriteAuthorizationError.staleContext }
                 } catch {
                     // Keep physical touch/layer observations even when the business authority refuses.
-                    session.observeInputs(messages)
+                    if canonicalSessionRevision == baseRevision {
+                        session.observeInputs(messages)
+                    }
                     throw error
                 }
                 session = candidate
@@ -1162,11 +1177,13 @@
 
         func apply(writer: ParameterWriter = .interface, _ operation: (inout CompactSession) throws -> [MIDIMessage]) {
             let scope = session.writeAuthorization, at = eventMonotonicClock()
+            let ownerRevision = canonicalSessionRevision
             do {
                 var next = session
                 let provenance = try capturePlannedProvenance(writer)
                 let messages = try next.withPlannedProvenance(provenance, operation)
                 try validateHardwareLayerAssertion(messages)
+                guard canonicalSessionRevision == ownerRevision else { throw ParameterWriteAuthorizationError.staleContext }
                 for (id, value) in next.parameters.values where session.parameters.values[id] != value {
                     try validateParameterAuthority(id, value: value, writer: writer)
                 }
@@ -1176,6 +1193,7 @@
                     next.configureWriteAuthorization(context)
                 }
                 let changes = next.parameters.values.filter { session.parameters.values[$0.key] != $0.value }
+                guard canonicalSessionRevision == ownerRevision else { throw ParameterWriteAuthorizationError.staleContext }
                 session = next
                 let fact = changes.isEmpty ? nil : mutationFact(operation: "apply", targets: changes.keys.sorted(), accepted: true, reason: nil, scope: scope, at: eventMonotonicClock(), values: changes)
                 send(messages)
@@ -1440,6 +1458,7 @@
 
         func applyAgentParameter(_ id: String, value: Double) throws {
             let scope = session.writeAuthorization, at = eventMonotonicClock()
+            let ownerRevision = canonicalSessionRevision
             do {
                 var candidate = session
                 let provenance = try capturePlannedProvenance(.remote)
@@ -1448,6 +1467,7 @@
                 for (linked, proposed) in candidate.parameters.values where linked != id && session.parameters.values[linked] != proposed {
                     try validateParameterAuthority(linked, value: proposed, writer: .remote)
                 }
+                guard canonicalSessionRevision == ownerRevision else { throw ParameterWriteAuthorizationError.staleContext }
                 session = candidate
                 let fact = mutationFact(operation: "set_parameter", targets: [id], accepted: true, reason: nil, scope: scope, at: eventMonotonicClock(), values: [id: candidate.parameters.values[id]!])
                 sendAgentFeedback(messages)

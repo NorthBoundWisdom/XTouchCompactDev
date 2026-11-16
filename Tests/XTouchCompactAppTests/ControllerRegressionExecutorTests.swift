@@ -82,6 +82,25 @@
         switch display { case .off: 0; case let .position(value): value; case let .blinkingPosition(value): value + 13; case .allOn: 27; case .allBlinking: 28 }
     }
 
+    @MainActor private enum H10HarnessActivity {
+        static var active = 0
+        static var maximum = 0
+        static var sequence = 0
+        static func begin(owner: String) -> Int {
+            sequence += 1; active += 1; maximum = max(maximum, active)
+            print("H10_TRANSPORT_DIAG harness=\(sequence) owner=\(owner) phase=enter active=\(active) max=\(maximum) at=\(ProcessInfo.processInfo.systemUptime)")
+            return sequence
+        }
+
+        static func phase(_ id: Int, _ phase: String, detail: String = "") {
+            print("H10_TRANSPORT_DIAG harness=\(id) phase=\(phase) active=\(active) max=\(maximum) at=\(ProcessInfo.processInfo.systemUptime) \(detail)")
+        }
+
+        static func end(_ id: Int) {
+            active -= 1; phase(id, "closed")
+        }
+    }
+
     @MainActor private final class H10IdentitySequence {
         private var record: UInt64 = 0
         private var operation: UInt64 = 0
@@ -906,18 +925,26 @@
                 }
                 return response
             }
+            let harness = H10HarnessActivity.begin(owner: id)
+            server.onReady = { port in H10HarnessActivity.phase(harness, "ready", detail: "port=\(port)") }
+            server.onError = { error in H10HarnessActivity.phase(harness, "listener-error", detail: String(describing: error)) }
             try server.start(port: 0, token: token)
-            defer { server.stop() }
+            defer { server.stop(); H10HarnessActivity.end(harness) }
             let deadline = ProcessInfo.processInfo.systemUptime + 5
             while server.boundPort == nil, ProcessInfo.processInfo.systemUptime < deadline {
                 try await Task.sleep(for: .milliseconds(5))
             }
-            guard let port = server.boundPort else { throw H10Error.malformed("owned MCP did not become ready") }
+            guard let port = server.boundPort else {
+                H10HarnessActivity.phase(harness, "ready-timeout", detail: "original_deadline_s=5")
+                throw H10Error.malformed("owned MCP did not become ready")
+            }
+            H10HarnessActivity.phase(harness, "proxy-start", detail: "argv=python3,-B,Tests/H10Support/response_drop.py input_fields=port,token-redacted,sdk deadline_s=15")
             let payload = try JSONSerialization.data(withJSONObject: ["port": port, "token": token, "sdk": repo.appendingPathComponent("build/dependencies/SurfacePlugins/clients/python").path])
             let before = model.agents.slots[0].phase.rawValue
             let (status, output, errors) = try await h10Process(["python3", "-B", repo.appendingPathComponent("Tests/H10Support/response_drop.py").path], input: payload)
             guard !String(decoding: output + errors, as: UTF8.self).contains(token) else { throw H10Error.malformed("credential leak") }
             guard status == 0 else { throw H10Error.malformed("drop proxy failed: " + String(decoding: errors, as: UTF8.self)) }
+            H10HarnessActivity.phase(harness, "proxy-complete", detail: "exit=\(status)")
             let report = try h10Object(JSONSerialization.jsonObject(with: output))
             raw.append(["kind": "actual-action-proxy-admission-observation", "proxy_report": report, "real_successful_dispatches": dispatches,
                         "before_phase": before, "after_phase": model.agents.slots[0].phase.rawValue])
@@ -928,80 +955,6 @@
             raw.append(["kind": "actual-retained-GUI-action-response-loss", "actual_tool": "agent_primary", "before_phase": before, "after_phase": model.agents.slots[0].phase.rawValue,
                         "real_successful_dispatches": dispatches, "transport": report])
         }
-    }
-
-    @Test @MainActor func controllerRegressionExecutorProducesThirtyValidatedResultsWithoutChangingProductPolicy() async throws {
-        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let environment = ProcessInfo.processInfo.environment
-        let shared = URL(fileURLWithPath: environment["XTOUCH_H10_SCHEMA_ROOT"] ?? repo.appendingPathComponent("build/dependencies/ControlSurfaceKit").path)
-        let fixture = URL(fileURLWithPath: environment["XTOUCH_H10_FIXTURE_PATH"] ?? shared.appendingPathComponent("fixtures/controller-regression-v1.json").path)
-        let destination = URL(fileURLWithPath: environment["XTOUCH_H10_REPORT_ROOT"] ?? repo.appendingPathComponent("build/h/h10/final").path)
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        let bytes = try Data(contentsOf: fixture)
-        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-        #expect(digest == h10FixtureSHA)
-        guard digest == h10FixtureSHA else { throw H10Error.malformed("candidate fixture changed; coordinate instead of learning new oracle") }
-        let catalog = try ScenarioCatalog.decode(data: bytes)
-        let scenes = catalog.scenarios
-        #expect(scenes.count == 30)
-        var results: [[String: Any]] = [], traces: [[String: Any]] = []
-        for scene in scenes {
-            let scenarioID = scene.id
-            let missing = Set(scene.requiresFeatures).subtracting(h10Features)
-            if !missing.isEmpty {
-                results.append(["id": scenarioID, "status": "not_applicable", "reason": "Factory Standard supported protocol lacks: " + missing.sorted().joined(separator: ","), "steps": []])
-                continue
-            }
-            let setup = try h10Object(JSONSerialization.jsonObject(with: JSONEncoder().encode(scene.setup)))
-            var instances: [String: H10Instance] = [:]
-            for instance in try h10Rows(setup["instances"]) {
-                let id = try h10String(instance, "id")
-                instances[id] = try H10Instance(id: id, source: h10String(instance, "source"), scenario: scenarioID, setup: setup)
-            }
-            let setupEvidence = instances.mapValues { $0.raw }
-            var records: [[String: Any]] = [], stepTraces: [[String: Any]] = []
-            for (index, action) in scene.steps.enumerated() {
-                let operation = action.operation, instanceID = action.instanceID
-                let missing = Set(action.requiresFeatures).subtracting(h10Features)
-                if !missing.isEmpty {
-                    records.append(["index": index, "operation": operation, "status": "not_applicable", "reason": "Unsupported physical/protocol feature: " + missing.sorted().joined(separator: ","), "before": [:], "after": [:], "effects": []])
-                    continue
-                }
-                let before = instances.mapValues { $0.observations() }
-                let offsets = instances.mapValues { ($0.effects.count, $0.raw.count) }
-                var failure: String?
-                guard let instance = instances[instanceID] else { throw H10Error.malformed("instance identity") }
-                do { failure = try await instance.execute(action, repo: repo) }
-                catch { failure = "Actual operation error: " + String(describing: error) }
-                let after = instances.mapValues { $0.observations() }
-                let effects = instances.flatMap { id, value in Array(value.effects.dropFirst(offsets[id]!.0)) }
-                let beforeTyped = try before.mapValues { try $0.mapValues(h10TraceScalar) }
-                let afterTyped = try after.mapValues { try $0.mapValues(h10TraceScalar) }
-                let unmet = try action.expect.filter { try !AssertionEvaluator.evaluate($0, instanceID: instanceID, before: beforeTyped, after: afterTyped) }
-                if !unmet.isEmpty {
-                    failure = (failure.map { $0 + "; " } ?? "") + "Real observations do not meet: " + unmet.map(\.metric).joined(separator: ",")
-                }
-                let reason: Any = failure.map { String($0.prefix(512)) } ?? h10Null
-                records.append(["index": index, "operation": operation, "status": failure == nil ? "pass" : "fail", "reason": reason, "before": before, "after": after, "effects": effects])
-                try stepTraces.append(["index": index, "operation": operation, "instance_id": instanceID, "arguments": JSONSerialization.jsonObject(with: JSONEncoder().encode(action.arguments)),
-                                       "real_trace": instances.mapValues { value in Array(value.raw.dropFirst(offsets[value.id]!.1)) }])
-            }
-            let failures = records.filter { $0["status"] as? String == "fail" }
-            results.append(["id": scenarioID, "status": failures.isEmpty ? "pass" : "fail", "reason": failures.isEmpty ? h10Null : String(failures.compactMap { $0["reason"] as? String }.joined(separator: "; ").prefix(512)), "steps": records])
-            traces.append(["id": scenarioID, "setup_evidence": setupEvidence, "steps": stepTraces, "owners": instances.mapValues { value in ["gui": value.model != nil, "core": value.session != nil, "hardware_contract": value.hardware != nil, "simulation_contract": value.simulator != nil, "device_style": value.styleState != nil] }])
-            #expect(instances.values.allSatisfy { $0.wire.starts == 0 })
-        }
-        let (gitStatus, gitOutput, _) = try await h10Process(["git", "-C", repo.path, "rev-parse", "HEAD"])
-        guard gitStatus == 0 else { throw H10Error.malformed("revision") }
-        let report: [String: Any] = ["schema_version": 1, "artifact": "neutral-controller-regression-results", "fixture_sha256": digest,
-                                     "host_revision": String(decoding: gitOutput, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines),
-                                     "host_id": "xtouch.compact", "qualification": "test-only-fake-device", "features": h10Features.sorted(), "results": results]
-        let reportPath = destination.appendingPathComponent("controller-regression-results.json")
-        try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: reportPath)
-        try JSONSerialization.data(withJSONObject: ["fixture_sha256": digest, "hardware_accessed": false, "traces": traces], options: [.prettyPrinted, .sortedKeys]).write(to: destination.appendingPathComponent("controller-regression-raw.json"))
-        let (status, output, errors) = try await h10Process(["python3", "-B", shared.appendingPathComponent("scripts/validate_controller_regression.py").path, "--fixture", fixture.path, "--report", reportPath.path])
-        print("H10_REPORT_VALIDATION " + String(decoding: output, as: UTF8.self))
-        #expect(status == 0, "Report validity is distinct from scenario conformance: \(String(decoding: errors, as: UTF8.self))")
     }
 
     @MainActor private extension H10Instance {
@@ -1253,83 +1206,161 @@
         }
     }
 
-    @Test @MainActor func independentNativeAndTypedOwnersMatchEveryApplicableControllerStep() async throws {
-        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let kernel = repo.appendingPathComponent("build/dependencies/ControlSurfaceKit")
-        let bytes = try Data(contentsOf: kernel.appendingPathComponent("fixtures/controller-regression-v1.json"))
-        #expect(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() == h10FixtureSHA)
-        let catalog = try ScenarioCatalog.decode(data: bytes)
-        let original = try h10Rows(h10Object(JSONSerialization.jsonObject(with: bytes))["scenarios"])
-        var samples = 0, operations = 0, observationCount = 0, feedbackCount = 0, transmissionCount = 0
-        var differences: [[String: Any]] = [], rawSamples: [[String: Any]] = [], sceneResults: [[String: Any]] = []
-        for (scene, nativeScene) in zip(catalog.scenarios, original) {
-            let missing = Set(scene.requiresFeatures).subtracting(h10Features)
-            if !missing.isEmpty {
-                sceneResults.append(["id": scene.id, "status": "not_applicable", "features": missing.sorted()]); continue
-            }
-            let setup = try h10Object(nativeScene["setup"])
-            var reference: [String: H10Instance] = [:], candidate: [String: H10Instance] = [:]
-            for row in try h10Rows(setup["instances"]) {
-                let id = try h10String(row, "id"), source = try h10String(row, "source")
-                reference[id] = try H10Instance(id: id, source: source, scenario: scene.id, setup: setup, deterministic: true)
-                candidate[id] = try H10Instance(id: id, source: source, scenario: scene.id, setup: setup, deterministic: true)
-                let leftOwner = try #require(reference[id]), rightOwner = try #require(candidate[id])
-                #expect(leftOwner !== rightOwner); #expect(leftOwner.wire !== rightOwner.wire)
-            }
-            var scenePass = true
-            for (index, pair) in try zip(scene.steps, h10Rows(nativeScene["steps"])).enumerated() {
-                let (action, nativeAction) = pair
-                let missingStep = Set(action.requiresFeatures).subtracting(h10Features)
-                #expect(missingStep.isEmpty)
-                if !missingStep.isEmpty {
+    /// These two acceptance harnesses own main-queue listeners and subprocesses.
+    /// Serialize the harnesses, not the independent reference/candidate business owners.
+    @Suite(.serialized) private struct ControllerRegressionAcceptance {
+        @Test @MainActor func controllerRegressionExecutorProducesThirtyValidatedResultsWithoutChangingProductPolicy() async throws {
+            let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            let environment = ProcessInfo.processInfo.environment
+            let shared = URL(fileURLWithPath: environment["XTOUCH_H10_SCHEMA_ROOT"] ?? repo.appendingPathComponent("build/dependencies/ControlSurfaceKit").path)
+            let fixture = URL(fileURLWithPath: environment["XTOUCH_H10_FIXTURE_PATH"] ?? shared.appendingPathComponent("fixtures/controller-regression-v1.json").path)
+            let destination = URL(fileURLWithPath: environment["XTOUCH_H10_REPORT_ROOT"] ?? repo.appendingPathComponent("build/h/h10/final").path)
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            let bytes = try Data(contentsOf: fixture)
+            let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            #expect(digest == h10FixtureSHA)
+            guard digest == h10FixtureSHA else { throw H10Error.malformed("candidate fixture changed; coordinate instead of learning new oracle") }
+            let catalog = try ScenarioCatalog.decode(data: bytes)
+            let scenes = catalog.scenarios
+            #expect(scenes.count == 30)
+            var results: [[String: Any]] = [], traces: [[String: Any]] = []
+            for scene in scenes {
+                let scenarioID = scene.id
+                let missing = Set(scene.requiresFeatures).subtracting(h10Features)
+                if !missing.isEmpty {
+                    results.append(["id": scenarioID, "status": "not_applicable", "reason": "Factory Standard supported protocol lacks: " + missing.sorted().joined(separator: ","), "steps": []])
                     continue
                 }
-                operations += 1
-                let beforeReference = reference.mapValues { $0.observations() }, beforeCandidate = candidate.mapValues { $0.observations() }
-                let leftMarks = try reference.mapValues(H10ShadowMark.init), rightMarks = try candidate.mapValues(H10ShadowMark.init)
-                var leftFailure: String?, rightFailure: String?
-                let leftOwner = try #require(reference[action.instanceID]), rightOwner = try #require(candidate[action.instanceID])
-                do { leftFailure = try await leftOwner.execute(nativeAction, repo: repo) } catch { leftFailure = String(describing: error) }
-                do { rightFailure = try await rightOwner.execute(action, repo: repo) } catch { rightFailure = String(describing: error) }
-                #expect(leftFailure == rightFailure)
-                #expect(leftFailure == nil && rightFailure == nil)
-                scenePass = scenePass && leftFailure == nil && rightFailure == nil
-                let afterReference = reference.mapValues { $0.observations() }, afterCandidate = candidate.mapValues { $0.observations() }
-                for (assertion, legacy) in try zip(action.expect, h10Rows(nativeAction["expect"])) {
-                    let native = h10Assertion(legacy, instance: action.instanceID, before: beforeReference, after: afterReference)
-                    let typed = try AssertionEvaluator.evaluate(assertion, instanceID: action.instanceID,
-                                                                before: beforeCandidate.mapValues { try $0.mapValues(h10TraceScalar) },
-                                                                after: afterCandidate.mapValues { try $0.mapValues(h10TraceScalar) })
-                    #expect(native == typed); #expect(native)
-                    scenePass = scenePass && native && typed
+                let setup = try h10Object(JSONSerialization.jsonObject(with: JSONEncoder().encode(scene.setup)))
+                var instances: [String: H10Instance] = [:]
+                for instance in try h10Rows(setup["instances"]) {
+                    let id = try h10String(instance, "id")
+                    instances[id] = try H10Instance(id: id, source: h10String(instance, "source"), scenario: scenarioID, setup: setup)
                 }
-                for id in reference.keys.sorted() {
-                    let leftOwner = try #require(reference[id]), rightOwner = try #require(candidate[id])
-                    let leftMark = try #require(leftMarks[id]), rightMark = try #require(rightMarks[id])
-                    let left = try leftOwner.shadowSample(action, step: index, mark: leftMark, failure: id == action.instanceID ? leftFailure : nil)
-                    let right = try rightOwner.shadowSample(action, step: index, mark: rightMark, failure: id == action.instanceID ? rightFailure : nil)
-                    let delta = ShadowComparator.compare(reference: [left], candidate: [right])
-                    for diff in delta {
-                        differences.append(["scene": scene.id, "step": index, "owner": id, "field": diff.field, "reference": diff.reference, "candidate": diff.candidate])
+                let setupEvidence = instances.mapValues { $0.raw }
+                var records: [[String: Any]] = [], stepTraces: [[String: Any]] = []
+                for (index, action) in scene.steps.enumerated() {
+                    let operation = action.operation, instanceID = action.instanceID
+                    let missing = Set(action.requiresFeatures).subtracting(h10Features)
+                    if !missing.isEmpty {
+                        records.append(["index": index, "operation": operation, "status": "not_applicable", "reason": "Unsupported physical/protocol feature: " + missing.sorted().joined(separator: ","), "before": [:], "after": [:], "effects": []])
+                        continue
                     }
-                    observationCount += right.observations.count; feedbackCount += right.feedback.count; transmissionCount += right.transmissions.count
-                    rawSamples.append(["scene": scene.id, "step": index, "owner": id, "reference": String(reflecting: left), "candidate": String(reflecting: right)])
-                    samples += 1
+                    let before = instances.mapValues { $0.observations() }
+                    let offsets = instances.mapValues { ($0.effects.count, $0.raw.count) }
+                    var failure: String?
+                    guard let instance = instances[instanceID] else { throw H10Error.malformed("instance identity") }
+                    do { failure = try await instance.execute(action, repo: repo) }
+                    catch { failure = "Actual operation error: " + String(describing: error) }
+                    let after = instances.mapValues { $0.observations() }
+                    let effects = instances.flatMap { id, value in Array(value.effects.dropFirst(offsets[id]!.0)) }
+                    let beforeTyped = try before.mapValues { try $0.mapValues(h10TraceScalar) }
+                    let afterTyped = try after.mapValues { try $0.mapValues(h10TraceScalar) }
+                    let unmet = try action.expect.filter { try !AssertionEvaluator.evaluate($0, instanceID: instanceID, before: beforeTyped, after: afterTyped) }
+                    if !unmet.isEmpty {
+                        failure = (failure.map { $0 + "; " } ?? "") + "Real observations do not meet: " + unmet.map(\.metric).joined(separator: ",")
+                    }
+                    let reason: Any = failure.map { String($0.prefix(512)) } ?? h10Null
+                    records.append(["index": index, "operation": operation, "status": failure == nil ? "pass" : "fail", "reason": reason, "before": before, "after": after, "effects": effects])
+                    try stepTraces.append(["index": index, "operation": operation, "instance_id": instanceID, "arguments": JSONSerialization.jsonObject(with: JSONEncoder().encode(action.arguments)),
+                                           "real_trace": instances.mapValues { value in Array(value.raw.dropFirst(offsets[value.id]!.1)) }])
                 }
+                let failures = records.filter { $0["status"] as? String == "fail" }
+                results.append(["id": scenarioID, "status": failures.isEmpty ? "pass" : "fail", "reason": failures.isEmpty ? h10Null : String(failures.compactMap { $0["reason"] as? String }.joined(separator: "; ").prefix(512)), "steps": records])
+                traces.append(["id": scenarioID, "setup_evidence": setupEvidence, "steps": stepTraces, "owners": instances.mapValues { value in ["gui": value.model != nil, "core": value.session != nil, "hardware_contract": value.hardware != nil, "simulation_contract": value.simulator != nil, "device_style": value.styleState != nil] }])
+                #expect(instances.values.allSatisfy { $0.wire.starts == 0 })
             }
-            sceneResults.append(["id": scene.id, "status": scenePass ? "pass" : "fail"])
+            let (gitStatus, gitOutput, _) = try await h10Process(["git", "-C", repo.path, "rev-parse", "HEAD"])
+            guard gitStatus == 0 else { throw H10Error.malformed("revision") }
+            let report: [String: Any] = ["schema_version": 1, "artifact": "neutral-controller-regression-results", "fixture_sha256": digest,
+                                         "host_revision": String(decoding: gitOutput, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines),
+                                         "host_id": "xtouch.compact", "qualification": "test-only-fake-device", "features": h10Features.sorted(), "results": results]
+            let reportPath = destination.appendingPathComponent("controller-regression-results.json")
+            try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: reportPath)
+            try JSONSerialization.data(withJSONObject: ["fixture_sha256": digest, "hardware_accessed": false, "traces": traces], options: [.prettyPrinted, .sortedKeys]).write(to: destination.appendingPathComponent("controller-regression-raw.json"))
+            let (status, output, errors) = try await h10Process(["python3", "-B", shared.appendingPathComponent("scripts/validate_controller_regression.py").path, "--fixture", fixture.path, "--report", reportPath.path])
+            print("H10_REPORT_VALIDATION " + String(decoding: output, as: UTF8.self))
+            #expect(status == 0, "Report validity is distinct from scenario conformance: \(String(decoding: errors, as: UTF8.self))")
         }
-        let destination = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J2_SHADOW_REPORT_ROOT"] ?? repo.appendingPathComponent("build/j/j2-shadow").path)
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        let actualLock = try h10Object(JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent("configs/control_surface_kit.lock.json"))))
-        let report: [String: Any] = try ["kernel_revision": h10String(actualLock, "revision"), "product_behavior": "original native implementation; contracts/assertions in shadow",
-                                         "fixture_sha256": h10FixtureSHA, "applicable_operations": operations, "step_instance_samples": samples,
-                                         "observations": observationCount, "feedback": feedbackCount, "transmissions": transmissionCount,
-                                         "differences": differences, "scenarios": sceneResults, "samples": rawSamples]
-        try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: destination.appendingPathComponent("independent-shadow.json"))
-        print("J2_SHADOW operations=\(operations) ownerSamples=\(samples) observations=\(observationCount) feedback=\(feedbackCount) transmissions=\(transmissionCount) differences=\(differences.count)")
-        #expect(operations == 70 && samples == 78)
-        #expect(observationCount > 0 && feedbackCount > 0 && transmissionCount > 0)
-        #expect(differences.isEmpty)
+
+        @Test @MainActor func independentNativeAndTypedOwnersMatchEveryApplicableControllerStep() async throws {
+            let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            let kernel = repo.appendingPathComponent("build/dependencies/ControlSurfaceKit")
+            let bytes = try Data(contentsOf: kernel.appendingPathComponent("fixtures/controller-regression-v1.json"))
+            #expect(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() == h10FixtureSHA)
+            let catalog = try ScenarioCatalog.decode(data: bytes)
+            let original = try h10Rows(h10Object(JSONSerialization.jsonObject(with: bytes))["scenarios"])
+            var samples = 0, operations = 0, observationCount = 0, feedbackCount = 0, transmissionCount = 0
+            var differences: [[String: Any]] = [], rawSamples: [[String: Any]] = [], sceneResults: [[String: Any]] = []
+            for (scene, nativeScene) in zip(catalog.scenarios, original) {
+                let missing = Set(scene.requiresFeatures).subtracting(h10Features)
+                if !missing.isEmpty {
+                    sceneResults.append(["id": scene.id, "status": "not_applicable", "features": missing.sorted()]); continue
+                }
+                let setup = try h10Object(nativeScene["setup"])
+                var reference: [String: H10Instance] = [:], candidate: [String: H10Instance] = [:]
+                for row in try h10Rows(setup["instances"]) {
+                    let id = try h10String(row, "id"), source = try h10String(row, "source")
+                    reference[id] = try H10Instance(id: id, source: source, scenario: scene.id, setup: setup, deterministic: true)
+                    candidate[id] = try H10Instance(id: id, source: source, scenario: scene.id, setup: setup, deterministic: true)
+                    let leftOwner = try #require(reference[id]), rightOwner = try #require(candidate[id])
+                    #expect(leftOwner !== rightOwner); #expect(leftOwner.wire !== rightOwner.wire)
+                }
+                var scenePass = true
+                for (index, pair) in try zip(scene.steps, h10Rows(nativeScene["steps"])).enumerated() {
+                    let (action, nativeAction) = pair
+                    let missingStep = Set(action.requiresFeatures).subtracting(h10Features)
+                    #expect(missingStep.isEmpty)
+                    if !missingStep.isEmpty {
+                        continue
+                    }
+                    operations += 1
+                    let beforeReference = reference.mapValues { $0.observations() }, beforeCandidate = candidate.mapValues { $0.observations() }
+                    let leftMarks = try reference.mapValues(H10ShadowMark.init), rightMarks = try candidate.mapValues(H10ShadowMark.init)
+                    var leftFailure: String?, rightFailure: String?
+                    let leftOwner = try #require(reference[action.instanceID]), rightOwner = try #require(candidate[action.instanceID])
+                    do { leftFailure = try await leftOwner.execute(nativeAction, repo: repo) } catch { leftFailure = String(describing: error) }
+                    do { rightFailure = try await rightOwner.execute(action, repo: repo) } catch { rightFailure = String(describing: error) }
+                    #expect(leftFailure == rightFailure)
+                    #expect(leftFailure == nil && rightFailure == nil)
+                    scenePass = scenePass && leftFailure == nil && rightFailure == nil
+                    let afterReference = reference.mapValues { $0.observations() }, afterCandidate = candidate.mapValues { $0.observations() }
+                    for (assertion, legacy) in try zip(action.expect, h10Rows(nativeAction["expect"])) {
+                        let native = h10Assertion(legacy, instance: action.instanceID, before: beforeReference, after: afterReference)
+                        let typed = try AssertionEvaluator.evaluate(assertion, instanceID: action.instanceID,
+                                                                    before: beforeCandidate.mapValues { try $0.mapValues(h10TraceScalar) },
+                                                                    after: afterCandidate.mapValues { try $0.mapValues(h10TraceScalar) })
+                        #expect(native == typed); #expect(native)
+                        scenePass = scenePass && native && typed
+                    }
+                    for id in reference.keys.sorted() {
+                        let leftOwner = try #require(reference[id]), rightOwner = try #require(candidate[id])
+                        let leftMark = try #require(leftMarks[id]), rightMark = try #require(rightMarks[id])
+                        let left = try leftOwner.shadowSample(action, step: index, mark: leftMark, failure: id == action.instanceID ? leftFailure : nil)
+                        let right = try rightOwner.shadowSample(action, step: index, mark: rightMark, failure: id == action.instanceID ? rightFailure : nil)
+                        let delta = ShadowComparator.compare(reference: [left], candidate: [right])
+                        for diff in delta {
+                            differences.append(["scene": scene.id, "step": index, "owner": id, "field": diff.field, "reference": diff.reference, "candidate": diff.candidate])
+                        }
+                        observationCount += right.observations.count; feedbackCount += right.feedback.count; transmissionCount += right.transmissions.count
+                        rawSamples.append(["scene": scene.id, "step": index, "owner": id, "reference": String(reflecting: left), "candidate": String(reflecting: right)])
+                        samples += 1
+                    }
+                }
+                sceneResults.append(["id": scene.id, "status": scenePass ? "pass" : "fail"])
+            }
+            let destination = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J2_SHADOW_REPORT_ROOT"] ?? repo.appendingPathComponent("build/j/j2-shadow").path)
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            let actualLock = try h10Object(JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent("configs/control_surface_kit.lock.json"))))
+            let report: [String: Any] = try ["kernel_revision": h10String(actualLock, "revision"), "product_behavior": "original native implementation; contracts/assertions in shadow",
+                                             "fixture_sha256": h10FixtureSHA, "applicable_operations": operations, "step_instance_samples": samples,
+                                             "observations": observationCount, "feedback": feedbackCount, "transmissions": transmissionCount,
+                                             "differences": differences, "scenarios": sceneResults, "samples": rawSamples]
+            try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: destination.appendingPathComponent("independent-shadow.json"))
+            print("J2_SHADOW operations=\(operations) ownerSamples=\(samples) observations=\(observationCount) feedback=\(feedbackCount) transmissions=\(transmissionCount) differences=\(differences.count)")
+            #expect(operations == 70 && samples == 78)
+            #expect(observationCount > 0 && feedbackCount > 0 && transmissionCount > 0)
+            #expect(differences.isEmpty)
+        }
     }
 #endif
