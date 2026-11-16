@@ -6,12 +6,14 @@ import XTouchCompactCore
 final class DeviceAccessAudit: @unchecked Sendable {
     private let lock = NSLock()
     let access: HardwareDeviceAccess
+    let rehearsal: Bool
     private var counters: [String: Int] = ["coremidi_factory_calls": 0, "scripted_factory_calls": 0,
                                            "client_create_calls": 0, "input_port_create_calls": 0, "output_port_create_calls": 0,
                                            "source_enumeration_calls": 0, "destination_enumeration_calls": 0,
                                            "source_connect_calls": 0, "midi_send_calls": 0, "accepted_messages": 0]
-    init(access: HardwareDeviceAccess) {
+    init(access: HardwareDeviceAccess, rehearsal: Bool = false) {
         self.access = access
+        self.rehearsal = rehearsal
     }
 
     func increment(_ key: String) {
@@ -27,10 +29,39 @@ final class DeviceAccessAudit: @unchecked Sendable {
     func line(_ event: String, operation: String? = nil) -> Data {
         var fields: [String: Any] = ["event": event, "device_access": access.rawValue,
                                      "diagnostic_only": access == .disabled, "device_io": snapshot]
+        if rehearsal {
+            fields["owned_virtual_rehearsal"] = true
+            fields["physical_evidence"] = false
+        }
         if let operation {
             fields["operation"] = operation
         }
         return (try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])).map { $0 + Data("\n".utf8) } ?? Data()
+    }
+
+    func emitOwned(_ event: String, origin: HardwareEndpointOrigin, word: UInt32? = nil, ticket: UInt64? = nil, accepted: Bool? = nil, receivedAt: Double? = nil, ownerAccepted: Bool? = nil) {
+        guard rehearsal else { return }
+        var fields = (try? JSONSerialization.jsonObject(with: line(event))) as? [String: Any] ?? [:]
+        fields["endpoint_origin"] = ["input_id": origin.inputID.map { $0 as Any } ?? NSNull(), "output_id": origin.outputID.map { $0 as Any } ?? NSNull(),
+                                     "connection_generation": String(origin.connectionGeneration), "transport_origin": origin.transportOrigin]
+        if let word {
+            fields["word"] = String(format: "%08x", word)
+        }
+        if let ticket {
+            fields["ticket"] = String(ticket)
+        }
+        if let accepted {
+            fields["transport_accepted"] = accepted
+        }
+        if let receivedAt {
+            fields["received_monotonic"] = receivedAt
+        }
+        if let ownerAccepted {
+            fields["owner_accepted"] = ownerAccepted
+        }
+        if let body = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) {
+            FileHandle.standardError.write(body + Data([10]))
+        }
     }
 
     func emit(_ event: String, operation: String? = nil) {

@@ -1,0 +1,29 @@
+{
+  "source_commit": "08018a9cff2cd35f48ee9b382513b4964ff3a498",
+  "surface_plugins_revision": "5ffbac79699505a76298172e8e6f28f7de3df88b",
+  "control_surface_kit_revision": "545ba46c3cb5298663c3dd12e53604a5a68da7a0",
+  "binary_sha256": "e3fa3c822a4aa49a488d1f1461fa9936b16dceeb12d6ce31a25e8decfea4e022",
+  "scope": "Release describe/help only; no device factory, no physical qualification",
+  "records": [
+    {
+      "path": "default-hardware-describe.json",
+      "argv_tail": [
+        "--describe",
+        "--receive-channel",
+        "2",
+        "--light-protocol",
+        "observed114"
+      ],
+      "sha256": "5462cb67033cfecce1f823abcb8d5cef32bac17ac97b80b0d295b97849565d73",
+      "bytes": 38889
+    },
+    {
+      "path": "default-help.txt",
+      "argv_tail": [
+        "--help"
+      ],
+      "sha256": "7ed5472149a09f676030e0dd9436e138308415f1c61a1913c993eb8c41ca05b9",
+      "bytes": 715
+    }
+  ]
+}

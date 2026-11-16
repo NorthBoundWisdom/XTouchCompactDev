@@ -25,7 +25,10 @@ let controlSurfaceKit: Package.Dependency = .package(path: "build/dependencies/C
 
 #if os(macOS)
 let hardwareProducts: [Product] = [.executable(name: "XTouchSurfaceHardware", targets: ["XTouchSurfaceHardware"])]
-let hardwareTargets: [Target] = [.executableTarget(name: "XTouchSurfaceHardware", dependencies: ["XTouchCompactCore", "CompactSimulatorTransport"], linkerSettings: [.linkedFramework("CoreMIDI")])]
+let hardwareTargets: [Target] = [
+    .executableTarget(name: "XTouchSurfaceHardware", dependencies: ["XTouchCompactCore", "CompactSimulatorTransport"], linkerSettings: [.linkedFramework("CoreMIDI")]),
+    .testTarget(name: "XTouchSurfaceHardwareTests", dependencies: ["XTouchSurfaceHardware", "XTouchCompactCore"]),
+]
 #else
 let hardwareProducts: [Product] = []
 let hardwareTargets: [Target] = []

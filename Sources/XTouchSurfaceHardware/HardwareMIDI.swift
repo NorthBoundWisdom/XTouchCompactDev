@@ -12,6 +12,7 @@ struct HardwareEndpointOrigin: Equatable, Sendable {
 }
 
 enum HardwareMIDIEvent {
+    case ownedInput(OwnedInputLease)
     case link(connected: Bool, origin: HardwareEndpointOrigin = .unavailable)
     case message(MIDIMessage, origin: HardwareEndpointOrigin)
     case undecoded(origin: HardwareEndpointOrigin)

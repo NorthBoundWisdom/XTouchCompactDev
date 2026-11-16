@@ -117,6 +117,9 @@ private func removeOwnedReadyFile() {
         var deviceName = "X-TOUCH COMPACT"
         var deviceAccess: HardwareDeviceAccess = .enabled
         var explicitDeviceAccess = false
+        var explicitDeviceName = false
+        var ownedRehearsal = false
+        var ownedStepsFD: Int32?
         var receiveChannel: UInt8?
         var transmitChannel: UInt8 = 0
         var lights: ButtonLightProtocol?
@@ -134,6 +137,12 @@ private func removeOwnedReadyFile() {
                 return arguments.removeFirst()
             }
             switch option {
+            case "--owned-virtual-rehearsal":
+                guard !ownedRehearsal else { throw StartupError.invalidArguments }
+                ownedRehearsal = true
+            case "--owned-virtual-steps-fd":
+                guard ownedStepsFD == nil, let fd = try Int32(value()), fd > STDERR_FILENO else { throw StartupError.invalidArguments }
+                ownedStepsFD = fd
             case "--surface-input-event-capacity":
                 guard inputEventCapacity == nil, let capacity = try Int(value()), (1 ... 65536).contains(capacity) else { throw StartupError.invalidArguments }
                 inputEventCapacity = capacity
@@ -158,12 +167,15 @@ private func removeOwnedReadyFile() {
                 guard !explicitDeviceAccess, let parsed = try HardwareDeviceAccess(rawValue: value()) else { throw StartupError.invalidArguments }
                 deviceAccess = parsed; explicitDeviceAccess = true
             case "--describe": describe = true
-            case "--device": deviceName = try value(); guard !deviceName.isEmpty else { throw StartupError.invalidArguments }
+            case "--device": explicitDeviceName = true; deviceName = try value(); guard !deviceName.isEmpty else { throw StartupError.invalidArguments }
             case "--receive-channel": guard let channel = try UInt8(value()), (1 ... 16).contains(channel) else { throw StartupError.invalidArguments }; receiveChannel = channel - 1
             case "--transmit-channel": guard let channel = try UInt8(value()), (1 ... 16).contains(channel) else { throw StartupError.invalidArguments }; transmitChannel = channel - 1
             case "--light-protocol": guard let parsed = try ButtonLightProtocol(rawValue: value()) else { throw StartupError.invalidArguments }; lights = parsed
             case "--help":
                 print("XTouchSurfaceHardware --receive-channel 1..16 --light-protocol manual|observed114 [--transmit-channel 1..16] [--device NAME] [--device-access enabled|disabled] [--token-file PATH|--token-stdin] [--port 0] [--ready-file PATH] [--surface-instance-id ID] [--surface-principal-file PATH] [--surface-client-tokens-stdin] [--write-limit N|--write-limits input=N,feedback=N,renew=N,admin=N] [--allow-surface-feedback] [--surface-input-event-capacity 1..65536] [--describe]\nDisplay only; no motor, layer or mode output. Display feedback defaults off.\n--device-access disabled is immutable offline diagnostics: no MIDI creation/enumeration/connection or scripted inputs; permanently disconnected, no physical qualification.")
+                if ownedRehearsal {
+                    print("--owned-virtual-rehearsal --owned-virtual-steps-fd FD: private FIFO, owned endpoints only, physical_evidence=false. Incompatible with --device/--device-access/Debug injection.")
+                }
                 return
             case "--surface-instance-id":
                 instance = try value()
@@ -179,13 +191,23 @@ private func removeOwnedReadyFile() {
         }
         guard !explicitWriteLimit || writeLimits == nil, let receiveChannel, let lights else { throw StartupError.invalidArguments }
         let environment = ProcessInfo.processInfo.environment
+        guard ownedRehearsal || ownedStepsFD == nil else { throw StartupError.invalidArguments }
+        if ownedRehearsal {
+            guard !explicitDeviceAccess, !explicitDeviceName,
+                  !environment.keys.contains(where: { $0.hasPrefix("XTOUCH_HARDWARE_TEST_") }),
+                  describe || ownedStepsFD != nil else { throw StartupError.invalidArguments }
+        }
         let injectionRequested = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] != nil || environment["XTOUCH_HARDWARE_TEST_REPORT"] != nil
         guard deviceAccess != .disabled || !injectionRequested else { throw HardwareDeviceAccess.SelectionError.disabledRejectsTestInjection }
         let configuration = try CompactHardwareConfiguration(transmitChannel: transmitChannel, receiveChannel: receiveChannel, lightProtocol: lights)
         guard !clientTokensStdin || (!tokenStdin && tokenPath == nil) else { throw StartupError.invalidArguments }
         if describe {
-            let surface = try CompactHardwareSurface(instanceID: "example.hardware", epoch: "discovery-only", configuration: configuration, hardwareWriterID: "hardware.example", remoteWriterID: "remote.example", writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
-            let value: JSONValue = try .object(["device_access": .string(deviceAccess.rawValue), "diagnostic_only": .bool(deviceAccess == .disabled), "discovery": .encoded(surface.controls.discovery()), "tools": .array((SurfaceControlTools.descriptors(source: .hardware) + (inputEventCapacity == nil ? [] : SurfaceControlInputEventsTools.descriptors(source: .hardware))).map { try .encoded($0) })])
+            let surface = try CompactHardwareSurface(instanceID: "example.hardware", epoch: "discovery-only", configuration: configuration, hardwareWriterID: "hardware.example", remoteWriterID: "remote.example", writeLimits: writeLimits, inputEventCapacity: inputEventCapacity, ownedVirtualRehearsal: ownedRehearsal)
+            var fields: [String: JSONValue] = try ["device_access": .string(deviceAccess.rawValue), "diagnostic_only": .bool(deviceAccess == .disabled), "discovery": .encoded(surface.controls.discovery()), "tools": .array((SurfaceControlTools.descriptors(source: .hardware) + (inputEventCapacity == nil ? [] : SurfaceControlInputEventsTools.descriptors(source: .hardware))).map { try .encoded($0) })]
+            if ownedRehearsal {
+                fields["owned_virtual_rehearsal"] = .bool(true); fields["physical_evidence"] = .bool(false)
+            }
+            let value = JSONValue.object(fields)
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
             try FileHandle.standardOutput.write(encoder.encode(value) + Data("\n".utf8))
             return
@@ -213,10 +235,19 @@ private func removeOwnedReadyFile() {
         let principals = try SurfacePrincipals.loadOrCreate(path: principalPath)
         credentials = credentials?.reservingWriterIDs([principals.remote_writer_id, principals.interface_writer_id, principals.system_writer_id])
         var surface = try CompactHardwareSurface(instanceID: instance, epoch: UUID().uuidString, configuration: configuration,
-                                                 hardwareWriterID: principals.interface_writer_id, remoteWriterID: principals.remote_writer_id, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
-        let audit = DeviceAccessAudit(access: deviceAccess)
+                                                 hardwareWriterID: principals.interface_writer_id, remoteWriterID: principals.remote_writer_id, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity, ownedVirtualRehearsal: ownedRehearsal)
+        let audit = DeviceAccessAudit(access: deviceAccess, rehearsal: ownedRehearsal)
         let testOnly = environment["XTOUCH_HARDWARE_TEST_SCRIPT"] != nil
-        let midi: any HardwareMIDI = try deviceAccess.make(testInjectionRequested: injectionRequested, disabled: {
+        let owned: OwnedVirtualHardwareMIDI?
+        if ownedRehearsal {
+            let reader = try OwnedRehearsalSteps(descriptor: ownedStepsFD!, configuration: configuration)
+            audit.increment("owned_virtual_factory_calls")
+            owned = try OwnedVirtualHardwareMIDI(system: CoreMIDIOwnedSystem(audit: audit), configuration: configuration,
+                                                 audit: audit, steps: { try reader.drain() })
+        } else {
+            owned = nil
+        }
+        let midi: any HardwareMIDI = try owned ?? deviceAccess.make(testInjectionRequested: injectionRequested, disabled: {
             DisabledHardwareMIDI()
         }, enabled: {
             if injectionRequested {
@@ -249,6 +280,16 @@ private func removeOwnedReadyFile() {
                     case let .link(connected, origin):
                         activeEndpointOrigin = origin
                         try surface.transition(epoch: UUID().uuidString, connected: connected, at: time)
+                    case let .ownedInput(lease):
+                        guard let owned, lease.origin == activeEndpointOrigin else { throw OwnedRehearsalFailure.staleGeneration }
+                        do {
+                            var candidate = surface
+                            let event = try candidate.receive(lease.message, at: time)
+                            try owned.commit(lease, accepted: event != nil) { surface = candidate }
+                            audit.emitOwned("owned_virtual_input_owner_commit", origin: lease.origin, ticket: lease.ticket, receivedAt: lease.receivedAt, ownerAccepted: event != nil)
+                        } catch {
+                            owned.reject(lease); throw error
+                        }
                     case let .message(message, origin):
                         guard origin == activeEndpointOrigin else { throw ControlContractError("invalid_transition") }
                         _ = try surface.receive(message, at: time)
@@ -257,7 +298,17 @@ private func removeOwnedReadyFile() {
                         FileHandle.standardError.write(Data("Undecoded device packet\n".utf8))
                     }
                 }
+            } catch is OwnedRehearsalCompleted {
+                removeOwnedReadyFile()
+                exit(0)
             } catch {
+                if let owned {
+                    var cleanupFailed = false
+                    do { try owned.cleanup() } catch { cleanupFailed = true }
+                    audit.emit(cleanupFailed ? "owned_virtual_fatal_cleanup_failed" : "owned_virtual_fatal", operation: (error as? OwnedRehearsalFailure)?.rawValue ?? "transport_error")
+                    removeOwnedReadyFile()
+                    exit(1)
+                }
                 let now = ProcessInfo.processInfo.systemUptime
                 try? surface.transition(epoch: UUID().uuidString, connected: false, at: now)
                 recoverAfter = now + 1
@@ -276,14 +327,24 @@ private func removeOwnedReadyFile() {
         let discovery = surface.controls.discovery()
         let ready: JSONValue = try .object(["expected": .encoded(discovery.expected), "latest_sequence": .string(discovery.latest_sequence),
                                             "source": .string("hardware"), "contract_version": .string(discovery.contract_version)])
-        let metadata: JSONValue = .object(["status": .string("ready"), "pid": .number(Int(ProcessInfo.processInfo.processIdentifier)),
-                                           "port": .number(Int(server.port)), "url": .string("http://127.0.0.1:\(server.port)/mcp"), "source": .string("hardware"), "test_only": .bool(testOnly), "device_access": .string(deviceAccess.rawValue), "diagnostic_only": .bool(deviceAccess == .disabled), "device_io": .object(audit.snapshot.mapValues(JSONValue.number)), "surface_control": ready])
+        var metadataFields: [String: JSONValue] = ["status": .string("ready"), "pid": .number(Int(ProcessInfo.processInfo.processIdentifier)),
+                                                   "port": .number(Int(server.port)), "url": .string("http://127.0.0.1:\(server.port)/mcp"), "source": .string("hardware"), "test_only": .bool(testOnly), "device_access": .string(deviceAccess.rawValue), "diagnostic_only": .bool(deviceAccess == .disabled), "device_io": .object(audit.snapshot.mapValues(JSONValue.number)), "surface_control": ready]
+        if let owned {
+            let origin = owned.currentOrigin
+            metadataFields["owned_virtual_rehearsal"] = .bool(true); metadataFields["physical_evidence"] = .bool(false)
+            metadataFields["owned_endpoint_origin"] = .object(["input_id": origin.inputID.map { .number(Int($0)) } ?? .null,
+                                                               "output_id": origin.outputID.map { .number(Int($0)) } ?? .null,
+                                                               "connection_generation": .string(String(origin.connectionGeneration)),
+                                                               "transport_origin": .string(origin.transportOrigin)])
+        }
+        let metadata = JSONValue.object(metadataFields)
         let readyBytes = try JSONEncoder().encode(metadata)
         installTerminationCleanup()
         if let readyPath {
             try writeReadyFile(readyPath, readyBytes)
         }
         FileHandle.standardOutput.write(readyBytes + Data("\n".utf8))
+        owned?.startPeer()
         let displayWriters = credentials?.independentDisplayWriterIDs ?? []
         var budget = writeLimits.map { SurfaceWriteBudgets(input: $0.input_per_window, feedback: $0.feedback_per_window, renew: $0.renew_per_window, admin: $0.admin_per_window, independentFeedbackWriters: displayWriters) }
             ?? SurfaceWriteBudgets(aggregateLimit: writeLimit, independentFeedbackWriters: displayWriters)
@@ -359,7 +420,11 @@ private func removeOwnedReadyFile() {
                                 for message in plan {
                                     try midi.send(message, expectedOrigin: sendOrigin)
                                 }
-                                surface = candidate
+                                if let owned {
+                                    try owned.commitFeedback(expectedOrigin: sendOrigin) { surface = candidate }
+                                } else {
+                                    surface = candidate
+                                }
                                 value = try .encoded(event)
                             case let .renew(request):
                                 try surface.controls.validateRenew(request, at: time)
@@ -373,6 +438,12 @@ private func removeOwnedReadyFile() {
                             }
                             result = try content(value, isError: false)
                         }
+                    } catch let error as OwnedRehearsalFailure {
+                        if let owned {
+                            do { try owned.cleanup() } catch { audit.emit("owned_virtual_fatal_cleanup_failed") }
+                        }
+                        audit.emit("owned_virtual_fatal_output", operation: error.rawValue)
+                        removeOwnedReadyFile(); exit(1)
                     } catch {
                         let failure = (error as? ControlContractError).map { RemoteFailure(code: $0.code) } ?? RemoteFailure.from(error)
                         result = try content(.encoded(failure), isError: true)

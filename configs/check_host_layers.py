@@ -424,6 +424,42 @@ def check_tree(root, manifest, package=None):
     }
 
 
+OWNED_FILES = tuple(
+    "Sources/XTouchSurfaceHardware/" + name
+    for name in ("OwnedRehearsalSteps.swift", "OwnedVirtualHardwareMIDI.swift", "OwnedVirtualMIDISystem.swift")
+)
+OWNED_FORBIDDEN = {
+    "CoreHardwareMIDI",
+    "MIDIGetNumberOfSources",
+    "MIDIGetNumberOfDestinations",
+    "MIDIGetSource",
+    "MIDIGetDestination",
+    "MIDIObjectFindByUniqueID",
+    "MIDIThruConnectionCreate",
+    "MIDIDeviceCreate",
+}
+
+
+def check_owned_virtual(root):
+    errors = []
+    for name in OWNED_FILES:
+        path = Path(root) / name
+        if not path.is_file():
+            errors.append(name + ": missing owned-only boundary source")
+            continue
+        code = swift_code(path.read_text())
+        for match in re.finditer(r"\b[A-Za-z_][A-Za-z_0-9]*\b", code):
+            if match.group() in OWNED_FORBIDDEN:
+                errors.append(
+                    f"{name}:{code[: match.start()].count(chr(10)) + 1}: forbidden owned-only API {match.group()}"
+                )
+        for match in re.finditer(r"\bTask\s*(?:\.\s*detached\s*)?[({]|\.\s*async(?:After)?\s*[({]", code):
+            errors.append(
+                f"{name}:{code[: match.start()].count(chr(10)) + 1}: unbounded asynchronous hop in owned-only boundary"
+            )
+    return errors
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
@@ -432,6 +468,7 @@ def main():
     manifest = json.loads((args.root / "configs/host_layers.json").read_text())
     package = json.loads(subprocess.check_output(["swift", "package", "dump-package"], cwd=args.root))
     report = check_tree(args.root, manifest, package)
+    report["errors"].extend(check_owned_virtual(args.root))
     if args.report:
         args.report.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({key: value for key, value in report.items() if key != "edges"}, indent=2))

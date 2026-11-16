@@ -1,0 +1,3 @@
+XTouchSurfaceHardware --receive-channel 1..16 --light-protocol manual|observed114 [--transmit-channel 1..16] [--device NAME] [--device-access enabled|disabled] [--token-file PATH|--token-stdin] [--port 0] [--ready-file PATH] [--surface-instance-id ID] [--surface-principal-file PATH] [--surface-client-tokens-stdin] [--write-limit N|--write-limits input=N,feedback=N,renew=N,admin=N] [--allow-surface-feedback] [--surface-input-event-capacity 1..65536] [--describe]
+Display only; no motor, layer or mode output. Display feedback defaults off.
+--device-access disabled is immutable offline diagnostics: no MIDI creation/enumeration/connection or scripted inputs; permanently disconnected, no physical qualification.

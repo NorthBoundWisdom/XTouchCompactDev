@@ -13,7 +13,7 @@ public struct CompactHardwareSurface: Sendable {
     public let remoteWriterID: String
 
     public init(instanceID: String, epoch: String, configuration: CompactHardwareConfiguration,
-                hardwareWriterID: String, remoteWriterID: String, eventCapacity: Int = 1024, writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil) throws
+                hardwareWriterID: String, remoteWriterID: String, eventCapacity: Int = 1024, writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil, ownedVirtualRehearsal: Bool = false) throws
     {
         self.configuration = configuration
         self.hardwareWriterID = hardwareWriterID
@@ -24,6 +24,10 @@ public struct CompactHardwareSurface: Sendable {
         }
         if inputEventCapacity != nil {
             profile = .init(id: profile.id, version: "1.5", controls: profile.controls, capabilities: profile.capabilities + ["events.input_retention"])
+        }
+        if ownedVirtualRehearsal {
+            profile = .init(id: "xtouch.compact.owned-virtual-rehearsal", version: "1.5", controls: profile.controls,
+                            capabilities: profile.capabilities + ["session.owned_virtual_rehearsal"])
         }
         controls = try .init(instanceID: instanceID, epoch: epoch, profile: profile, eventCapacity: eventCapacity, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
         try controls.validateWriterID(hardwareWriterID)

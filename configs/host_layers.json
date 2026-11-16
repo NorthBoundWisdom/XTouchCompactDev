@@ -106,7 +106,10 @@
     "Sources/XTouchSurfaceSimulator/SimulatorMain.swift": "composition",
     "Sources/XTouchSurfaceSimulator/SurfacePrincipals.swift": "transport",
     "Sources/XTouchCompactCore/CompactContextRuntime.swift": "runtime",
-    "Sources/XTouchCompactApp/ConnectionContextReference.swift": "composition"
+    "Sources/XTouchCompactApp/ConnectionContextReference.swift": "composition",
+    "Sources/XTouchSurfaceHardware/OwnedRehearsalSteps.swift": "transport",
+    "Sources/XTouchSurfaceHardware/OwnedVirtualHardwareMIDI.swift": "transport",
+    "Sources/XTouchSurfaceHardware/OwnedVirtualMIDISystem.swift": "transport"
   },
   "schema_version": 1,
   "targets": {

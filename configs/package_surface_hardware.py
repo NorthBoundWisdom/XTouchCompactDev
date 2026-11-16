@@ -94,6 +94,8 @@ def sdk_sources():
 
 
 def stage_files(stage):
+    shutil.copy2(ROOT / "configs/generate_owned_virtual_mapping.py", stage / "generate_owned_virtual_mapping.py")
+    shutil.copy2(ROOT / "docs/OWNED_VIRTUAL_REHEARSAL.md", stage / "owned-virtual-rehearsal.md")
     for name, source in SHARED_FILES.items():
         shutil.copy2(SHARED / source, stage / name)
     for source, name in (
