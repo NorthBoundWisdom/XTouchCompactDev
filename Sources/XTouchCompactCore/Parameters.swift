@@ -82,7 +82,7 @@ public struct ParameterScene: Codable, Equatable, Sendable, Identifiable {
 }
 
 public enum ParameterAction: Codable, Equatable, Sendable {
-    case parameter(String), agent(Int), resetGroup(String), step(String, Double), set(String, Double), cycle(String, [Double])
+    case parameter(String), agent(Int), resetGroup(String), step(String, Double), set(String, Double), cycle(String, [Double]), runMacro(String)
 }
 
 public struct ControlAssignment: Codable, Equatable, Sendable {
@@ -102,13 +102,14 @@ public struct SurfaceConfiguration: Codable, Equatable, Sendable {
     /// Optional for older files; nil and empty are equivalent.
     public var links: [ParameterLink]?
     public var scenes: [ParameterScene]?
+    public var macros: [SurfaceMacro]?
 
     public init(parameters: [ParameterDefinition], assignments: [ControlAssignment], version: Int = 1,
-                links: [ParameterLink]? = nil, scenes: [ParameterScene]? = nil)
+                links: [ParameterLink]? = nil, scenes: [ParameterScene]? = nil, macros: [SurfaceMacro]? = nil)
     {
         self.version = version
         self.parameters = parameters; self.assignments = assignments
-        self.links = links; self.scenes = scenes
+        self.links = links; self.scenes = scenes; self.macros = macros
     }
 }
 

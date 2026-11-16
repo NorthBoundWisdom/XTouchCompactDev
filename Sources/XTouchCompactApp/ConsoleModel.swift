@@ -712,6 +712,23 @@
             } catch { libraryWarning = LocalizedMessage("Configuration library is protected: %@", error.localizedDescription) }
         }
 
+        func saveMacro(_ macro: SurfaceMacro) {
+            var configuration = session.parameters.configuration
+            configuration.macros = (configuration.macros ?? []).filter { $0.id != macro.id } + [macro]
+            applyConfiguration(configuration)
+        }
+
+        func deleteMacro(_ id: String) {
+            var configuration = session.parameters.configuration
+            configuration.macros?.removeAll { $0.id == id }
+            configuration.assignments.removeAll { $0.action == .runMacro(id) }
+            applyConfiguration(configuration)
+        }
+
+        func runMacro(_ id: String) {
+            apply { try $0.runMacro(id) }
+        }
+
         func resetParameterValues() {
             do { try send(session.loadConfiguration(session.parameters.configuration, resetValues: true)); updateBank(); saveWorkspace() }
             catch { self.error = error }

@@ -734,3 +734,35 @@
 "Load" = "加载";
 
 "Delete" = "删除";
+
+"Macros" = "宏";
+
+"Macro" = "宏";
+
+"Macro name" = "宏名称";
+
+"Add step" = "添加步骤";
+
+"Save macro" = "保存宏";
+
+"Run macro" = "运行宏";
+
+"Remove" = "移除";
+
+"runMacro" = "运行宏";
+
+"toggle" = "切换";
+
+"Up to 64 steps, executed in order. Rejected steps are reported; later steps continue. One macro is one undo." = "最多按顺序执行 64 步。拒绝的步骤会显示，后续继续执行。整个宏可一次撤销。";
+
+"Step %@: %@" = "步骤 %@：%@";
+
+"applied" = "已应用";
+
+"deferred" = "触摸暂缓";
+
+"withheld" = "电机输出未授权";
+
+"rejected" = "已拒绝";
+
+"Value" = "数值";

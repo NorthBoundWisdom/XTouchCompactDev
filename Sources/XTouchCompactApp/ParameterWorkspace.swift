@@ -21,6 +21,7 @@
         @State private var last = 1
         @State private var action = "parameter"
         @State private var amount = 1.0
+        @State private var macroID = ""
         private var l: Localizer {
             language.localizer
         }
@@ -94,6 +95,7 @@
                             }
                         }.padding(8).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                     }
+                    SurfaceProgramsView(snapshot: snapshot, intents: intents)
                     Divider()
                     Text(l.text("Bulk assignment")).font(.headline)
                     Picker(l.text("Control"), selection: $kind) {
@@ -108,11 +110,17 @@
                     Stepper(l.text("First: %@", String(first)), value: $first, in: 1 ... 39)
                     Stepper(l.text("Last: %@", String(last)), value: $last, in: 1 ... 39)
                     Picker(l.text("Action"), selection: $action) {
-                        ForEach(["parameter", "agent", "step", "set", "cycle", "resetGroup"], id: \.self) { Text(l.text($0)).tag($0) }
+                        ForEach(["parameter", "agent", "step", "set", "cycle", "resetGroup", "runMacro"], id: \.self) { Text(l.text($0)).tag($0) }
                     }
                     Picker(l.text("Parameter"), selection: $target) {
                         Text("—").tag("")
                         ForEach(draft.parameters) { Text($0.name).tag($0.id) }
+                    }
+                    if action == "runMacro" {
+                        Picker(l.text("Macro"), selection: $macroID) {
+                            Text("—").tag("")
+                            ForEach(snapshot.configuration.macros ?? []) { Text($0.name).tag($0.id) }
+                        }
                     }
                     TextField(l.text("Value / Agent slot"), value: $amount, format: .number)
                     Button(l.text("Assign range on current layer")) { assign() }
@@ -146,6 +154,7 @@
             guard first <= last else { return }
             let selected: ParameterAction
             switch action {
+            case "runMacro": selected = .runMacro(macroID)
             case "agent": guard amount.isFinite, (1 ... 8).contains(amount) else { return }; selected = .agent(Int(amount))
             case "step": selected = .step(target, amount)
             case "set": selected = .set(target, amount)

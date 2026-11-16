@@ -734,3 +734,35 @@
 "Load" = "載入";
 
 "Delete" = "刪除";
+
+"Macros" = "巨集";
+
+"Macro" = "巨集";
+
+"Macro name" = "巨集名稱";
+
+"Add step" = "新增步驟";
+
+"Save macro" = "儲存巨集";
+
+"Run macro" = "執行巨集";
+
+"Remove" = "移除";
+
+"runMacro" = "執行巨集";
+
+"toggle" = "切換";
+
+"Up to 64 steps, executed in order. Rejected steps are reported; later steps continue. One macro is one undo." = "最多依序執行 64 步。拒絕的步驟會顯示，後續繼續執行。整個巨集可一次復原。";
+
+"Step %@: %@" = "步驟 %@：%@";
+
+"applied" = "已套用";
+
+"deferred" = "觸摸暫緩";
+
+"withheld" = "馬達輸出未授權";
+
+"rejected" = "已拒絕";
+
+"Value" = "數值";

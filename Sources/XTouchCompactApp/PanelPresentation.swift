@@ -457,6 +457,7 @@
         var encoders: [EncoderPresentation]
         var buttons: [ButtonPresentation]
         var pendingPreset: SurfaceConfiguration?
+        var lastMacroExecution: MacroExecution?
         var libraryEntries: [SavedConfiguration] = []
         var libraryWarning: LocalizedMessage?
         var pendingLibraryAction: ConfigurationLibraryRequest?
@@ -543,6 +544,9 @@
         var setEncoder: (_ index: Int, _ value: UInt8) -> Void
 
         /// Nil until the backend can describe MIDI addresses per control and layer.
+        var saveMacro: ((SurfaceMacro) -> Void)?
+        var deleteMacro: ((String) -> Void)?
+        var runMacro: ((String) -> Void)?
         var saveLibraryConfiguration: ((String) -> Void)?
         var requestLibraryLoad: ((UUID) -> Void)?
         var requestLibraryDelete: ((UUID) -> Void)?

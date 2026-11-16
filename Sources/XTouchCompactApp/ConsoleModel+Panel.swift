@@ -69,6 +69,7 @@
                     buttonPresentation(index, observation: observation)
                 },
                 pendingPreset: pendingPreset,
+                lastMacroExecution: session.lastMacroExecution,
                 libraryEntries: libraryEntries, libraryWarning: libraryWarning, pendingLibraryAction: pendingLibraryAction,
                 configuration: session.parameters.configuration,
                 mcpPort: mcpPort,
@@ -326,6 +327,9 @@
                 releaseButton: hardwareMode ? nil : { [weak self] index in self?.releaseButton(index) },
                 setFader: { [weak self] index, value in self?.faderChanged(index, value: Double(value)) },
                 setEncoder: { [weak self] index, value in self?.encoderChanged(index, value: Double(value)) },
+                saveMacro: { [weak self] in self?.saveMacro($0) },
+                deleteMacro: { [weak self] in self?.deleteMacro($0) },
+                runMacro: { [weak self] in self?.runMacro($0) },
                 saveLibraryConfiguration: { [weak self] in self?.saveLibraryConfiguration(name: $0) },
                 requestLibraryLoad: { [weak self] in self?.requestLibraryAction($0, kind: .load) },
                 requestLibraryDelete: { [weak self] in self?.requestLibraryAction($0, kind: .delete) },

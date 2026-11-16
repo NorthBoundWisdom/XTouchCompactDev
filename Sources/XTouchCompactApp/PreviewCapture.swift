@@ -176,6 +176,14 @@
             width = 1600; height = 1000
             model.setOSCEnabled(true) // No trusted actual/heartbeat: refused with a visible notice.
             content = AnyView(ContentView(snapshot: model.panelSnapshot, intents: model.panelIntents))
+        case "macros":
+            width = 900; height = 800
+            model.saveMacro(.init(id: "demo", name: "Cue", actions: [.set("a.Fader.1", 70), .step("a.Fader.1", 10), .toggle("a.Encoder.1")]))
+            model.touchFader(1, isTouched: true)
+            model.runMacro("demo")
+            content = AnyView(SurfaceProgramsView(snapshot: model.panelSnapshot, intents: model.panelIntents).padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Theme.background).preferredColorScheme(.dark))
         case "configuration-library":
             width = 680; height = 1000
             model.saveLibraryConfiguration(name: "Studio")

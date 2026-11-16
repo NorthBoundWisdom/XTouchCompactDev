@@ -61,6 +61,9 @@ public struct ParameterEngine: Sendable {
     public mutating func receive(_ event: CompactInput) throws -> ActionReference? {
         guard let action = assignment(event.control, layer: event.layer) else { return nil }
         switch action {
+        case .runMacro:
+            // Session orchestration owns guarded parameter writes, links and history.
+            throw ParameterError.invalidAssignment
         case let .parameter(id):
             guard let definition = definition(id) else { throw ParameterError.unknownParameter(id) }
             if event.isPressed == false {

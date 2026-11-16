@@ -583,3 +583,27 @@ bytes and rejects symlinks/collisions. The library has the same original-preserv
 protection, a 4 MiB bound and a warning that remains visible in Settings until a
 successful operation after repair. Invalid originals are never silently replaced.
 FNV names identify content; they are not cryptographic authenticity claims.
+
+## Macros
+
+The Parameters workspace includes a bounded macro builder. Add up to 64 ordered
+set/step/toggle/group-reset operations, save a named macro, and select `runMacro`
+in button/touch/push/footswitch assignments. Faders and rotary value controls remain
+parameter-only. Definitions use `SurfaceMacro {id,name,actions}` and
+`ParameterMutation` like BCR; XTouch additionally provides toggle. They travel with
+configuration export/import, workspace persistence and the named library. There
+are no software pages and no automatic macro execution on load or reconnect.
+
+Execution uses the existing session parameter path at each step: clamping/snapping,
+links, touch ownership, transport output gates and one shared undo group. As in
+BCR, a rejected operation does not stop later operations; the view reports each
+step as applied/deferred/withheld/rejected. These describe host intent and safety
+handling, not physical position acknowledgements. A partially applied group can
+be reported rejected; prior effects stay in the same undo group. No macros recurse,
+run scripts or invoke Agent approval. Physical repeated down events are debounced
+until release. A macro assigned to touch still performs the normal release
+reconciliation. No new MCP macro invocation or remote configuration capability is
+provided: local Run macro/buttons are explicit operator actions, and physical
+listen-only mode still refuses transmission. The core also supports the existing
+Agent/motor permission arguments for guarded callers; an ungranted Agent motor
+write is withheld without a deferred replay.

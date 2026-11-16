@@ -261,7 +261,7 @@ public struct CompactSurfaceSimulator: Sendable {
         let ids: [String]
         switch action {
         case let .parameter(id): ids = [id]
-        case .step, .set, .cycle, .resetGroup, .agent: throw ControlContractError("unsupported_mapping")
+        case .step, .set, .cycle, .resetGroup, .agent, .runMacro: throw ControlContractError("unsupported_mapping")
         }
         guard ids.allSatisfy({ id in session.parameters.definition(id).map { $0.agentWritable && $0.externallyProtected != true } ?? false }) else {
             throw ControlContractError("permission_denied")

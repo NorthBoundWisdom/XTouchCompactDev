@@ -734,3 +734,35 @@
 "Load" = "Load";
 
 "Delete" = "Delete";
+
+"Macros" = "Macros";
+
+"Macro" = "Macro";
+
+"Macro name" = "Macro name";
+
+"Add step" = "Add step";
+
+"Save macro" = "Save macro";
+
+"Run macro" = "Run macro";
+
+"Remove" = "Remove";
+
+"runMacro" = "runMacro";
+
+"toggle" = "toggle";
+
+"Up to 64 steps, executed in order. Rejected steps are reported; later steps continue. One macro is one undo." = "Up to 64 steps, executed in order. Rejected steps are reported; later steps continue. One macro is one undo.";
+
+"Step %@: %@" = "Step %@: %@";
+
+"applied" = "applied";
+
+"deferred" = "deferred";
+
+"withheld" = "withheld";
+
+"rejected" = "rejected";
+
+"Value" = "Value";

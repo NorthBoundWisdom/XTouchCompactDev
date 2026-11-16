@@ -35,6 +35,8 @@ public struct CompactSession: Sendable {
     private var undoStack: [[String: Double]] = []
     private var redoStack: [[String: Double]] = []
     private var undoCoalescingKey: String?
+    private var activeMacroControls: Set<CompactControl> = []
+    public private(set) var lastMacroExecution: MacroExecution?
     /// Presentation provenance only; display values remain owned by `state`.
     private var displayOnlyRingIntents: Set<Int> = []
 
@@ -363,8 +365,51 @@ public struct CompactSession: Sendable {
         return try setOperatorRing(index, value: value)
     }
 
+    /// Bounded synchronous program. A refused/invalid step is recorded and later steps
+    /// continue, as in BCR; all parameter effects reuse the normal guarded write path.
+    public mutating func runMacro(_ id: String, fromAgent: Bool = false, drivesMotors: Bool = true) throws -> [MIDIMessage] {
+        guard let macro = parameters.configuration.macros?.first(where: { $0.id == id }) else { throw ParameterError.invalidAssignment }
+        var feedback: [MIDIMessage] = []
+        var results: [MacroExecution.OperationResult] = []
+        endUndoGroup()
+        defer { endUndoGroup() }
+        let key = "macro:" + id
+        for (index, action) in macro.actions.enumerated() {
+            var affected = Set<String>()
+            do {
+                let writes: [(String, Double)]
+                switch action {
+                case let .set(id, value): writes = [(id, value)]
+                case let .step(id, delta):
+                    guard let current = parameters.values[id], (current + delta).isFinite else { throw ParameterError.invalidAssignment }
+                    writes = [(id, current + delta)]
+                case let .toggle(id):
+                    guard let definition = parameters.definition(id), let value = parameters.values[id] else { throw ParameterError.invalidAssignment }
+                    writes = [(id, value == definition.minimum ? definition.maximum : definition.minimum)]
+                case let .resetGroup(group): writes = parameters.configuration.parameters.filter { $0.group == group }.map { ($0.id, $0.defaultValue) }
+                }
+                for (id, value) in writes {
+                    feedback += try setParameter(id, value: value, fromAgent: fromAgent, drivesMotors: drivesMotors, undoKey: key)
+                    affected.insert(id)
+                    for link in parameters.configuration.links ?? [] where link.leader == id {
+                        affected.formUnion(link.members)
+                    }
+                }
+                let faders = Set(affected.flatMap { motorFaders(boundTo: $0) })
+                let outcome: MacroExecution.OperationResult.Outcome = !drivesMotors && !faders.isEmpty ? .withheld
+                    : faders.contains(where: { state.isMotorPending($0) }) ? .deferred : .applied
+                results.append(.init(id: index + 1, outcome: outcome))
+            } catch { results.append(.init(id: index + 1, outcome: .rejected)) }
+        }
+        lastMacroExecution = MacroExecution(macroID: macro.id, name: macro.name, steps: results)
+        return feedback
+    }
+
     public mutating func activateButton(_ index: Int) throws -> CompactSessionUpdate {
         guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
+        if case let .runMacro(id) = parameters.assignment(.button(index), layer: state.layer) {
+            return try CompactSessionUpdate(feedback: runMacro(id))
+        }
         let before = parameters.values
         let slot = try parameters.receive(CompactInput(control: .button(index), layer: state.layer, value: 127, isPressed: true))
         var update = try CompactSessionUpdate(feedback: synchronizeParameters(ids: Set(parameters.values.keys.filter { before[$0] != parameters.values[$0] })))
@@ -381,8 +426,24 @@ public struct CompactSession: Sendable {
         for message in messages {
             guard let event = state.receive(message) else { continue }
             result.inputs.append(event)
+            if event.isPressed == false {
+                activeMacroControls.remove(event.control)
+            }
             if event.layer != state.layer {
                 // Other-layer messages are physical safety evidence, never an active-bank edit.
+                continue
+            }
+            if case let .runMacro(id) = parameters.assignment(event.control, layer: event.layer) {
+                if event.isPressed == true, activeMacroControls.insert(event.control).inserted {
+                    result.feedback += try runMacro(id)
+                }
+                if case let .faderTouch(index) = event.control, event.isPressed == false {
+                    endUndoGroup()
+                    result.feedback += try state.reconcileReleasedFader(index)
+                }
+                if case .button = event.control {
+                    result.feedback += try state.restoreNonMotorFeedback()
+                }
                 continue
             }
             switch event.control {

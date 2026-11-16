@@ -6,6 +6,10 @@ public extension SurfaceConfiguration {
               version != 1 || parameters.allSatisfy({ $0.externallyProtected == nil }) else { throw ParameterError.wrongDeviceOrVersion }
         guard Set(parameters.map(\.id)).count == parameters.count else { throw ParameterError.duplicateParameter }
         let ids = Set(parameters.map(\.id))
+        guard Set((macros ?? []).map(\.id)).count == (macros ?? []).count else { throw ParameterError.invalidAssignment }
+        for macro in macros ?? [] {
+            try macro.validate(in: self)
+        }
         try validateLinksAndScenes(ids: ids)
         var keys = Set<String>()
         let map = try FactoryStandardMap()
@@ -22,6 +26,8 @@ public extension SurfaceConfiguration {
             default: break
             }
             switch assignment.action {
+            case let .runMacro(id):
+                guard macros?.contains(where: { $0.id == id }) == true else { throw ParameterError.invalidAssignment }
             case let .agent(slot): guard (1 ... 8).contains(slot) else { throw ParameterError.invalidAssignment }
             case let .resetGroup(group):
                 guard parameters.contains(where: { $0.group == group }) else { throw ParameterError.invalidAssignment }
