@@ -368,13 +368,17 @@ def verify_packaged_payload(bundle: Path, record: dict) -> None:
     if set(actual) != set(record["architectures"]):
         raise ValueError("Packaged executable architecture mismatch")
     if platform.machine() in actual:
-        output = run([binary, "--startup-smoke"], capture=True, timeout=30)
-        validate_smoke(output, require_headless=True)
+        for mode, flag in [("headless", "--startup-smoke=headless"), ("gui", "--startup-smoke")]:
+            output = run([binary, flag], capture=True, timeout=30)
+            validate_smoke(output, mode=mode)
+            print(output)
     else:
         print("Structural verification passed; native launch requires a matching architecture runner.")
 
 
-def validate_smoke(output: str, *, require_headless: bool = False) -> None:
+def validate_smoke(output: str, *, mode: str = "gui") -> None:
+    if mode not in {"gui", "headless"}:
+        raise ValueError("Unknown startup smoke mode")
     for line in output.splitlines():
         try:
             marker = json.loads(line)
@@ -384,7 +388,9 @@ def validate_smoke(output: str, *, require_headless: bool = False) -> None:
             isinstance(marker, dict)
             and marker.get("type") == "xtouch.native_startup"
             and marker.get("hardwareAccessed") is False
-            and (not require_headless or marker.get("windowCreated") is False)
+            and marker.get("mode") == mode
+            and marker.get("windowCreated") is (mode == "gui")
+            and marker.get("firstFramePresented") is (mode == "gui")
         ):
             return
     raise ValueError("Native startup smoke marker is missing or invalid.")

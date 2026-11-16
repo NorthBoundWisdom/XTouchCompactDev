@@ -11,7 +11,7 @@
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
                 exit(2)
             }
-            if ProcessInfo.processInfo.arguments.contains("--startup-smoke") {
+            if ProcessInfo.processInfo.arguments.contains("--startup-smoke=headless") {
                 NativeStartupSmoke.run()
             } else if ProcessInfo.processInfo.arguments.contains("--mcp-test-server") {
                 MCPIntegrationCommand.run()
@@ -30,8 +30,12 @@
 
         init() {
             let arguments = ProcessInfo.processInfo.arguments
-            let observing = arguments.contains("--hardware-observe")
             let isolated = arguments.contains("--startup-smoke") || arguments.contains("--integration-test")
+            let observing = arguments.contains("--hardware-observe") && !isolated
+            if arguments.contains("--startup-smoke") {
+                // Volatile only: do not save/restore the test scene in user preferences.
+                UserDefaults.standard.setVolatileDomain(["ApplePersistenceIgnoreState": true], forName: UserDefaults.argumentDomain)
+            }
             let root = isolated || observing ? nil : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("XTouchCompactConsole")
             let defaults = isolated ? UserDefaults(suiteName: "XTouchCompactDev.tests.\(UUID().uuidString)")! : .standard
             let languageSettings = LanguageSettings(defaults: defaults)
@@ -70,6 +74,14 @@
                     .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                         model.stopCapture()
                         model.flushHardwareValues()
+                    }
+                    .background {
+                        if ProcessInfo.processInfo.arguments.contains("--startup-smoke") {
+                            StartupFrameProbe {
+                                FileHandle.standardOutput.write(Data("{\"type\":\"xtouch.native_startup\",\"mode\":\"gui\",\"hardwareAccessed\":false,\"windowCreated\":true,\"firstFramePresented\":true}\n".utf8))
+                                NSApplication.shared.terminate(nil)
+                            }
+                        }
                     }
                     .frame(minWidth: 1200, minHeight: 760)
             }

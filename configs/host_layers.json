@@ -40,6 +40,7 @@
     "Sources/XTouchCompactApp/PanelPresentation.swift": "composition",
     "Sources/XTouchCompactApp/ParameterWorkspace.swift": "composition",
     "Sources/XTouchCompactApp/PreviewCapture.swift": "composition",
+    "Sources/XTouchCompactApp/StartupFrameProbe.swift": "composition",
     "Sources/XTouchCompactApp/SurfacePanelView.swift": "composition",
     "Sources/XTouchCompactApp/SurfaceProgramsView.swift": "composition",
     "Sources/XTouchCompactApp/Theme.swift": "composition",

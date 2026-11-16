@@ -148,11 +148,77 @@ class AppPackageTests(unittest.TestCase):
             self.assertIn(marker, text)
 
     def test_final_payload_smoke_requires_explicit_no_window_evidence(self):
-        valid = '{"type":"xtouch.native_startup","hardwareAccessed":false,"windowCreated":false}'
-        workflow.validate_smoke(valid, require_headless=True)
+        valid = '{"type":"xtouch.native_startup","mode":"headless","hardwareAccessed":false,"windowCreated":false,"firstFramePresented":false}'
+        workflow.validate_smoke(valid, mode="headless")
         for marker in (
             '{"type":"xtouch.native_startup","hardwareAccessed":false}',
             '{"type":"xtouch.native_startup","hardwareAccessed":false,"windowCreated":true}',
         ):
             with self.assertRaises(ValueError):
-                workflow.validate_smoke(marker, require_headless=True)
+                workflow.validate_smoke(marker, mode="headless")
+
+    def test_gui_and_headless_smoke_cannot_impersonate_each_other(self):
+        for mode in ("gui", "headless"):
+            marker = {
+                "type": "xtouch.native_startup",
+                "mode": mode,
+                "hardwareAccessed": False,
+                "windowCreated": mode == "gui",
+                "firstFramePresented": mode == "gui",
+            }
+            workflow.validate_smoke(json.dumps(marker), mode=mode)
+            with self.assertRaises(ValueError):
+                workflow.validate_smoke(json.dumps(marker), mode="headless" if mode == "gui" else "gui")
+            for field in ("windowCreated", "firstFramePresented"):
+                with self.assertRaises(ValueError):
+                    workflow.validate_smoke(json.dumps({**marker, field: not marker[field]}), mode=mode)
+
+    def test_final_package_runs_both_startup_levels(self):
+        import plistlib
+
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary) / "Test.app"
+            contents = bundle / "Contents"
+            contents.mkdir(parents=True)
+            proof = {
+                "version": "1.2.3",
+                "build": "5",
+                "commit": "a" * 40,
+                "dirty": False,
+                "architectures": ["arm64", "x86_64"],
+            }
+            (contents / "Info.plist").write_bytes(
+                plistlib.dumps(
+                    {
+                        "CFBundleShortVersionString": "1.2.3",
+                        "CFBundleVersion": "5",
+                        "XTouchSourceRevision": "a" * 40,
+                        "XTouchSourceTreeDirty": False,
+                    }
+                )
+            )
+            calls = []
+
+            def run(argv, **kwargs):
+                calls.append(argv)
+                if argv[0] == "lipo":
+                    return "arm64 x86_64"
+                gui = argv[-1] == "--startup-smoke"
+                return json.dumps(
+                    {
+                        "type": "xtouch.native_startup",
+                        "mode": "gui" if gui else "headless",
+                        "hardwareAccessed": False,
+                        "windowCreated": gui,
+                        "firstFramePresented": gui,
+                    }
+                )
+
+            with (
+                patch.object(workflow, "verify_bundle"),
+                patch.object(workflow, "run", side_effect=run),
+                patch.object(workflow.platform, "machine", return_value="arm64"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                workflow.verify_packaged_payload(bundle, proof)
+            self.assertEqual([call[-1] for call in calls[1:]], ["--startup-smoke=headless", "--startup-smoke"])

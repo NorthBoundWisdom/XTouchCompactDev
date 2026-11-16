@@ -623,3 +623,5 @@ missing optional values remain unknown. This is a software pose illustration,
 not a dimensionally accurate robot model, actual feedback or a motion command.
 Showing, hiding and rendering the panel cannot write parameters, change layers,
 connect MIDI, recall motors or enable output.
+
+The GUI `--startup-smoke` now waits for the real scene first draw/window-update callback instead of a fixed delay. Its marker has `mode=gui`, `windowCreated=true`, `firstFramePresented=true`. The separate `--startup-smoke=headless` validates only the isolated model, with both frame/window flags false. Final package checks run both on native macOS runners; validators reject either marker in the other mode.

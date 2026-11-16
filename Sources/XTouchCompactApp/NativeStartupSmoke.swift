@@ -12,7 +12,7 @@
                 FileHandle.standardError.write(Data("Isolated startup safety state is invalid.\n".utf8))
                 exit(1)
             }
-            FileHandle.standardOutput.write(Data("{\"type\":\"xtouch.native_startup\",\"hardwareAccessed\":false,\"windowCreated\":false}\n".utf8))
+            FileHandle.standardOutput.write(Data("{\"type\":\"xtouch.native_startup\",\"mode\":\"headless\",\"hardwareAccessed\":false,\"windowCreated\":false,\"firstFramePresented\":false}\n".utf8))
         }
     }
 #endif

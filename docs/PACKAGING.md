@@ -32,12 +32,17 @@ Package creation verifies the final ZIP and DMG payloads. ZIP is extracted into 
 owned temporary build directory; DMG is mounted read-only with no browsing, copied
 into that directory and always detached. Checks compare sidecar checksums,
 record/bundle versions, source metadata, signatures, localization and actual Mach-O
-architectures. A matching native architecture runs `--startup-smoke`; a cross-only
+architectures. A matching native architecture runs both `--startup-smoke=headless` and `--startup-smoke`; a cross-only
 artifact receives structural verification and explicitly reports that launch needs
-a matching host. Universal launches the host's native slice. The smoke entry runs
-before AppKit scenes: no window, UserDefaults, workspace, Keychain, CoreMIDI client
-or runtime scheduler, and all external services/write permissions remain off.
-The final package checker requires both hardwareAccessed=false and windowCreated=false.
+a matching host. Universal launches the host's native slice. The headless entry runs before AppKit scenes: no window, workspace, Keychain,
+CoreMIDI client or runtime scheduler. The GUI entry launches the actual SwiftUI
+scene and ContentView, then exits only after its first draw/window-update cycle;
+there is no fixed sleep. Both use isolated Mock models and keep external services
+and permissions off. GUI markers require mode=gui, windowCreated=true and
+firstFramePresented=true; headless markers require mode=headless and both flags
+false. Both require hardwareAccessed=false and cannot substitute for each other.
+The normal CI “Isolated native startup” keeps the GUI entry. Hosted macOS runners
+have window sessions, so final packages exercise both entries on ARM and Intel.
 This is an isolated process startup check, not visual or physical acceptance.
 
 The manual/tag package workflow builds universal ad-hoc assets and uploads their

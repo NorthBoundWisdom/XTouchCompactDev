@@ -137,7 +137,9 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(list(outside.iterdir()), [])
 
     def test_smoke_requires_structured_false_hardware_marker(self):
-        macos_workflow.validate_smoke('log line\n{"type":"xtouch.native_startup","hardwareAccessed":false}')
+        macos_workflow.validate_smoke(
+            'log line\n{"type":"xtouch.native_startup","mode":"gui","hardwareAccessed":false,"windowCreated":true,"firstFramePresented":true}'
+        )
         for invalid in (
             '{"type":"xtouch.native_startup","hardwareAccessed":"false"}',
             '{"type":"xtouch.native_startup","hardwareAccessed":true}',
