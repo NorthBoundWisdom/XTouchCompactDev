@@ -1,5 +1,7 @@
 """Library/macro/arm/MCP content checks; native menus and confirmations are kept manual."""
 
+import time
+
 from tools.native_ui import ManualRequired, OwnedSession
 
 
@@ -82,13 +84,29 @@ def run(directory, binary):
                     "status": "passed",
                 }
             )
+    with OwnedSession(directory / "parameters", binary) as ui:
+        before = ui.query()
+        first = before["configuration"]["parameters"][0]
+        for _ in range(3):
+            started = time.perf_counter()
+            ui.press("fixture.page.parameters")
+            assert ui.element("parameters.applyConfiguration")["enabled"] is True
+            assert ui.value("parameters.name." + first["id"]) == first["name"]
+            ui.write_log({"parameters_navigation_seconds": time.perf_counter() - started})
+            assert ui.query()["values"] == before["values"]
+            ui.check("inspection.motor.sent", "0", "motor.sent")
+            ui.press("fixture.page.main")
+            assert ui.element("surface.fader.1")["enabled"] is True
+        ui.press("fixture.page.parameters")
+        ui.capture("parameters-first-rows")
+        results.append(
+            {
+                "case": "Full Parameters workspace AX entry/return and first-row state (three transitions)",
+                "status": "passed",
+            }
+        )
     results.extend(
         [
-            {
-                "case": "Full Parameters workspace AX navigation",
-                "status": "manual-required",
-                "reason": "AX returns CannotComplete while constructing the full editor; the actual macro content is hosted separately, not counted as full workspace navigation.",
-            },
             {
                 "case": "Library load/delete native confirmation buttons",
                 "status": "manual-required",

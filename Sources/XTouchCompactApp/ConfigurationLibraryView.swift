@@ -12,8 +12,9 @@
             Section(l.text("Configuration library")) {
                 TextField(l.text("Configuration name"), text: $name)
                     .accessibilityIdentifier("configuration.library.configurationName")
-                Button(l.text("Save configuration")) { intents.saveLibraryConfiguration?(name) }.accessibilityIdentifier("configuration.library.saveConfiguration")
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .onSubmit { save() }
+                Button(l.text("Save configuration")) { save() }.accessibilityIdentifier("configuration.library.saveConfiguration")
+                    .disabled(!canSave)
                 Text(l.text("Library entries exclude device profiles and runtime values. Loading never recalls motors."))
                     .font(.caption).foregroundStyle(.secondary)
                 if let warning = snapshot.libraryWarning {
@@ -44,6 +45,15 @@
                     Text(request.name)
                 }
             }
+        }
+
+        private var canSave: Bool {
+            !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        private func save() {
+            guard canSave else { return }
+            intents.saveLibraryConfiguration?(name)
         }
     }
 #endif

@@ -28,7 +28,7 @@
 
         var body: some View {
             ScrollView {
-                VStack(alignment: .leading) {
+                LazyVStack(alignment: .leading) {
                     HStack {
                         Button(l.text("Edit configuration")) { draft = snapshot.configuration }.accessibilityIdentifier("parameters.editConfiguration")
                         Button(l.text("Apply configuration")) { intents.applyConfiguration?(draft) }.accessibilityIdentifier("parameters.applyConfiguration")

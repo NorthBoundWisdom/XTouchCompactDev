@@ -130,7 +130,7 @@ Menus/confirmation actions are not replaced by alternate success buttons.
 | tools/verify_n5_ui.py | Touch/release, no motor commands while touched/ungranted, explicit Mock layer realignment, OSC refusal banner, MCP toggle/isolated copy feedback, actual temporary storage/relaunch | Native preset menu/confirmation; trusted actual/heartbeat receiver; system clipboard contents; real pointer gesture |
 | tools/verify_organize_ui.py | Color, group highlight, fixture link follow/touch defer, fixture scene recall without motor sends, undo/redo | Non-key AX text edits/AXConfirm do not commit rename/group-name bindings; native link selection menus; pointer acceptance |
 | tools/verify_offline_ui.py | Frozen XTouch/BCR common evidence, complete/incomplete/N-A display, step/run/pause/reset, isolated replay distinct from live console | Native file picker is not opened; file bytes are loaded at isolated startup; pause uses an injected batch-yield gate, not elapsed sleeps |
-| tools/verify_new_panels_ui.py | Seeded library request-button availability, macro run outcomes, arm content visibility/pose/empty state, new MCP permissions and actual call rows | Native library load/delete confirmations; non-key name/save commit; native macro parameter picker/creation; full Parameters AX page transition; actual Panels menu-bar routing |
+| tools/verify_new_panels_ui.py | Seeded library request-button availability, macro run outcomes, arm content visibility/pose/empty state, new MCP permissions/call rows, full Parameters entry/return and first-row state | Native library load/delete confirmations; non-key name/save commit; native macro parameter picker/creation; actual Panels menu-bar routing |
 
 A long Mock replay fixture is derived from the frozen XTouch sample, with valid
 new sequences/counts, to exercise pause deterministically between 128-event
@@ -144,9 +144,45 @@ This is **not in CI**. Permission-free parser/launch-policy/ownership checks are
 BuildWorkflowTests; Core flag/one-unit adjustment and App token/yield regressions
 also run normally. Results are structured passed/manual-required/failed rows in
 summary.json; a manual row is never an operator sign-off. Canonical local evidence
-for this round: build/align3/acceptance-final/ (summary, actions, read-only state,
+for C-12: build/align3/acceptance-final/ (summary, actions, read-only state,
 app logs and owned-view PNGs). Earlier probes/failures are retained separately.
 
 The seven N5 operator cells above and TODO manual checkboxes remain pending.
 Offscreen observations add evidence; they do not verify native system dialogs,
 keyboard focus editing, mouse ergonomics, another running app or physical hardware.
+
+## C-18 follow-up: rendering and text commits
+
+C-18 local evidence: `build/align4/c18-acceptance-verified/` (14 passed,
+9 manual-required, 0 failed). This supersedes only the Parameters navigation
+manual item; all seven N5 operator cells and TODO checkboxes remain pending.
+
+The eager Parameters VStack constructed every editing row on page entry. An
+owned-PID sample captured the AX press synchronously walking SwiftUI focus
+responders; the pre-change probe took 2.85s (this probe completed rather than
+reproducing the earlier CannotComplete). LazyVStack now instantiates visible
+rows on demand. The script asserts entry and return three times, the first
+field's AX value against the model definition, Apply enabled, unchanged values
+and zero Mock motor sends. Measured entry plus state queries was 0.64–0.82s in
+the first fixed probe. This covers navigation/visible editor content, not all
+rows or native pickers. The real editor and all fields remain available on
+scroll; the script does not substitute a reduced editor.
+
+The text limitation remains manual: AXSetValue changes the native field's
+value, but a non-key carrier has no field editor to deliver editing callbacks;
+AXConfirm does not produce the Return target/action path. A separate unshown
+NSHostingView diagnostic (`TextCommitTests`) verifies that the native
+text-did-change callback updates the SwiftUI binding **before blur**, and the
+native Return target/action submits the updated value while still non-key.
+These are in-process diagnostic callbacks, not AX acceptance, and are never
+used by the acceptance driver. Inspector rename and group fields already have
+onSubmit. The library field lacked Return-save; it now uses the same guarded
+save intent for Return and its button, rejecting blank names, with a production
+view callback regression. Rename/library/group AX text commit is not marked
+passed and no key-window/global keyboard workaround was added. The other eight
+manual boundaries are unchanged.
+
+All five fixture intents, inspection fields/query, presentation guard and
+carrier views are Debug-only. Normal-instance nil-hook assertions remain;
+release packaging rejects their identifiers in the real executable before
+assembly and again in each final ZIP/DMG extraction.
