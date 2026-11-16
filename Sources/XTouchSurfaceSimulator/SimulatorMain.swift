@@ -203,9 +203,9 @@ private func removeOwnedReadyFile() {
         let displayWriters = credentials?.independentDisplayWriterIDs ?? []
         var budget = writeLimits.map { SurfaceWriteBudgets(input: $0.input_per_window, feedback: $0.feedback_per_window, renew: $0.renew_per_window, admin: $0.admin_per_window, independentFeedbackWriters: displayWriters) }
             ?? SurfaceWriteBudgets(aggregateLimit: writeLimit, independentFeedbackWriters: displayWriters)
-        // Leases expire on this process's monotonic clock even without requests. Every request
-        // processes due expiries at its own time first, so no read or write observes a pending one.
         func advanceHolds(to time: Double) {
+            // Leases expire on this process's monotonic clock even without requests. Every request
+            // processes due expiries at its own time first, so no read or write observes a pending one.
             do { try simulator.processHoldExpiries(at: time) }
             catch { FileHandle.standardError.write(Data("XTouchSurfaceSimulator hold expiry failed: \(error)\n".utf8)) }
         }
@@ -243,9 +243,9 @@ private func removeOwnedReadyFile() {
                         let time = ProcessInfo.processInfo.systemUptime
                         advanceHolds(to: time)
                         let value: JSONValue
-                        // Mutations run on a copy of the value-type simulator. Only a fully
-                        // validated, successful operation consumes the write budget and is committed.
                         func commit(_ candidate: CompactSurfaceSimulator, category: SurfaceWriteBudgets.Category) throws {
+                            // Mutations run on a copy of the value-type simulator. Only a fully
+                            // validated, successful operation consumes the write budget and is committed.
                             guard budget.consume(category, at: time, writerID: client.writerID) else { throw ControlContractError("rate_limited") }
                             simulator = candidate
                         }
