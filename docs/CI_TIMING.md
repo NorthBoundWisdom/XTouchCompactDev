@@ -27,18 +27,20 @@ all GUI/headless startup checks on both runner architectures. Offscreen native
 acceptance remains local, outside CI. Record every cold/warm measurement and
 three consecutive CI runs, including unsuccessful measurements, in ALIGN_C.md.
 
-Release packaging has two parallel matrix producers (ARM and Intel slices).
+Release packaging has two parallel explicit producers (ARM and Intel slices).
 Both save successfully compiled caches before checks. Each slice carries the
 clean source SHA, locked dependency SHA, architecture and every payload hash;
 Intel also stages the generated icon in that hashed payload. ARM merges the two
 verified artifacts and packages on its already-prepared runner, without another
 compile or dependency acquisition. Both final assets still receive all existing
-GUI/headless checks, followed by the ARM and Intel smoke matrix. Independent ZIP and DMG checks
-run concurrently, preserving every GUI/headless assertion and failure outcome.
+GUI/headless checks. The smoke matrix depends on the completed Intel producer,
+prepares its ARM/Intel runners while ARM finishes packaging, and waits for this
+attempt's final artifact. Independent ZIP and DMG checks run concurrently,
+preserving every GUI/headless assertion and failure outcome.
 
 Artifacts are selected only by exact names scoped to this run and attempt. The
 ARM producer's late wait fails on producer failure or the original run's 300s
-deadline. Consumers never reserve runners ahead of compile producers. Final
+deadline. Consumers are gated by the completed Intel producer. Final
 release binaries are also checked for Debug acceptance identifiers before bundle
 assembly and again inside each extracted ZIP/DMG payload.
 
@@ -64,3 +66,25 @@ unchanged here; H must apply BCR 9fc56ae's TCPServer.server_bind override and ad
 the DNS-denial test. No in-scope HTTP fixture had that defect. Real slow-reader
 and lease deadlines remain measured against real sockets and process clocks;
 their waits and safety bounds were preserved.
+
+## Completed measurements
+
+Completed run measurements (package code commit `43f36a8fb42442e1cd734dd18337b19165a2a2e7`):
+
+| Workflow | Run | Created-to-completed seconds | Conclusion |
+| --- | --- | ---: | --- |
+| ci.yml | 43832670088 | 138 | success |
+| ci.yml | 43834106784 | 128 | success |
+| ci.yml | 43835346070 | 155 | success |
+| package.yml cold | 43836094476 | 295 | success |
+| package.yml warm | 43837079632 | 137 | success |
+
+The three CI runs are consecutive and use the current CI workflow; their code
+commits are ec64102, c84c7a3 and 43f36a8 respectively. Both package runs bind the
+same final code commit 43f36a8. Cold restored no build key; warm restored both
+slice keys. Every package run above executed all twelve extracted-payload
+headless/GUI launches across assembly and the ARM/Intel smoke runners.
+Cold has five seconds of measured headroom; queue and cleanup overruns still
+fail the same budget. Earlier unsuccessful/cancelled measurements, per-job
+and step durations, and raw API/log paths are retained in ALIGN_C.md. This
+measurement note is a documentation-only follow-up to the tested code commit.
