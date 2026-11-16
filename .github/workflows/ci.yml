@@ -87,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RESTORED_BUILD_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
         run: python3 configs/ci_job_budget.py --cache-key "$RESTORED_BUILD_KEY" --post-reserve-seconds 20
-  validation-macos:
+  preflight-macos:
     runs-on: macos-26-intel
     timeout-minutes: 20
     env:
@@ -99,16 +99,46 @@ jobs:
           ref: ${{ github.sha }}
       - run: xcodebuild -version
       - run: python3 configs/check_swift_toolchain.py
-      - run: brew install swiftformat ruff
-      - run: python3 configs/format_repo.py --check
       - run: python3 configs/restore_git_mtimes.py
       - name: Cache both locked validation dependencies
         uses: actions/cache@v6.1.0
         with:
           path: build/dependencies
           key: dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
-      - run: python3 configs/setup_local_project.py
+      - name: Join complete lint and setup with fixed tool identity
+        run: python3 configs/ci_preflight_parallel.py
       - run: python3 configs/check_host_layers.py
+      - name: Preserve complete preflight diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: preflight-diagnostics-${{ github.job }}
+          path: build/ci-verification/preflight/
+          if-no-files-found: warn
+      - name: Report whole-run wall time and enforce 300s budget
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 configs/ci_job_budget.py --post-reserve-seconds 20
+  workflow-unit-macos:
+    runs-on: macos-26-intel
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - run: xcodebuild -version
+      - run: python3 configs/check_swift_toolchain.py
+      - run: python3 configs/restore_git_mtimes.py
+      - name: Restore both locked unit-test dependencies without adding a writer
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: build/dependencies
+          key: dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
+      - run: python3 configs/setup_local_project.py
       - run: python3 -B configs/run_python_workflow_tests.py --suite workflow
       - name: Preserve Python per-case wall times
         if: always()
@@ -158,6 +188,8 @@ jobs:
       - name: Compile native targets and tests
         id: compile
         run: swift build --build-path build/swiftpm --build-tests
+      - name: Link every executable in the test build path
+        run: swift build --build-path build/swiftpm
       - name: Save compiled native cache even if later tests fail
         if: always() && steps.compile.outcome == 'success' && github.event_name == 'push'
         uses: actions/cache/save@v6.1.0
@@ -167,10 +199,8 @@ jobs:
       - name: Require exact validation success before native execution
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 configs/ci_validation_gate.py --producer validation-macos
+        run: python3 configs/ci_validation_gate.py --producer preflight-macos
       - run: swift test --build-path build/swiftpm --skip-build
-      - name: Link every executable in the test build path
-        run: swift build --build-path build/swiftpm
       - name: Exercise hardware service with isolated fake MIDI only
         env:
           XTOUCH_HARDWARE_BINARY: build/swiftpm/debug/XTouchSurfaceHardware

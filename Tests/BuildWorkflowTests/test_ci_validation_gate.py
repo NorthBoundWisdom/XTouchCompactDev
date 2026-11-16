@@ -187,29 +187,38 @@ class ValidationGateTests(unittest.TestCase):
 
     def test_workflow_moves_complete_validation_and_gates_before_every_native_execution(self):
         text = (ROOT / ".github/workflows/ci.yml").read_text()
-        validation = text.split("  validation-macos:", 1)[1].split("  app-macos:", 1)[0]
+        preflight = text.split("  preflight-macos:", 1)[1].split("  workflow-unit-macos:", 1)[0]
+        unit = text.split("  workflow-unit-macos:", 1)[1].split("  app-macos:", 1)[0]
         app = text.split("  app-macos:", 1)[1]
         self.assertNotIn("needs:", app)
-        for block, runner in [(validation, "macos-26-intel"), (app, "macos-26-intel")]:
-            self.assertIn("runs-on: " + runner + "\n", block)
+        for block in [preflight, unit, app]:
+            self.assertIn("runs-on: macos-26-intel\n", block)
             self.assertIn("DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer", block)
             self.assertIn("ref: ${{ github.sha }}", block)
-            self.assertIn("python3 configs/setup_local_project.py", block)
-        self.assertIn("dependencies-${{ runner.os }}-${{ runner.arch }}-", validation)
-        self.assertIn("dependencies-${{ runner.os }}-${{ runner.arch }}-", app)
+            self.assertIn("dependencies-${{ runner.os }}-${{ runner.arch }}-", block)
+        self.assertIn("python3 configs/ci_preflight_parallel.py", preflight)
+        self.assertIn("python3 configs/check_host_layers.py", preflight)
+        self.assertNotIn("--suite workflow", preflight)
+        self.assertNotIn("path: build/swiftpm", preflight)
+        self.assertIn("python3 configs/setup_local_project.py", unit)
+        self.assertIn("python3 -B configs/run_python_workflow_tests.py --suite workflow", unit)
+        self.assertNotIn("continue-on-error:", unit)
+        self.assertNotIn("if:", unit.split("    steps:", 1)[0])
+        self.assertIn("uses: actions/cache/restore@", unit)
+        self.assertNotIn("uses: actions/cache@", unit)
+        self.assertNotIn("actions/cache/save@", unit)
+        self.assertNotIn("brew install", unit)
+        self.assertNotIn("--suite workflow", app)
+        self.assertIn("python3 configs/setup_local_project.py", app)
+        self.assertNotIn("brew install", app)
         native_cache = "swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-"
         self.assertEqual(app.count("key: " + native_cache + "${{ github.sha }}"), 2)
         self.assertIn("restore-keys: " + native_cache + "\n", app)
         self.assertNotIn("swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-", app)
-        self.assertNotIn("path: build/swiftpm", validation)
-        self.assertIn("brew install swiftformat ruff", validation)
-        self.assertIn("python3 configs/format_repo.py --check", validation)
-        self.assertIn("python3 configs/check_host_layers.py", validation)
-        self.assertIn("python3 -B configs/run_python_workflow_tests.py --suite workflow", validation)
-        self.assertNotIn("--suite workflow", app)
-        self.assertNotIn("brew install", app)
-        gate = app.index("python3 configs/ci_validation_gate.py --producer validation-macos")
+        gate = app.index("python3 configs/ci_validation_gate.py --producer preflight-macos")
         self.assertLess(app.index("swift build --build-path build/swiftpm --build-tests"), gate)
+        self.assertLess(app.index("name: Link every executable in the test build path"), gate)
+        self.assertEqual(app.count("run: swift build --build-path build/swiftpm\n"), 1)
         for command in [
             "swift test --build-path build/swiftpm --skip-build",
             "--pattern test_hardware_service.py",
@@ -218,10 +227,52 @@ class ValidationGateTests(unittest.TestCase):
             "--startup-smoke",
         ]:
             self.assertGreater(app.index(command), gate)
-        # Position alone is insufficient: no native step may override the gate's failure.
         native = app[app.index("Require exact validation success before native execution") :]
         self.assertNotIn("continue-on-error:", native)
         before_artifacts = native.split("# Release ZIP/DMG", 1)[0]
         self.assertNotIn("if: always()", before_artifacts)
         self.assertIn("actions: read", text)
-        self.assertEqual(text.count("--post-reserve-seconds 20"), 3)
+        self.assertEqual(text.count("--post-reserve-seconds 20"), 4)
+
+    def test_unit_success_never_substitutes_for_preflight_failure(self):
+        jobs = [
+            self.job("app-macos"),
+            self.job("preflight-macos", conclusion="failure"),
+            {**self.job("workflow-unit-macos"), "id": 3},
+        ]
+
+        def fetch(suffix, timeout):
+            return self.run_record() if not suffix else {"jobs": jobs, "total_count": len(jobs)}
+
+        with self.assertRaisesRegex(RuntimeError, "producer failed"):
+            ci_validation_gate.wait_for_validation(
+                fetch,
+                repository="org/repo",
+                run_id=10,
+                attempt=2,
+                consumer="app-macos",
+                producer="preflight-macos",
+                now=lambda: START,
+            )
+
+    def test_preflight_success_releases_runtime_while_unit_is_still_mandatory_and_running(self):
+        jobs = [
+            self.job("app-macos"),
+            self.job("preflight-macos"),
+            {**self.job("workflow-unit-macos", "in_progress", None), "id": 3},
+        ]
+
+        def fetch(suffix, timeout):
+            return self.run_record() if not suffix else {"jobs": jobs, "total_count": len(jobs)}
+
+        result = ci_validation_gate.wait_for_validation(
+            fetch,
+            repository="org/repo",
+            run_id=10,
+            attempt=2,
+            consumer="app-macos",
+            producer="preflight-macos",
+            now=lambda: START,
+            pause=lambda _: self.fail("The independent unit job was incorrectly made a runtime predecessor"),
+        )
+        self.assertEqual(result["validation_conclusion"], "success")

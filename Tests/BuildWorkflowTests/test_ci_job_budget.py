@@ -125,10 +125,11 @@ class CIJobBudgetTests(unittest.TestCase):
     def test_workflows_report_always_and_save_after_compile_before_tests(self):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
         package = (ROOT / ".github/workflows/package.yml").read_text()
-        self.assertEqual(ci.count("name: Report whole-run wall time and enforce 300s budget"), 3)
+        self.assertEqual(ci.count("name: Report whole-run wall time and enforce 300s budget"), 4)
         self.assertEqual(package.count("name: Report whole-run wall time and enforce 300s budget"), 3)
+        self.assertEqual(ci.count("timeout-minutes: 20"), 4)
+        self.assertEqual(package.count("timeout-minutes: 20"), 3)
         for text in (ci, package):
-            self.assertEqual(text.count("timeout-minutes: 20"), 3)
             self.assertIn("outputs.cache-matched-key", text)
             self.assertIn("steps.compile.outcome == 'success'", text)
             self.assertIn("cold_build:", text)
