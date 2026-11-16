@@ -111,3 +111,18 @@ public enum CompactGeometry {
     public static let buttonCount = 39
     public static let totalInputActions = 9 + 9 + 16 + 16 + 39 // includes 9 touch sensors
 }
+
+public extension CompactControl {
+    /// Stable physical actuation-role identity, independent of address and context.
+    var neutralElementID: String {
+        switch self {
+        case let .fader(i): "fader.position.\(i)"
+        case let .faderTouch(i): "fader.touch.\(i)"
+        case let .encoder(i): "encoder.rotate.\(i)"
+        case let .encoderPush(i): "encoder.press.\(i)"
+        case let .button(i): "button.press.\(i)"
+        case .expression: "pedal.expression.position"
+        case .footswitch: "pedal.footswitch.press"
+        }
+    }
+}

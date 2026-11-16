@@ -1,8 +1,20 @@
 import Foundation
+import SurfaceBindingContext
 
 /// Host-owned state and feedback policy. Hardware commands are returned as messages;
 /// the caller routes them through its CoreMIDI transport. No physical motor is used by tests.
 public struct CompactState: Sendable {
+    #if DEBUG
+        package var contextReference: (any CompactResourceReference)?
+        package var contextAudit: (any CompactContextAuditReader)? {
+            contextReference?.audit
+        }
+    #endif
+    private var resourceScope = CompactResourceScope()
+    private var pendingIndex = ContextResourceIndex<Int, CompactResourceScope>()
+    private var buttonCacheIndex = ContextResourceIndex<Int, CompactResourceScope>()
+    private var ringCacheIndex = ContextResourceIndex<Int, CompactResourceScope>()
+    private var styleCacheIndex = ContextResourceIndex<Int, CompactResourceScope>()
     public let map: FactoryStandardMap
     public let lightProtocol: ButtonLightProtocol
     public private(set) var layer: CompactLayer = .a
@@ -23,7 +35,6 @@ public struct CompactState: Sendable {
     private var lastMotorCommands: [Int: UInt8] = [:]
     // A position report becomes stale as soon as the host commands a motor movement.
     private var observedIsCurrent: Set<Int> = []
-    private var pendingMotor: Set<Int> = []
     private var pendingProvenance: [Int: CompactPlannedProvenance] = [:]
     private var producedProvenance: [Int: CompactPlannedProvenance] = [:]
     private var desiredButtons: [Int: ButtonLight] = [:]
@@ -35,9 +46,223 @@ public struct CompactState: Sendable {
     private var pressedButtons: Set<Int> = []
     private var pushedEncoders: Set<Int> = []
 
+    /// Planning provenance is transient caller input; stored index entries capture its value.
+    mutating func setResourceProvenance(_ provenance: CompactPlannedProvenance?) {
+        resourceScope.source = provenance?.source
+        resourceScope.endpoint = provenance?.endpoint
+    }
+
+    /// Authorization epochs are real caller facts, separate from physical observations.
+    mutating func setResourceAuthorization(_ authorization: ParameterWriteAuthorization) {
+        resourceScope.bindingGeneration = authorization.bindingGeneration
+        resourceScope.authorizationRouteGeneration = authorization.routeGeneration
+    }
+
+    #if DEBUG
+        private func resourceSnapshot(_ index: ContextResourceIndex<Int, CompactResourceScope>) -> CompactResourceSnapshot {
+            .init(ids: index.orderedIDs, scopes: Dictionary(uniqueKeysWithValues: index.orderedIDs.map { ($0, index.scope(for: $0)!) }))
+        }
+    #endif
+
+    private func pendingContains(_ index: Int) -> Bool {
+        let result = pendingIndex.contains(index)
+        #if DEBUG
+            contextReference?.read("pending", id: index, actual: String(result))
+        #endif
+        return result
+    }
+
+    private func sortedPending() -> [Int] {
+        let result = pendingIndex.orderedIDs.sorted()
+        #if DEBUG
+            contextReference?.read("pending", id: nil, actual: String(reflecting: result))
+        #endif
+        return result
+    }
+
+    private mutating func insertPending(_ index: Int, provenance: CompactPlannedProvenance? = nil) {
+        var scope = resourceScope
+        if let provenance {
+            scope.source = provenance.source; scope.endpoint = provenance.endpoint
+        }
+        #if DEBUG
+            let before = contextReference == nil ? nil : resourceSnapshot(pendingIndex)
+        #endif
+        pendingIndex.upsert(index, scope: scope)
+        #if DEBUG
+            if let before {
+                let event: CompactResourceMutation = .upsert(id: index, scope: scope, value: nil)
+                let after = resourceSnapshot(pendingIndex)
+                contextReference?.apply("pending", event: event, before: before, after: after, removed: [])
+            }
+        #endif
+    }
+
+    private mutating func removePending(_ index: Int) {
+        #if DEBUG
+            let before = contextReference == nil ? nil : resourceSnapshot(pendingIndex)
+        #endif
+        let removed = pendingIndex.remove(index)
+        #if DEBUG
+            if let before {
+                let event: CompactResourceMutation = .remove(id: index)
+                let after = resourceSnapshot(pendingIndex)
+                contextReference?.apply("pending", event: event, before: before, after: after, removed: removed ? [index] : [])
+            }
+        #endif
+    }
+
+    private mutating func clearPending() {
+        #if DEBUG
+            let before = contextReference == nil ? nil : resourceSnapshot(pendingIndex)
+        #endif
+        let removed = pendingIndex.removeAll()
+        #if DEBUG
+            if let before {
+                let event: CompactResourceMutation = .removeAll
+                let after = resourceSnapshot(pendingIndex)
+                contextReference?.apply("pending", event: event, before: before, after: after, removed: removed)
+            }
+        #endif
+    }
+
+    private func cachedButton(_ index: Int) -> ButtonLight? {
+        let result = buttonCacheIndex.contains(index) ? lastSentButtons[index] : nil
+        #if DEBUG
+            contextReference?.read("button", id: index, actual: String(reflecting: result))
+        #endif
+        return result
+    }
+
+    private mutating func storeButton(_ index: Int, _ value: ButtonLight) {
+        #if DEBUG
+            let before = contextReference == nil ? nil : resourceSnapshot(buttonCacheIndex)
+        #endif
+        lastSentButtons[index] = value
+        buttonCacheIndex.upsert(index, scope: resourceScope)
+        #if DEBUG
+            if let before {
+                let event: CompactResourceMutation = .upsert(id: index, scope: resourceScope, value: String(reflecting: Optional(value)))
+                let after = resourceSnapshot(buttonCacheIndex)
+                contextReference?.apply("button", event: event, before: before, after: after, removed: [])
+            }
+        #endif
+    }
+
+    private mutating func clearButtonCache(_ index: Int? = nil) {
+        #if DEBUG
+            let before = contextReference == nil ? nil : resourceSnapshot(buttonCacheIndex)
+        #endif
+        let removed: [Int] = if let index {
+            buttonCacheIndex.remove(index) ? [index] : []
+        } else {
+            buttonCacheIndex.removeAll()
+        }
+        for id in removed {
+            lastSentButtons.removeValue(forKey: id)
+        }
+        #if DEBUG
+            if let before {
+                let event: CompactResourceMutation = index.map { .remove(id: $0) } ?? .removeAll
+                let after = resourceSnapshot(buttonCacheIndex)
+                contextReference?.apply("button", event: event, before: before, after: after, removed: removed)
+            }
+        #endif
+    }
+
+    private func cachedRing(_ index: Int) -> RingDisplay? {
+        let result = ringCacheIndex.contains(index) ? lastSentRings[index] : nil
+        #if DEBUG
+            contextReference?.read("ring", id: index, actual: String(reflecting: result))
+        #endif
+        return result
+    }
+
+    private mutating func storeRing(_ index: Int, _ value: RingDisplay) {
+        #if DEBUG
+            let before = contextReference == nil ? nil : resourceSnapshot(ringCacheIndex)
+        #endif
+        lastSentRings[index] = value
+        ringCacheIndex.upsert(index, scope: resourceScope)
+        #if DEBUG
+            if let before {
+                let event: CompactResourceMutation = .upsert(id: index, scope: resourceScope, value: String(reflecting: Optional(value)))
+                let after = resourceSnapshot(ringCacheIndex)
+                contextReference?.apply("ring", event: event, before: before, after: after, removed: [])
+            }
+        #endif
+    }
+
+    private mutating func clearRingCache(_ index: Int? = nil) {
+        #if DEBUG
+            let before = contextReference == nil ? nil : resourceSnapshot(ringCacheIndex)
+        #endif
+        let removed: [Int] = if let index {
+            ringCacheIndex.remove(index) ? [index] : []
+        } else {
+            ringCacheIndex.removeAll()
+        }
+        for id in removed {
+            lastSentRings.removeValue(forKey: id)
+        }
+        #if DEBUG
+            if let before {
+                let event: CompactResourceMutation = index.map { .remove(id: $0) } ?? .removeAll
+                let after = resourceSnapshot(ringCacheIndex)
+                contextReference?.apply("ring", event: event, before: before, after: after, removed: removed)
+            }
+        #endif
+    }
+
+    private func cachedStyle(_ index: Int) -> RingStyle? {
+        let result = styleCacheIndex.contains(index) ? lastSentStyles[index] : nil
+        #if DEBUG
+            contextReference?.read("style", id: index, actual: String(reflecting: result))
+        #endif
+        return result
+    }
+
+    private mutating func storeStyle(_ index: Int, _ value: RingStyle) {
+        #if DEBUG
+            let before = contextReference == nil ? nil : resourceSnapshot(styleCacheIndex)
+        #endif
+        lastSentStyles[index] = value
+        styleCacheIndex.upsert(index, scope: resourceScope)
+        #if DEBUG
+            if let before {
+                let event: CompactResourceMutation = .upsert(id: index, scope: resourceScope, value: String(reflecting: Optional(value)))
+                let after = resourceSnapshot(styleCacheIndex)
+                contextReference?.apply("style", event: event, before: before, after: after, removed: [])
+            }
+        #endif
+    }
+
+    private mutating func clearStyleCache(_ index: Int? = nil) {
+        #if DEBUG
+            let before = contextReference == nil ? nil : resourceSnapshot(styleCacheIndex)
+        #endif
+        let removed: [Int] = if let index {
+            styleCacheIndex.remove(index) ? [index] : []
+        } else {
+            styleCacheIndex.removeAll()
+        }
+        for id in removed {
+            lastSentStyles.removeValue(forKey: id)
+        }
+        #if DEBUG
+            if let before {
+                let event: CompactResourceMutation = index.map { .remove(id: $0) } ?? .removeAll
+                let after = resourceSnapshot(styleCacheIndex)
+                contextReference?.apply("style", event: event, before: before, after: after, removed: removed)
+            }
+        #endif
+    }
+
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) {
-        self.map = map
-        self.lightProtocol = lightProtocol
+        self.map = map; self.lightProtocol = lightProtocol
+        resourceScope.transmitChannel = map.transmitChannel
+        resourceScope.receiveChannel = map.globalReceiveChannel
+        resourceScope.lightProtocol = lightProtocol.rawValue
     }
 
     /// Last actual TX position report, possibly stale after a motor command. Sending RX
@@ -56,12 +281,12 @@ public struct CompactState: Sendable {
     }
 
     public func isMotorPending(_ index: Int) -> Bool {
-        pendingMotor.contains(index)
+        pendingContains(index)
     }
 
     /// Read-only native pending intent inventory, including the real desired payload.
     public var pendingMotorFacts: [CompactPendingMotorFact] {
-        pendingMotor.sorted().map { CompactPendingMotorFact(index: $0, target: desiredFader[$0], observed: observedFaders[$0], touched: isTouched($0), provenance: pendingProvenance[$0]) }
+        sortedPending().map { CompactPendingMotorFact(index: $0, target: desiredFader[$0], observed: observedFaders[$0], touched: isTouched($0), provenance: pendingProvenance[$0]) }
     }
 
     public func producedMotorProvenance(_ index: Int) -> CompactPlannedProvenance? {
@@ -95,10 +320,10 @@ public struct CompactState: Sendable {
         lastMotorCommands.removeAll()
         observedIsCurrent.removeAll()
         observedFaders.removeAll()
-        lastSentButtons.removeAll()
-        lastSentRings.removeAll()
-        lastSentStyles.removeAll()
-        pendingMotor.removeAll(); pendingProvenance.removeAll(); producedProvenance.removeAll()
+        clearButtonCache()
+        clearRingCache()
+        clearStyleCache()
+        clearPending(); pendingProvenance.removeAll(); producedProvenance.removeAll()
         pressedButtons.removeAll()
         pushedEncoders.removeAll()
         guard assertLayer else {
@@ -114,10 +339,11 @@ public struct CompactState: Sendable {
     /// Change host intent without claiming that a layer command reached the device.
     /// Used during listening and before the transport accepts an explicit assertion.
     public mutating func selectHostLayer(_ layer: CompactLayer) {
-        pendingMotor.removeAll(); pendingProvenance.removeAll(); producedProvenance.removeAll()
+        clearPending(); pendingProvenance.removeAll(); producedProvenance.removeAll()
         desiredFader.removeAll()
         invalidateMotorCommandHistory()
         self.layer = layer
+        resourceScope.hostLayer = layer
     }
 
     /// Delivery invalidates prior layer evidence; it never acknowledges a physical layer.
@@ -160,7 +386,7 @@ public struct CompactState: Sendable {
             layerObservationRevision = observationRevision
         }
         if layerMismatch {
-            pendingMotor.removeAll(); pendingProvenance.removeAll(); producedProvenance.removeAll()
+            clearPending(); pendingProvenance.removeAll(); producedProvenance.removeAll()
         }
         switch event.control {
         case let .fader(i):
@@ -173,7 +399,7 @@ public struct CompactState: Sendable {
             } else {
                 touchedFaders.remove(i)
             }
-        case let .encoder(i): lastSentRings.removeValue(forKey: i)
+        case let .encoder(i): clearRingCache(i)
         case let .button(i):
             if event.isPressed == true {
                 pressedButtons.insert(i)
@@ -183,10 +409,10 @@ public struct CompactState: Sendable {
             if event.isPressed == true, (34 ... 39).contains(i) {
                 // The six right-area transport buttons may redraw *the whole group* locally.
                 for index in 34 ... 39 {
-                    lastSentButtons.removeValue(forKey: index)
+                    clearButtonCache(index)
                 }
             } else if event.isPressed == false {
-                lastSentButtons.removeValue(forKey: i)
+                clearButtonCache(i)
             }
         case let .encoderPush(i):
             if event.isPressed == true {
@@ -201,11 +427,11 @@ public struct CompactState: Sendable {
     /// Use only after a decoded fader-touch release; compare with the observed physical position.
     public mutating func reconcileReleasedFader(_ index: Int) throws -> [MIDIMessage] {
         guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
-        guard !isTouched(index), !layerMismatch, pendingMotor.contains(index),
+        guard !isTouched(index), !layerMismatch, pendingContains(index),
               let desired = desiredFader[index] else { return [] }
         let originalProvenance = pendingProvenance[index]
         producedProvenance.removeValue(forKey: index)
-        pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index)
+        removePending(index); pendingProvenance.removeValue(forKey: index)
         if observedIsCurrent.contains(index), observedFaders[index] == desired {
             return []
         }
@@ -224,12 +450,14 @@ public struct CompactState: Sendable {
         guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
         producedProvenance.removeValue(forKey: index)
         desiredFader[index] = value
-        if pendingMotor.contains(index) {
+        if pendingContains(index) {
+            // The same shared slot receives new immutable scope without moving its order.
+            insertPending(index, provenance: provenance)
             pendingProvenance[index] = provenance
         }
-        guard !layerMismatch else { pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index); return [] }
+        guard !layerMismatch else { removePending(index); pendingProvenance.removeValue(forKey: index); return [] }
         if isTouched(index) {
-            pendingMotor.insert(index)
+            insertPending(index, provenance: provenance)
             pendingProvenance[index] = provenance
             return []
         }
@@ -259,9 +487,9 @@ public struct CompactState: Sendable {
                         lastMotorCommands.removeValue(forKey: index)
                     }
                     if layerMismatch {
-                        pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index)
+                        removePending(index); pendingProvenance.removeValue(forKey: index)
                     } else {
-                        pendingMotor.insert(index)
+                        insertPending(index, provenance: producedProvenance[index])
                         pendingProvenance[index] = producedProvenance[index]
                     }
                     continue
@@ -289,7 +517,7 @@ public struct CompactState: Sendable {
 
     /// Discard withheld writes without inventing a layer assertion or losing physical evidence.
     public mutating func discardPendingMotorWrites() {
-        pendingMotor.removeAll(); pendingProvenance.removeAll(); producedProvenance.removeAll(); desiredFader.removeAll(); invalidateMotorCommandHistory()
+        clearPending(); pendingProvenance.removeAll(); producedProvenance.removeAll(); desiredFader.removeAll(); invalidateMotorCommandHistory()
     }
 
     public mutating func setInputTouches(_ touches: Set<Int>) {
@@ -300,14 +528,14 @@ public struct CompactState: Sendable {
     /// touch release cannot replay an older target over a newer, motor-less write.
     public mutating func discardMotorIntent(_ index: Int) {
         desiredFader.removeValue(forKey: index)
-        pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index)
+        removePending(index); pendingProvenance.removeValue(forKey: index)
         producedProvenance.removeValue(forKey: index)
     }
 
     /// A physical fader report owns its own position. Parameter snapping must never echo a motor command.
     public mutating func acceptPhysicalFader(_ index: Int) {
         desiredFader.removeValue(forKey: index)
-        pendingMotor.remove(index); pendingProvenance.removeValue(forKey: index)
+        removePending(index); pendingProvenance.removeValue(forKey: index)
         producedProvenance.removeValue(forKey: index)
         lastMotorCommands.removeValue(forKey: index)
     }
@@ -315,8 +543,8 @@ public struct CompactState: Sendable {
     public mutating func setButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
         guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
         desiredButtons[index] = light
-        guard lastSentButtons[index] != light else { return [] }
-        lastSentButtons[index] = light
+        guard cachedButton(index) != light else { return [] }
+        storeButton(index, light)
         return try [map.buttonLight(button: index, light: light, style: lightProtocol)]
     }
 
@@ -324,19 +552,19 @@ public struct CompactState: Sendable {
         guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
         let midi = try map.encoderRingValue(encoder: index, display: display)
         desiredRings[index] = display
-        guard lastSentRings[index] != display else { return [] }
-        lastSentRings[index] = display
+        guard cachedRing(index) != display else { return [] }
+        storeRing(index, display)
         return [midi]
     }
 
     public mutating func setRingStyle(_ index: Int, style: RingStyle) throws -> [MIDIMessage] {
         guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
         desiredStyles[index] = style
-        guard lastSentStyles[index] != style else { return [] }
-        lastSentStyles[index] = style
+        guard cachedStyle(index) != style else { return [] }
+        storeStyle(index, style)
         var result = try [map.encoderRingStyle(encoder: index, style: style)]
         // Changing ring style locally redraws the ring: replay the host-owned position.
-        lastSentRings.removeValue(forKey: index)
+        clearRingCache(index)
         if let display = desiredRings[index] {
             result += try setRing(index, display: display)
         }
@@ -344,9 +572,9 @@ public struct CompactState: Sendable {
     }
 
     public mutating func invalidateNonMotorFeedback() {
-        lastSentButtons.removeAll()
-        lastSentRings.removeAll()
-        lastSentStyles.removeAll()
+        clearButtonCache()
+        clearRingCache()
+        clearStyleCache()
     }
 
     public mutating func invalidateMotorCommandHistory() {
@@ -380,6 +608,14 @@ public extension CompactState {
     /// Physical touch survives so subsequent writes cannot race a hand already on a fader.
     func reconfigured(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) -> CompactState {
         var next = CompactState(map: map, lightProtocol: lightProtocol)
+        #if DEBUG
+            next.contextReference = contextReference
+            next.contextReference?.reset()
+        #endif
+        next.resourceScope = resourceScope
+        next.resourceScope.transmitChannel = map.transmitChannel
+        next.resourceScope.receiveChannel = map.globalReceiveChannel
+        next.resourceScope.lightProtocol = lightProtocol.rawValue
         next.layer = layer
         next.touchedFaders = touchedFaders
         next.safetyTouches = safetyTouches

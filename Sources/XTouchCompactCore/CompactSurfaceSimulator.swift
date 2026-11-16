@@ -50,12 +50,24 @@ public struct CompactSurfaceSimulator: Sendable {
     public init(instanceID: String, epoch: String, configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024,
                 remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil) throws
     {
+        try self.init(instanceID: instanceID, epoch: epoch, configuration: configuration, eventCapacity: eventCapacity,
+                      remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, contextReferences: nil)
+    }
+
+    package init(instanceID: String, epoch: String, configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024,
+                 remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil, contextReferences: CompactContextReferences?) throws
+    {
         self.configuration = configuration
         self.remoteWriterID = remoteWriterID
         self.systemWriterID = systemWriterID
         self.writeLimits = writeLimits
         let map = try FactoryStandardMap()
         session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:])
+        #if DEBUG
+            if let contextReferences {
+                session.installContextReferences(contextReferences)
+            }
+        #endif
         mock = MockXTouchCompact(map: map, lightProtocol: .manual)
         _ = try session.loadConfiguration(configuration, resetValues: true)
         try mock.receive(session.connect())
@@ -304,9 +316,21 @@ public struct CompactSurfaceSimulator: Sendable {
     public mutating func reset(expected: ControlExpected, expectedSequence: String, epoch: String, at time: Double) throws {
         var nextControls = controls
         try nextControls.reset(expected: expected, expectedSequence: expectedSequence, epoch: epoch, at: time)
+        #if DEBUG
+            var references: CompactContextReferences?
+            if var resources = session.state.contextReference, var bindings = session.parameters.bindingReference {
+                // A restart is a new value owner. Reset copied test references from constructor input,
+                // never seed them from the new Kit result or share their mutable state.
+                resources.reset()
+                bindings.replace(configuration: .neutral)
+                references = .init(resources: resources, bindings: bindings)
+            }
+        #else
+            let references: CompactContextReferences? = nil
+        #endif
         var next = try Self(instanceID: expected.instance_id, epoch: epoch,
                             configuration: configuration, eventCapacity: controls.eventCapacity,
-                            remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits)
+                            remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, contextReferences: references)
         try nextControls.seedInputs(next.mockInputs(), at: time)
         next.controls = nextControls
         self = next

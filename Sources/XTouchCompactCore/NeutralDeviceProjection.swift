@@ -20,15 +20,7 @@ public struct CompactReceiptContext: Sendable {
 /// Read-only device knowledge. No parameter authority, sender or safety-policy switch.
 public enum CompactNeutralProjection: Sendable {
     public static func elementID(_ control: CompactControl) -> String {
-        switch control {
-        case let .fader(i): "fader.position.\(i)"
-        case let .faderTouch(i): "fader.touch.\(i)"
-        case let .encoder(i): "encoder.rotate.\(i)"
-        case let .encoderPush(i): "encoder.press.\(i)"
-        case let .button(i): "button.press.\(i)"
-        case .expression: "pedal.expression.position"
-        case .footswitch: "pedal.footswitch.press"
-        }
+        control.neutralElementID
     }
 
     public static func logicalTargetID(_ control: CompactControl, layer: CompactLayer) -> String {

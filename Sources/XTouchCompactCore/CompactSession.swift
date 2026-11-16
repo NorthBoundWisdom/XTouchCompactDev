@@ -49,7 +49,8 @@ public struct CompactSession: Sendable {
     {
         let previous = operationProvenance
         operationProvenance = provenance
-        defer { operationProvenance = previous }
+        state.setResourceProvenance(provenance)
+        defer { operationProvenance = previous; state.setResourceProvenance(previous) }
         return try operation(&self)
     }
 
@@ -63,6 +64,7 @@ public struct CompactSession: Sendable {
 
     public mutating func configureWriteAuthorization(_ context: ParameterWriteAuthorization) {
         parameters.configureWriteAuthorization(context)
+        state.setResourceAuthorization(context)
         if !context.allowsMechanisms {
             state.discardPendingMotorWrites()
         }
@@ -79,6 +81,13 @@ public struct CompactSession: Sendable {
         state.discardPendingMotorWrites()
         return try synchronizeParameters(includeMotors: false, ids: [id])
     }
+
+    #if DEBUG
+        package mutating func installContextReferences(_ references: CompactContextReferences) {
+            state.contextReference = references.resources
+            parameters.bindingReference = references.bindings
+        }
+    #endif
 
     public static let undoLimit = 50
 
@@ -305,6 +314,9 @@ public struct CompactSession: Sendable {
     /// Metadata edits (names, colors, links, scenes) without touching values or motors.
     public mutating func replaceConfigurationKeepingValues(_ configuration: SurfaceConfiguration) throws {
         var next = try ParameterEngine(configuration: configuration)
+        #if DEBUG
+            next.bindingReference = parameters.reconfiguredReference(configuration)
+        #endif
         for (id, value) in parameters.values where next.definition(id) != nil {
             try next.set(id, value: value)
         }
@@ -344,6 +356,9 @@ public struct CompactSession: Sendable {
 
     public mutating func loadConfiguration(_ configuration: SurfaceConfiguration, resetValues: Bool = false) throws -> [MIDIMessage] {
         var next = try ParameterEngine(configuration: configuration)
+        #if DEBUG
+            next.bindingReference = parameters.reconfiguredReference(configuration)
+        #endif
         if !resetValues {
             for (id, value) in parameters.values where next.definition(id) != nil {
                 try next.set(id, value: value)
@@ -360,6 +375,7 @@ public struct CompactSession: Sendable {
         }
         // Loading a preset is not permission to move motors.
         state = state.reconfigured(map: state.map, lightProtocol: state.lightProtocol)
+        state.setResourceAuthorization(authorization)
         return try synchronizeParameters(includeMotors: false) + syncVisibleNonMotorFeedback()
     }
 

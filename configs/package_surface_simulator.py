@@ -63,7 +63,7 @@ ARTIFACT = "surface-control-simulator"
 
 
 def kernel_provenance(root=ROOT):
-    """Real compiled-contract provenance; conformance assets stay test-only and outside the runtime SDK."""
+    """Real compiled runtime provenance; conformance assets stay test-only and outside the runtime SDK."""
     try:
         from .control_surface_kit_dependency import ensure_dependency as ensure_kit
     except ImportError:
@@ -75,12 +75,13 @@ def kernel_provenance(root=ROOT):
         "LICENSE",
         *(
             str(path.relative_to(kernel))
-            for path in sorted((kernel / "Sources/SurfaceDeviceContracts").glob("*.swift"))
+            for module in ("SurfaceDeviceContracts", "SurfaceBindingContext", "SurfaceConnectionState")
+            for path in sorted((kernel / "Sources" / module).glob("*.swift"))
         ),
     ]
     return {
         "control_surface_kit_revision": lock["revision"],
-        "control_surface_kit_integration": "contracts-and-conformance",
+        "control_surface_kit_integration": "contracts-conformance-binding-and-connection",
         "control_surface_kit_files_sha256": {
             source: hashlib.sha256((kernel / source).read_bytes()).hexdigest() for source in sources
         },

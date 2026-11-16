@@ -179,7 +179,7 @@ class DeliveryContentTests(unittest.TestCase):
         root = package_surface_simulator.ROOT
         lock = json.loads((root / "configs/control_surface_kit.lock.json").read_text())
         self.assertEqual(manifest["control_surface_kit_revision"], lock["revision"])
-        self.assertEqual(manifest["control_surface_kit_integration"], "contracts-and-conformance")
+        self.assertEqual(manifest["control_surface_kit_integration"], "contracts-conformance-binding-and-connection")
         files = manifest["control_surface_kit_files_sha256"]
         self.assertEqual(
             set(files),
@@ -189,6 +189,11 @@ class DeliveryContentTests(unittest.TestCase):
                 "Sources/SurfaceDeviceContracts/Boundary.swift",
                 "Sources/SurfaceDeviceContracts/Capabilities.swift",
                 "Sources/SurfaceDeviceContracts/DeviceContracts.swift",
+                "Sources/SurfaceBindingContext/BindingContext.swift",
+                "Sources/SurfaceBindingContext/Boundary.swift",
+                "Sources/SurfaceBindingContext/ContextResourceIndex.swift",
+                "Sources/SurfaceConnectionState/Boundary.swift",
+                "Sources/SurfaceConnectionState/ConnectionState.swift",
             },
         )
         for path, digest in files.items():

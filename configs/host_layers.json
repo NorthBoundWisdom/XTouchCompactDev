@@ -104,7 +104,9 @@
     "Sources/XTouchSurfaceHardware/HardwareMain.swift": "composition",
     "Sources/XTouchSurfaceHardware/SurfacePrincipals.swift": "transport",
     "Sources/XTouchSurfaceSimulator/SimulatorMain.swift": "composition",
-    "Sources/XTouchSurfaceSimulator/SurfacePrincipals.swift": "transport"
+    "Sources/XTouchSurfaceSimulator/SurfacePrincipals.swift": "transport",
+    "Sources/XTouchCompactCore/CompactContextRuntime.swift": "runtime",
+    "Sources/XTouchCompactApp/ConnectionContextReference.swift": "composition"
   },
   "schema_version": 1,
   "targets": {
@@ -119,7 +121,8 @@
         "CompactRemoteMIDI",
         "XTouchCompactCore",
         "XTouchCompactLocalization",
-        "SurfaceDeviceContracts"
+        "SurfaceDeviceContracts",
+        "SurfaceConnectionState"
       ]
     },
     "XTouchCompactCore": {
@@ -136,7 +139,8 @@
         "RobotRemoteBinding",
         "SurfaceControlContracts",
         "SurfacePluginContracts",
-        "SurfaceDeviceContracts"
+        "SurfaceDeviceContracts",
+        "SurfaceBindingContext"
       ]
     },
     "XTouchCompactLocalization": {

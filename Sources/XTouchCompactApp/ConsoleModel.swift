@@ -6,6 +6,7 @@
     import Network
     import OutputRemoteBinding
     import RemoteToolContracts
+    import SurfaceConnectionState
     import SurfaceDeviceContracts
     import SurfacePluginContracts
     import SwiftUI
@@ -25,6 +26,17 @@
         @Published private(set) var bank = CompactParameterBank()
         @Published private(set) var layer: CompactLayer = .a
         @Published private(set) var connection = CompactMIDIConnection()
+        private var neutralConnectionState = ConnectionState(snapshot: CompactMIDIConnection().neutralRoute, connectionGeneration: 0)
+        #if DEBUG
+            private var connectionReference: (any CompactConnectionReference)?
+            var connectionContextAudit: (any CompactContextAuditReader)? {
+                connectionReference?.audit
+            }
+
+            var referencedPublishedConnection: CompactMIDIConnection? {
+                connectionReference?.published
+            }
+        #endif
         // Latest trusted transport receipt is the IO authority; the Published value is a UI projection.
         private var currentHardwareConnection = CompactMIDIConnection()
         private var connectionNotificationRevision: UInt64 = 0
@@ -221,7 +233,8 @@
              evidenceWriterFactory: @escaping (URL) throws -> any EvidenceWriting = { try ExclusiveEvidenceFile(url: $0) },
              eventMonotonicClock: (() -> Double)? = nil, recordIDFactory: @escaping () -> UUID = UUID.init,
              operationIDFactory: @escaping () -> UUID = UUID.init, pluginRegistryEpoch: String? = nil,
-             plannedIntentIDFactory: @escaping () -> String = { UUID().uuidString }, projectionInstanceID: String = "xtouch.console")
+             plannedIntentIDFactory: @escaping () -> String = { UUID().uuidString }, projectionInstanceID: String = "xtouch.console",
+             contextReferences: CompactContextReferences? = nil, connectionReference: (any CompactConnectionReference)? = nil)
         {
             self.plannedIntentIDFactory = plannedIntentIDFactory
             self.projectionInstanceID = projectionInstanceID
@@ -245,6 +258,12 @@
             panelStore = storageRoot.map(WorkspacePanelStore.init(directory:))
             let map = try! FactoryStandardMap() // Constant channels are valid by construction.
             session = CompactSession(map: map, lightProtocol: .manual)
+            #if DEBUG
+                if let contextReferences {
+                    session.installContextReferences(contextReferences)
+                }
+                self.connectionReference = connectionReference
+            #endif
             mock = MockXTouchCompact(map: map, lightProtocol: .manual)
             self.midi.onMessages = { [weak self] messages in self?.receive(messages, receiptAt: self?.eventMonotonicClock()) }
             if let routed = self.midi as? any RoutedMIDIService {
@@ -296,11 +315,7 @@
 
         private func receiveConnectionNotification(_ snapshot: CompactMIDIConnection) {
             connectionNotificationRevision &+= 1
-            if snapshot.isConnected != currentHardwareConnection.isConnected
-                || snapshot.connectedInput?.id != currentHardwareConnection.connectedInput?.id
-                || snapshot.connectedOutput?.id != currentHardwareConnection.connectedOutput?.id
-                || snapshot.generation != currentHardwareConnection.generation
-            {
+            if snapshot.neutralRoute != currentHardwareConnection.neutralRoute {
                 hardwareRouteRevision &+= 1
             }
             currentHardwareConnection = snapshot
@@ -359,10 +374,12 @@
         }
 
         private func publishConnectionNotification(_ snapshot: CompactMIDIConnection, revision: UInt64) {
-            let routeChanged = snapshot.isConnected != connection.isConnected
-                || snapshot.connectedInput?.id != connection.connectedInput?.id
-                || snapshot.connectedOutput?.id != connection.connectedOutput?.id
-                || snapshot.generation != connection.generation
+            var publication = neutralConnectionState
+            let transition = publication.apply(snapshot.neutralRoute)
+            let routeChanged = transition.invalidatesScope
+            #if DEBUG
+                connectionReference?.willPublish(snapshot, current: connection, changed: routeChanged, generation: transition.currentGeneration)
+            #endif
             if routeChanged {
                 if hasAttachedHardwareRoute {
                     hardwareMotorActionCurrent = false
@@ -385,6 +402,10 @@
                 guard revision == connectionNotificationRevision else { return }
             }
             connection = snapshot
+            neutralConnectionState = publication
+            #if DEBUG
+                connectionReference?.didPublish(snapshot, actual: connection, semantic: neutralConnectionState.snapshot, generation: neutralConnectionState.connectionGeneration)
+            #endif
             guard revision == connectionNotificationRevision else { return }
             if routeChanged {
                 var authorization = session.writeAuthorization
@@ -1436,10 +1457,11 @@
             let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
             func scopeIsCurrent() -> Bool {
                 let currentRoute = dispatchHardwareMode ? currentHardwareConnection : connection
-                return (!dispatchHardwareMode || !hardwareHandoverActive)
-                    && currentRoute.generation == route.generation
-                    && currentRoute.connectedInput?.id == route.connectedInput?.id
-                    && currentRoute.connectedOutput?.id == route.connectedOutput?.id
+                let current = currentRoute.neutralRoute == route.neutralRoute
+                #if DEBUG
+                    connectionReference?.admission(captured: route, current: currentRoute, actual: current)
+                #endif
+                return (!dispatchHardwareMode || !hardwareHandoverActive) && current
                     && session.writeAuthorization == authorization
                     && session.state.layer == dispatchHostLayer
                     && hardwareMode == dispatchHardwareMode

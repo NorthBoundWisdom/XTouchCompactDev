@@ -27,8 +27,15 @@ PURE_IMPORTS = {
         "RemoteToolContracts",
         "SurfaceControlContracts",
         "SurfaceDeviceContracts",
+        "SurfaceBindingContext",
     },
-    "device": {"Foundation", "SurfacePluginContracts", "SurfaceControlContracts", "SurfaceDeviceContracts"},
+    "device": {
+        "Foundation",
+        "SurfacePluginContracts",
+        "SurfaceControlContracts",
+        "SurfaceDeviceContracts",
+        "SurfaceBindingContext",
+    },
 }
 IMPORTS = re.compile(
     r"^[ \t]*(?:(?:@\w+(?:\([^()\n]*\))?|public|package|internal|fileprivate|private)\s+)*"

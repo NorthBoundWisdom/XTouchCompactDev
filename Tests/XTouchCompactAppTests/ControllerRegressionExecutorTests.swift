@@ -8,7 +8,7 @@
     import SurfacePluginContracts
     import Testing
     @testable import XTouchCompactApp
-    import XTouchCompactCore
+    @testable import XTouchCompactCore
 
     private let h10Null = NSNull()
     private let h10Features = Set(["absolute_input", "motor", "hardware_context", "global_context_motion", "display_style", "independent_io_addresses"])
@@ -262,9 +262,9 @@
                     model = ConsoleModel(startsMIDI: false, midi: wire, now: { [clock] in clock.date }, isolated: true,
                                          eventMonotonicClock: { [clock] in clock.monotonic }, recordIDFactory: { identities.nextRecord() },
                                          operationIDFactory: { identities.nextOperation() }, pluginRegistryEpoch: "fixture.model.epoch." + id,
-                                         plannedIntentIDFactory: { identities.nextOperation().uuidString }, projectionInstanceID: id)
+                                         plannedIntentIDFactory: { identities.nextOperation().uuidString }, projectionInstanceID: id, contextReferences: legacyReferences(), connectionReference: LegacyConnectionReference())
                 } else {
-                    model = ConsoleModel(startsMIDI: false, midi: wire, now: { [clock] in clock.date }, isolated: true)
+                    model = ConsoleModel(startsMIDI: false, midi: wire, now: { [clock] in clock.date }, isolated: true, contextReferences: legacyReferences(), connectionReference: LegacyConnectionReference())
                 }
                 model!.observeMonitorEvent = { [weak self] in self?.monitor.append($0) }
                 model!.observeMutation = { [weak self] in self?.mutations.append($0) }
@@ -281,14 +281,15 @@
                     model!.setListenOnly(true)
                 }
             } else if source == "simulation" {
-                simulator = try CompactSurfaceSimulator(instanceID: id, epoch: "h10.simulation.1", configuration: config, eventCapacity: setup["journal_capacity"] as? Int ?? 16)
+                simulator = try CompactSurfaceSimulator(instanceID: id, epoch: "h10.simulation.1", configuration: config, eventCapacity: setup["journal_capacity"] as? Int ?? 16, contextReferences: legacyReferences())
             } else if ["T12", "T23"].contains(scenario) {
                 try makeHardware()
             } else if scenario == "T14" {
                 styleState = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
+                styleState?.contextReference = LegacyResources()
                 _ = try styleState!.receive(h10EncoderMessage(16, value: 0))
             } else if scenario != "T26" {
-                session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+                session = try makeLegacySession()
                 try wire.device.receive(session!.loadConfiguration(config, resetValues: true))
                 _ = try session!.connect(assertLayer: false)
                 try wire.device.receive(session!.receive([h10EncoderMessage(16, value: 0)]).feedback)
@@ -1292,6 +1293,7 @@
             let original = try h10Rows(h10Object(JSONSerialization.jsonObject(with: bytes))["scenarios"])
             var samples = 0, operations = 0, observationCount = 0, feedbackCount = 0, transmissionCount = 0
             var differences: [[String: Any]] = [], rawSamples: [[String: Any]] = [], sceneResults: [[String: Any]] = []
+            var contextLeafRows: [[String: Any]] = []
             for (scene, nativeScene) in zip(catalog.scenarios, original) {
                 let missing = Set(scene.requiresFeatures).subtracting(h10Features)
                 if !missing.isEmpty {
@@ -1347,12 +1349,41 @@
                         samples += 1
                     }
                 }
+                for (side, owners) in [("nativeAction", reference), ("typedAction", candidate)] {
+                    for id in owners.keys.sorted() {
+                        let owner = try #require(owners[id])
+                        var audits: [(String, any CompactContextAuditReader)] = []
+                        if let model = owner.model {
+                            try audits += [("state", #require(model.session.state.contextAudit)), ("bindings", #require(model.session.parameters.contextAudit)), ("connection", #require(model.connectionContextAudit))]
+                        }
+                        if let session = owner.session {
+                            try audits += [("state", #require(session.state.contextAudit)), ("bindings", #require(session.parameters.contextAudit))]
+                        }
+                        if let simulator = owner.simulator {
+                            try audits += [("state", #require(simulator.session.state.contextAudit)), ("bindings", #require(simulator.session.parameters.contextAudit))]
+                        }
+                        if let state = owner.styleState {
+                            try audits.append(("state", #require(state.contextAudit)))
+                        }
+                        for (leaf, audit) in audits {
+                            for row in audit.recordedComparisons {
+                                #expect(row.matches, "J3 true independent leaf mismatch: \(row)")
+                                contextLeafRows.append(["scene": scene.id, "owner": id, "driver": side, "leaf": leaf,
+                                                        "operation": row.operation, "input": row.input, "native": row.native, "candidate": row.candidate, "matches": row.matches])
+                            }
+                        }
+                    }
+                }
                 sceneResults.append(["id": scene.id, "status": scenePass ? "pass" : "fail"])
             }
             let destination = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J2_SHADOW_REPORT_ROOT"] ?? repo.appendingPathComponent("build/j/j2-shadow").path)
             try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: ["rows": contextLeafRows, "comparisons": contextLeafRows.count,
+                                                        "differences": contextLeafRows.filter { !($0["matches"] as? Bool ?? false) }.count], options: [.prettyPrinted, .sortedKeys])
+                .write(to: destination.appendingPathComponent("j3-context-leaf-shadow.json"))
+            print("J3_H10_SHADOW comparisons=\(contextLeafRows.count) differences=\(contextLeafRows.filter { !($0["matches"] as? Bool ?? false) }.count)")
             let actualLock = try h10Object(JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent("configs/control_surface_kit.lock.json"))))
-            let report: [String: Any] = try ["kernel_revision": h10String(actualLock, "revision"), "product_behavior": "original native implementation; contracts/assertions in shadow",
+            let report: [String: Any] = try ["kernel_revision": h10String(actualLock, "revision"), "product_behavior": "Kit binding/context/connection runtime; independent tests-only native leaf references",
                                              "fixture_sha256": h10FixtureSHA, "applicable_operations": operations, "step_instance_samples": samples,
                                              "observations": observationCount, "feedback": feedbackCount, "transmissions": transmissionCount,
                                              "differences": differences, "scenarios": sceneResults, "samples": rawSamples]
