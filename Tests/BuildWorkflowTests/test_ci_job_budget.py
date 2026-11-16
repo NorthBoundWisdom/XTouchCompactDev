@@ -109,9 +109,9 @@ class CIJobBudgetTests(unittest.TestCase):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
         package = (ROOT / ".github/workflows/package.yml").read_text()
         self.assertEqual(ci.count("name: Report whole-run wall time and enforce 300s budget"), 2)
-        self.assertEqual(package.count("name: Report whole-run wall time and enforce 300s budget"), 2)
+        self.assertEqual(package.count("name: Report whole-run wall time and enforce 300s budget"), 3)
         for text in (ci, package):
-            self.assertEqual(text.count("timeout-minutes: 20"), 2)
+            self.assertEqual(text.count("timeout-minutes: 20"), 2 if text == ci else 3)
             self.assertIn("outputs.cache-matched-key", text)
             self.assertIn("steps.compile.outcome == 'success'", text)
             self.assertIn("cold_build:", text)

@@ -26,3 +26,13 @@ for release slices before assembling, signing and validating ZIP and DMG. Keep
 all GUI/headless startup checks on both runner architectures. Offscreen native
 acceptance remains local, outside CI. Record every cold/warm measurement and
 three consecutive CI runs, including unsuccessful measurements, in ALIGN_C.md.
+
+C-15's original serial cold package took 336 seconds and failed the named budget
+step before downstream smoke jobs could run. Both architectures now compile in
+parallel jobs. Each saves its compiler cache immediately, then publishes a slice
+with source/dependency/architecture and payload hashes. Assembly accepts only
+verified release slices of its own clean commit and lock, merges with lipo and
+runs the existing package validation. No Swift compilation runs in assembly.
+Both ZIP and DMG still receive GUI and headless startup validation on ARM and
+Intel smoke runners. Slice jobs and downstream jobs share the original run
+creation timestamp; parallelism does not reset or exempt the budget.

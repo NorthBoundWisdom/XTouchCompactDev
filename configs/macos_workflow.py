@@ -49,16 +49,21 @@ def architectures(architecture: str) -> tuple[str, ...]:
     return (result,)
 
 
-def swift_executable(configuration: str, architecture: str) -> Path:
+def swift_executable(configuration: str, architecture: str, prebuilt_slices: Path | None = None) -> Path:
     binaries = []
     for arch in architectures(architecture):
-        root = SWIFTPM_ROOT if architecture == "native" else SWIFTPM_ROOT / arch
-        build_path(REPO_ROOT, str(root.relative_to(BUILD_ROOT)))
-        options = ["swift", "build", "--build-path", root, "--configuration", configuration]
-        if architecture != "native":
-            options += ["--triple", f"{arch}-apple-macosx14.0"]
-        run([*options, "--product", PRODUCT])
-        binary = Path(run([*options, "--show-bin-path"], capture=True)) / PRODUCT
+        if prebuilt_slices is not None:
+            if configuration != "release" or architecture != "universal":
+                raise ValueError("Prebuilt slices require universal release packaging")
+            binary = verify_release_slice(prebuilt_slices, arch)
+        else:
+            root = SWIFTPM_ROOT if architecture == "native" else SWIFTPM_ROOT / arch
+            build_path(REPO_ROOT, str(root.relative_to(BUILD_ROOT)))
+            options = ["swift", "build", "--build-path", root, "--configuration", configuration]
+            if architecture != "native":
+                options += ["--triple", f"{arch}-apple-macosx14.0"]
+            run([*options, "--product", PRODUCT])
+            binary = Path(run([*options, "--show-bin-path"], capture=True)) / PRODUCT
         if not binary.is_file():
             raise ValueError("Swift build did not produce the app executable")
         binaries.append(binary)
@@ -77,11 +82,80 @@ def swift_executable(configuration: str, architecture: str) -> Path:
     return output
 
 
-def build(configuration: str, architecture: str = "native") -> Path:
+def slice_identity(architecture: str) -> dict:
+    metadata = source_metadata()
+    if metadata.get("XTouchSourceTreeDirty") is not False or not metadata.get("XTouchSourceRevision"):
+        raise ValueError("Release slices require a clean committed source")
+    return {
+        "schema_version": 1,
+        "architecture": architecture,
+        "configuration": "release",
+        "commit": metadata["XTouchSourceRevision"],
+        "surface_plugins_revision": json.loads((REPO_ROOT / "configs/surface_plugins.lock.json").read_text())[
+            "revision"
+        ],
+    }
+
+
+def slice_hashes(directory: Path) -> dict:
+    result = {}
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink():
+            raise ValueError("Release slice must not contain symlinks")
+        if path.is_file() and path != directory / "slice.json":
+            result[str(path.relative_to(directory))] = sha256(path)
+    return result
+
+
+def stage_release_slice(architecture: str) -> Path:
+    if architecture not in {"arm64", "x86_64"}:
+        raise ValueError("Expected one release architecture")
+    options = [
+        "swift",
+        "build",
+        "--build-path",
+        SWIFTPM_ROOT / architecture,
+        "--configuration",
+        "release",
+        "--triple",
+        f"{architecture}-apple-macosx14.0",
+    ]
+    source = Path(run([*options, "--show-bin-path"], capture=True))
+    destination = build_path(REPO_ROOT, f"native-slices/{architecture}")
+    identity = slice_identity(architecture)
+    destination.mkdir(parents=True, exist_ok=False)
+    shutil.copy2(source / PRODUCT, destination / PRODUCT)
+    resources = "XTouchCompactDev_XTouchCompactLocalization.bundle"
+    shutil.copytree(source / resources, destination / resources)
+    (destination / "slice.json").write_text(
+        json.dumps({**identity, "files_sha256": slice_hashes(destination)}, indent=2) + "\n"
+    )
+    verify_release_slice(destination.parent, architecture)
+    return destination
+
+
+def verify_release_slice(directory: Path, architecture: str) -> Path:
+    directory = directory.absolute()
+    directory = build_path(REPO_ROOT, str(directory.relative_to(BUILD_ROOT))) / architecture
+    # Validate every component, including the selected architecture directory.
+    build_path(REPO_ROOT, str(directory.relative_to(BUILD_ROOT)))
+    record = json.loads((directory / "slice.json").read_text())
+    identity = slice_identity(architecture)
+    if {key: record.get(key) for key in identity} != identity or record.get("files_sha256") != slice_hashes(directory):
+        raise ValueError("Release slice source, dependency, architecture or checksum mismatch")
+    executable = directory / PRODUCT
+    if run(["lipo", "-archs", executable], capture=True).split() != [architecture]:
+        raise ValueError("Release slice architecture mismatch")
+    if not (directory / "XTouchCompactDev_XTouchCompactLocalization.bundle").is_dir():
+        raise ValueError("Missing release slice localization")
+    return executable
+
+
+def build(configuration: str, architecture: str = "native", prebuilt_slices: Path | None = None) -> Path:
     settings = load_app_build_settings(REPO_ROOT)
     for relative in ("swiftpm", f"app/{configuration}/{PRODUCT}.app", "icons/AppIcon.iconset", "icons/AppIcon.png"):
         build_path(REPO_ROOT, relative)
-    executable = swift_executable(configuration, architecture)
+    executable = swift_executable(configuration, architecture, prebuilt_slices)
     bundle = BUILD_ROOT / "app" / configuration / f"{PRODUCT}.app"
     if bundle.is_symlink():
         raise ValueError(f"Refusing to overwrite a symlinked app bundle: {bundle}")
@@ -184,8 +258,8 @@ def verify_bundle(bundle: Path) -> None:
     run(["codesign", "--verify", "--deep", "--strict", bundle])
 
 
-def package(architecture: str = "native") -> Path:
-    bundle = build("release", architecture)
+def package(architecture: str = "native", prebuilt_slices: Path | None = None) -> Path:
+    bundle = build("release", architecture, prebuilt_slices)
     settings = load_app_build_settings(REPO_ROOT)
     destination = build_path(REPO_ROOT, "package")
     destination.mkdir(parents=True, exist_ok=True)
@@ -401,8 +475,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("action", choices=("build", "core", "run", "test", "package", "check-package"))
     parser.add_argument("--configuration", choices=("debug", "release"), default="debug")
     parser.add_argument("--architecture", choices=("native", "arm64", "x86_64", "universal"), default="native")
+    parser.add_argument(
+        "--prebuilt-slices",
+        type=Path,
+        help="Verified release slice artifacts from this exact source/dependency revision",
+    )
     parser.add_argument("--archive", type=Path)
     args = parser.parse_args(argv)
+    if args.prebuilt_slices is not None and (args.action != "package" or args.architecture != "universal"):
+        parser.error("--prebuilt-slices requires package --architecture universal")
     if args.action not in {"core", "test"} and sys.platform != "darwin":
         parser.error("App build/run/package requires macOS 14+ and a Swift 6 toolchain.")
     with use_build_environment(REPO_ROOT):
@@ -428,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
                 ]
             )
         elif args.action == "package":
-            package(args.architecture)
+            package(args.architecture, args.prebuilt_slices)
         else:
             bundle = build(args.configuration, args.architecture)
             if args.action == "run":

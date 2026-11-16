@@ -57,6 +57,58 @@ class AppPackageTests(unittest.TestCase):
                 self.assertEqual(triples, {"arm64-apple-macosx14.0", "x86_64-apple-macosx14.0"})
                 self.assertEqual(len([call for call in calls if call[0] == "lipo"]), 1)
 
+    def test_prebuilt_slices_require_exact_source_dependency_hashes_and_architecture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "configs").mkdir()
+            (root / "configs/surface_plugins.lock.json").write_text(json.dumps({"revision": "b" * 40}))
+            folder = root / "build/native-slices/arm64"
+            folder.mkdir(parents=True)
+            (folder / workflow.PRODUCT).write_bytes(b"slice")
+            (folder / "XTouchCompactDev_XTouchCompactLocalization.bundle").mkdir()
+            with (
+                patch.object(workflow, "REPO_ROOT", root),
+                patch.object(workflow, "BUILD_ROOT", root / "build"),
+                patch.object(
+                    workflow,
+                    "source_metadata",
+                    return_value={"XTouchSourceRevision": "a" * 40, "XTouchSourceTreeDirty": False},
+                ),
+                patch.object(workflow, "run", return_value="arm64") as command,
+            ):
+                proof = {**workflow.slice_identity("arm64"), "files_sha256": workflow.slice_hashes(folder)}
+                record = folder / "slice.json"
+                record.write_text(json.dumps(proof))
+                self.assertEqual(workflow.verify_release_slice(folder.parent, "arm64"), folder / workflow.PRODUCT)
+                for field, wrong in (
+                    ("commit", "c" * 40),
+                    ("surface_plugins_revision", "c" * 40),
+                    ("architecture", "x86_64"),
+                    ("configuration", "debug"),
+                ):
+                    record.write_text(json.dumps({**proof, field: wrong}))
+                    with self.assertRaises(ValueError, msg=field):
+                        workflow.verify_release_slice(folder.parent, "arm64")
+                record.write_text(json.dumps(proof))
+                command.return_value = "x86_64"
+                with self.assertRaises(ValueError):
+                    workflow.verify_release_slice(folder.parent, "arm64")
+                command.return_value = "arm64"
+                (folder / workflow.PRODUCT).write_bytes(b"tampered")
+                with self.assertRaises(ValueError):
+                    workflow.verify_release_slice(folder.parent, "arm64")
+                with self.assertRaises(ValueError):
+                    workflow.swift_executable("debug", "universal", folder.parent)
+
+    def test_parallel_package_waits_for_both_slice_artifacts_and_preserves_all_smokes(self):
+        text = (workflow.REPO_ROOT / ".github/workflows/package.yml").read_text()
+        self.assertIn("arch: [arm64, x86_64]", text)
+        self.assertIn("needs: compile-slices", text)
+        self.assertIn("--prebuilt-slices build/native-slices", text)
+        self.assertLess(text.index("Save compiled release slice"), text.index("Stage exact-commit slice"))
+        self.assertIn("os: [macos-26, macos-15-intel]", text)
+        self.assertIn("if len(assets) != 2:", text)
+
     def test_build_records_pin_source_dependency_architectures_and_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
