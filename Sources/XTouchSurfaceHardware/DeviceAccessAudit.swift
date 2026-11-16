@@ -47,7 +47,11 @@ final class DisabledHardwareMIDI: HardwareMIDI {
         return [.link(connected: false)]
     }
 
-    func send(_: HardwareDisplayMessage) throws {
+    var currentOrigin: HardwareEndpointOrigin {
+        .unavailable
+    }
+
+    func send(_: HardwareDisplayMessage, expectedOrigin _: HardwareEndpointOrigin) throws {
         throw DeviceAccessDisabledError.outputForbidden
     }
 

@@ -79,6 +79,7 @@
     "Sources/XTouchCompactCore/OSC.swift": "bridge",
     "Sources/XTouchCompactCore/ParameterConfigurationAdapter.swift": "bridge",
     "Sources/XTouchCompactCore/ParameterEngine.swift": "runtime",
+    "Sources/XTouchCompactCore/ParameterWriteAuthorization.swift": "values",
     "Sources/XTouchCompactCore/Parameters.swift": "values",
     "Sources/XTouchCompactCore/PluginComposition.swift": "bridge",
     "Sources/XTouchCompactCore/PluginConfigurationAdapter.swift": "bridge",

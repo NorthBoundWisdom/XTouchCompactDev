@@ -154,7 +154,16 @@
         let offlineReplayYield: @MainActor () async -> Void
         private let runtimeSleep: @MainActor (Duration) async throws -> Void
         private let evidenceWriterFactory: (URL) throws -> any EvidenceWriting
-        private(set) var session: CompactSession
+        private(set) var session: CompactSession {
+            didSet {
+                guard explicitWriteContext,
+                      session.writeAuthorization.bindingGeneration != oldValue.writeAuthorization.bindingGeneration else { return }
+                var context = session.writeAuthorization
+                context.allowsValues = false; context.allowsDisplay = false; context.allowsMechanisms = false
+                session.configureWriteAuthorization(context)
+            }
+        }
+
         private(set) var mock: MockXTouchCompact
 
         init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: (() -> Date)? = nil, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil,
@@ -181,6 +190,9 @@
             session = CompactSession(map: map, lightProtocol: .manual)
             mock = MockXTouchCompact(map: map, lightProtocol: .manual)
             self.midi.onMessages = { [weak self] messages in self?.receive(messages) }
+            if let routed = self.midi as? any RoutedMIDIService {
+                routed.onRoutedMessages = { [weak self] envelope in self?.receive(envelope) }
+            }
             self.midi.onConnection = { [weak self] snapshot in
                 guard let self else { return }
                 let routeChanged = snapshot.isConnected != connection.isConnected
@@ -203,6 +215,14 @@
                     lockNonMotorTests("Connection changed; test output locked.")
                 }
                 connection = snapshot
+                if routeChanged {
+                    var authorization = session.writeAuthorization
+                    authorization.routeGeneration = snapshot.generation
+                    if explicitWriteContext {
+                        authorization.allowsValues = false; authorization.allowsDisplay = false; authorization.allowsMechanisms = false
+                    }
+                    session.configureWriteAuthorization(authorization)
+                }
                 if snapshot.isConnected, let connectionError = error as? ConsoleError, connectionError == .noConnection {
                     error = nil
                 }
@@ -645,11 +665,74 @@
 
         deinit { runtimeTask?.cancel(); offlineImportTask?.cancel(); offlineReplayTask?.cancel() }
 
+        struct AuthorityRequest {
+            var parameterID: String
+            var proposedValue: Double
+            var writer: ParameterWriter
+            var routeGeneration: UInt64
+            var bindingGeneration: UInt64
+        }
+
+        struct AuthorityDecision {
+            var accepted: Bool
+            var actualValue: Double
+            var routeGeneration: UInt64
+            var bindingGeneration: UInt64
+        }
+
+        /// Only a trusted local integration can install this port; no remote method exposes it.
+        var parameterAuthority: ((AuthorityRequest) throws -> AuthorityDecision)?
+        private var explicitWriteContext = false
+
+        private func validateParameterAuthority(_ id: String, value: Double, writer: ParameterWriter) throws {
+            try session.parameters.validateWrite(id, writer: writer)
+            guard let parameterAuthority else { return }
+            let context = session.writeAuthorization
+            let decision = try parameterAuthority(.init(parameterID: id, proposedValue: value, writer: writer,
+                                                        routeGeneration: context.routeGeneration, bindingGeneration: context.bindingGeneration))
+            guard decision.routeGeneration == context.routeGeneration, decision.bindingGeneration == context.bindingGeneration,
+                  context == session.writeAuthorization else { throw ParameterWriteAuthorizationError.staleContext }
+            guard decision.actualValue.isFinite else { throw ParameterWriteAuthorizationError.invalidAuthorityValue }
+            if !decision.accepted {
+                try receiveAuthority(id, accepted: false, actualValue: decision.actualValue,
+                                     routeGeneration: decision.routeGeneration, bindingGeneration: decision.bindingGeneration)
+                throw ParameterWriteAuthorizationError.authorityDenied("authority_denied: " + id)
+            }
+        }
+
+        /// Trusted local configuration, deliberately independent of Agent permission switches.
+        func configureWriteAuthorization(_ context: ParameterWriteAuthorization) throws {
+            guard context.routeGeneration == connection.generation,
+                  context.bindingGeneration == session.writeAuthorization.bindingGeneration
+            else {
+                throw ParameterWriteAuthorizationError.staleContext
+            }
+            session.configureWriteAuthorization(context)
+            explicitWriteContext = true
+        }
+
+        /// Local authority port only. No remote tool can synthesize this acknowledgement.
+        func receiveAuthority(_ id: String, accepted: Bool, actualValue: Double,
+                              routeGeneration: UInt64, bindingGeneration: UInt64) throws
+        {
+            let messages = try session.receiveAuthority(id, accepted: accepted, actualValue: actualValue,
+                                                        routeGeneration: routeGeneration, bindingGeneration: bindingGeneration)
+            send(messages); updateBank()
+            if !accepted {
+                error = ParameterWriteAuthorizationError.authorityDenied("authority_denied: " + id)
+            }
+        }
+
         func setParameter(_ id: String, value: Double, fromAgent: Bool = false) {
             do {
-                let messages = try session.setParameter(id, value: value, fromAgent: fromAgent,
-                                                        drivesMotors: !fromAgent || mcpMotorWritesAllowed)
-
+                var candidate = session
+                let messages = try candidate.setParameter(id, value: value, fromAgent: fromAgent,
+                                                          drivesMotors: !fromAgent || mcpMotorWritesAllowed)
+                try validateParameterAuthority(id, value: value, writer: fromAgent ? .remote : .interface)
+                for (linked, proposed) in candidate.parameters.values where linked != id && session.parameters.values[linked] != proposed {
+                    try validateParameterAuthority(linked, value: proposed, writer: fromAgent ? .remote : .interface)
+                }
+                session = candidate
                 if fromAgent {
                     sendAgentFeedback(messages)
                 } else {
@@ -922,7 +1005,21 @@
             }
         }
 
-        private func receive(_ messages: [MIDIMessage], fromMock: Bool = false) {
+        private func receive(_ envelope: CompactMIDIInputEnvelope) {
+            guard envelope.origin.generation == connection.generation,
+                  envelope.origin.endpoint?.id == connection.connectedInput?.id
+            else {
+                for message in envelope.messages {
+                    record(message, direction: .input, source: .hardware, ignored: true, endpointOrigin: envelope.origin)
+                }
+                return
+            }
+            receive(envelope.messages, endpointOrigin: envelope.origin)
+        }
+
+        private func receive(_ messages: [MIDIMessage], fromMock: Bool = false, endpointOrigin: CompactEndpointStamp? = nil) {
+            // Legacy injected transports have no provenance claim. Real transports always supply an envelope.
+            let inputOrigin = endpointOrigin ?? (fromMock ? .simulation : .init(endpoint: nil, generation: 0))
             if fromMock, !messages.isEmpty {
                 mockMIDIOutAt = now()
             }
@@ -940,7 +1037,7 @@
                     }; return false
                 } == true
                 record(message, direction: .input, source: fromMock ? .mock : .hardware,
-                       ignored: !safetyOnly && (hardwareMode == fromMock || event == nil))
+                       ignored: !safetyOnly && (hardwareMode == fromMock || event == nil), endpointOrigin: inputOrigin)
                 if !fromMock, isObservingHardware {
                     hardwareObserver.receive(message, map: session.state.map, at: now())
                 }
@@ -951,7 +1048,19 @@
             }
             guard hardwareMode != fromMock else { return }
             do {
-                let update = try session.receive(messages)
+                var candidate = session
+                let update: CompactSessionUpdate
+                do {
+                    update = try candidate.receive(messages)
+                    for (id, value) in candidate.parameters.values where session.parameters.values[id] != value {
+                        try validateParameterAuthority(id, value: value, writer: .hardware)
+                    }
+                } catch {
+                    // Keep physical touch/layer observations even when the business authority refuses.
+                    session.observeInputs(messages)
+                    throw error
+                }
+                session = candidate
                 send(update.feedback)
                 if session.state.layerMismatch {
                     if !notifications.contains(where: { $0.id == "layer" }) {
@@ -969,11 +1078,19 @@
             } catch { self.error = error }
         }
 
-        func apply(_ operation: (inout CompactSession) throws -> [MIDIMessage]) {
+        func apply(writer: ParameterWriter = .interface, _ operation: (inout CompactSession) throws -> [MIDIMessage]) {
             do {
                 var next = session
                 let messages = try operation(&next)
                 try validateHardwareLayerAssertion(messages)
+                for (id, value) in next.parameters.values where session.parameters.values[id] != value {
+                    try validateParameterAuthority(id, value: value, writer: writer)
+                }
+                if explicitWriteContext, next.writeAuthorization.bindingGeneration != session.writeAuthorization.bindingGeneration {
+                    var context = next.writeAuthorization
+                    context.allowsValues = false; context.allowsDisplay = false; context.allowsMechanisms = false
+                    next.configureWriteAuthorization(context)
+                }
                 session = next
                 send(messages)
                 updateBank()
@@ -995,7 +1112,9 @@
         private func send(_ messages: [MIDIMessage], authorizedTest: AuthorizedNonMotorTest? = nil,
                           testAudit: NonMotorTestAudit? = nil) -> MonitorEvent.Delivery
         {
+            let authorization = session.writeAuthorization
             let route = connection // Pin the entire batch, including synchronous service callbacks.
+            let outputOrigin = hardwareMode ? CompactEndpointStamp(endpoint: route.connectedOutput, generation: route.generation) : .simulation
             let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
             var testAllowed = false
             if let authorizedTest {
@@ -1015,7 +1134,7 @@
                         faderMotorDelivery[Int(number)] = .staged
                     }
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
-                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control)
+                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin)
                 }
                 return .suppressed
             }
@@ -1029,6 +1148,21 @@
                 session.discardPendingMotorWrites()
             }
             for message in messages {
+                let isMechanism = switch message {
+                case .programChange: true
+                case .controlChange(_, 1 ... 9, _): true
+                default: false
+                }
+                guard authorization == session.writeAuthorization,
+                      isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay
+                else {
+                    session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin)
+                    if hardwareMode {
+                        hardwareFeedbackNeedsSync = true
+                    }
+                    return .suppressed
+                }
                 if hardwareMode, !hardwareMotorActionCurrent,
                    case .controlChange(_, 1 ... 9, _) = message
                 {
@@ -1039,7 +1173,7 @@
                         faderMotorDelivery[Int(number)] = .refused
                     }
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
-                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin)
                     continue
                 }
                 // A preceding transport call can synchronously deliver a new touch edge.
@@ -1048,18 +1182,18 @@
                     self.error = error
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
-                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control)
+                           nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin)
                     return .suppressed
                 }
                 guard !session.filterFeedbackForDelivery([message]).isEmpty else {
                     withheldMotor = true
-                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed)
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin)
                     continue
                 }
                 guard hardwareMode else {
                     mock.receive(message)
                     mockMIDIInAt = now()
-                    record(message, direction: .output, source: source, delivery: .sent)
+                    record(message, direction: .output, source: source, delivery: .sent, endpointOrigin: outputOrigin)
                     continue
                 }
                 if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
@@ -1083,7 +1217,7 @@
                         faderMotorDelivery = [:]
                     }
                     record(message, direction: .output, source: source, delivery: .sent,
-                           nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control)
+                           nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin)
                 } catch {
                     self.error = error
                     if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number),
@@ -1092,7 +1226,7 @@
                         faderMotorDelivery[Int(number)] = .failed
                     }
                     record(message, direction: .output, source: source, ignored: true, delivery: .failed,
-                           nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control)
+                           nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin)
                     hardwareFeedbackNeedsSync = true
                     session.discardPendingMotorWrites()
                     session.invalidateTransportFeedback()
@@ -1168,7 +1302,14 @@
         }
 
         func applyAgentParameter(_ id: String, value: Double) throws {
-            try sendAgentFeedback(session.setParameter(id, value: value, fromAgent: true, drivesMotors: mcpMotorWritesAllowed))
+            var candidate = session
+            let messages = try candidate.setParameter(id, value: value, fromAgent: true, drivesMotors: mcpMotorWritesAllowed)
+            try validateParameterAuthority(id, value: value, writer: .remote)
+            for (linked, proposed) in candidate.parameters.values where linked != id && session.parameters.values[linked] != proposed {
+                try validateParameterAuthority(linked, value: proposed, writer: .remote)
+            }
+            session = candidate
+            sendAgentFeedback(messages)
         }
 
         func notificationsForOSC(_ key: String) {
@@ -1289,11 +1430,11 @@
         }
 
         func undo() {
-            apply { try $0.undo() }
+            apply(writer: .history) { try $0.undo() }
         }
 
         func redo() {
-            apply { try $0.redo() }
+            apply(writer: .history) { try $0.redo() }
         }
 
         private func editBoundDefinition(_ control: CompactControl, _ change: (inout XTouchCompactCore.ParameterDefinition) -> Void) {
@@ -1475,7 +1616,7 @@
 
         private func record(_ message: MIDIMessage, direction: MonitorEvent.Direction,
                             source: MonitorEvent.Source, ignored: Bool = false, delivery: MonitorEvent.Delivery? = nil,
-                            nonMotorTest: NonMotorTestAudit? = nil, controlOverride: CompactControl? = nil)
+                            nonMotorTest: NonMotorTestAudit? = nil, controlOverride: CompactControl? = nil, endpointOrigin: CompactEndpointStamp? = nil)
         {
             let control: CompactControl?
             if let controlOverride {
@@ -1507,7 +1648,7 @@
                                      control: control, hostLayer: session.state.layer,
                                      deviceLayer: direction == .input ? session.state.map.decode(message)?.layer : nil,
                                      delivery: delivery ?? (direction == .input ? .received : nil),
-                                     ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest))
+                                     ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest, endpointOrigin: endpointOrigin))
         }
 
         private func appendEvent(_ event: MonitorEvent) {

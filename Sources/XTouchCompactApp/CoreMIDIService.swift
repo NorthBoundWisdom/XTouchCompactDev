@@ -4,6 +4,11 @@
     import XTouchCompactCore
     import XTouchCompactLocalization
 
+    struct CompactMIDIInputEnvelope: Equatable, Sendable {
+        var messages: [MIDIMessage]
+        var origin: CompactEndpointStamp
+    }
+
     enum CompactMIDIError: Error, LocalizedError {
         case operation(String, OSStatus)
         case outputUnavailable
@@ -33,16 +38,29 @@
     }
 
     @MainActor
-    final class CoreMIDIService: MIDIService {
+    protocol RoutedMIDIService: MIDIService {
+        var onRoutedMessages: ((CompactMIDIInputEnvelope) -> Void)? { get set }
+    }
+
+    @MainActor
+    final class CoreMIDIService: RoutedMIDIService {
         var onMessages: (([MIDIMessage]) -> Void)?
+        var onRoutedMessages: ((CompactMIDIInputEnvelope) -> Void)?
         var onConnection: ((CompactMIDIConnection) -> Void)?
         private var transport: CompactMIDITransport?
 
         func start() throws {
             guard transport == nil else { return }
             let newTransport = CompactMIDITransport(
-                onMessages: { [weak self] messages in
-                    Task { @MainActor [weak self] in self?.onMessages?(messages) }
+                onMessages: { [weak self] envelope in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        if let onRoutedMessages {
+                            onRoutedMessages(envelope)
+                        } else {
+                            onMessages?(envelope.messages)
+                        }
+                    }
                 },
                 onConnection: { [weak self] snapshot in
                     Task { @MainActor [weak self] in self?.onConnection?(snapshot) }
@@ -68,7 +86,7 @@
     }
 
     private final class CompactMIDITransport: @unchecked Sendable {
-        typealias MessageCallback = @Sendable ([MIDIMessage]) -> Void
+        typealias MessageCallback = @Sendable (CompactMIDIInputEnvelope) -> Void
         typealias StatusCallback = @Sendable (CompactMIDIConnection) -> Void
 
         private let onMessages: MessageCallback
@@ -83,6 +101,7 @@
         private var desiredOutputID: Int32?
         private var active = false
         private var routeGeneration: UInt64 = 0
+        private var connectedInputIdentity: CompactMIDIEndpoint?
 
         init(onMessages: @escaping MessageCallback, onConnection: @escaping StatusCallback) {
             self.onMessages = onMessages
@@ -103,11 +122,14 @@
                 do {
                     try check(MIDIInputPortCreateWithProtocol(client, "Compact Input" as CFString, ._1_0,
                                                               &inputPort)
-                    { [weak self] list, _ in
+                    { [weak self] list, tag in
                         guard let self else { return }
                         let messages = Self.decode(list)
-                        if !messages.isEmpty {
-                            onMessages(messages)
+                        let capturedGeneration = UInt64(UInt(bitPattern: tag))
+                        guard !messages.isEmpty else { return }
+                        queue.async { [weak self] in
+                            guard let self, capturedGeneration == routeGeneration, connectedInput != 0 else { return }
+                            onMessages(.init(messages: messages, origin: .init(endpoint: connectedInputIdentity, generation: capturedGeneration)))
                         }
                         }, name: "Create MIDI input")
                     try check(MIDIOutputPortCreate(client, "Compact Output" as CFString, &outputPort),
@@ -180,7 +202,7 @@
             if connectedInput != 0 {
                 MIDIPortDisconnectSource(inputPort, connectedInput)
             }
-            connectedInput = 0; connectedOutput = 0
+            connectedInput = 0; connectedOutput = 0; connectedInputIdentity = nil
             let sources = Self.endpoints(count: MIDIGetNumberOfSources, at: MIDIGetSource)
             let destinations = Self.endpoints(count: MIDIGetNumberOfDestinations, at: MIDIGetDestination)
             func choose(_ endpoints: [(CompactMIDIEndpoint, MIDIEndpointRef)], id: Int32?)
@@ -196,9 +218,10 @@
             let output = choose(destinations, id: desiredOutputID)
             var error: LocalizedMessage?
             if let source {
-                let result = MIDIPortConnectSource(inputPort, source.1, nil)
+                let result = MIDIPortConnectSource(inputPort, source.1, UnsafeMutableRawPointer(bitPattern: UInt(routeGeneration)))
                 if result == noErr {
                     connectedInput = source.1
+                    connectedInputIdentity = source.0
                 } else {
                     error = LocalizedMessage("MIDI input connection failed: %@", String(result))
                 }

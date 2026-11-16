@@ -44,6 +44,29 @@ public struct CompactSession: Sendable {
         displayOnlyRingIntents.contains(index)
     }
 
+    public var writeAuthorization: ParameterWriteAuthorization {
+        parameters.writeAuthorization
+    }
+
+    public mutating func configureWriteAuthorization(_ context: ParameterWriteAuthorization) {
+        parameters.configureWriteAuthorization(context)
+        if !context.allowsMechanisms {
+            state.discardPendingMotorWrites()
+        }
+        if !context.allowsDisplay {
+            state.invalidateNonMotorFeedback()
+        }
+    }
+
+    public mutating func receiveAuthority(_ id: String, accepted: Bool, actualValue: Double,
+                                          routeGeneration: UInt64, bindingGeneration: UInt64) throws -> [MIDIMessage]
+    {
+        try parameters.receiveAuthority(id, accepted: accepted, actualValue: actualValue,
+                                        routeGeneration: routeGeneration, bindingGeneration: bindingGeneration)
+        state.discardPendingMotorWrites()
+        return try synchronizeParameters(includeMotors: false, ids: [id])
+    }
+
     public static let undoLimit = 50
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol, indicatorBindings: [Int: IndicatorID] = PluginConfigurationAdapter.agentIndicators) {
@@ -131,13 +154,13 @@ public struct CompactSession: Sendable {
     /// queues a motor for this parameter (used when a remote caller lacks motor permission).
     /// Linked members follow the leader under the same motor permission and touch rules.
     public mutating func setParameter(_ id: String, value: Double, fromAgent: Bool = false, drivesMotors: Bool = true,
-                                      undoKey: String? = nil) throws -> [MIDIMessage]
+                                      undoKey: String? = nil, writer: ParameterWriter? = nil) throws -> [MIDIMessage]
     {
         let snapshot = parameters.values
         let before = parameters.normalizedPosition(id)
-        try parameters.set(id, value: value, fromAgent: fromAgent)
+        try parameters.set(id, value: value, fromAgent: fromAgent, writer: writer)
         let delta = parameters.normalizedPosition(id).flatMap { after in before.map { after - $0 } } ?? 0
-        let ids = Set([id]).union(parameters.propagateLink(from: id, delta: delta, fromAgent: fromAgent))
+        let ids = Set([id]).union(parameters.propagateLink(from: id, delta: delta, fromAgent: fromAgent, writer: writer))
         recordUndo(snapshot, key: undoKey ?? (fromAgent ? "agent:\(id)" : nil))
         if !drivesMotors {
             for member in ids {
@@ -146,7 +169,7 @@ public struct CompactSession: Sendable {
                 }
             }
         }
-        return try synchronizeParameters(includeMotors: drivesMotors, ids: ids)
+        return try synchronizeParameters(includeMotors: drivesMotors && writeAuthorization.allowsMechanisms, ids: ids)
     }
 
     // MARK: Undo / redo and scenes
@@ -180,23 +203,39 @@ public struct CompactSession: Sendable {
     /// Restore the previous value map. Like any software write, faders on the active layer
     /// follow (touched faders defer until release); nothing else is implied.
     public mutating func undo() throws -> [MIDIMessage] {
-        guard let previous = undoStack.popLast() else { return [] }
-        redoStack.append(parameters.values)
-        undoCoalescingKey = nil
-        return try replaceValues(previous)
+        guard let previous = undoStack.last else { return [] }
+        var candidate = self
+        try candidate.validateHistory(previous)
+        candidate.undoStack.removeLast()
+        candidate.redoStack.append(parameters.values)
+        candidate.undoCoalescingKey = nil
+        let feedback = try candidate.replaceValues(previous)
+        self = candidate
+        return feedback
     }
 
     public mutating func redo() throws -> [MIDIMessage] {
-        guard let next = redoStack.popLast() else { return [] }
-        undoStack.append(parameters.values)
-        undoCoalescingKey = nil
-        return try replaceValues(next)
+        guard let next = redoStack.last else { return [] }
+        var candidate = self
+        try candidate.validateHistory(next)
+        candidate.redoStack.removeLast()
+        candidate.undoStack.append(parameters.values)
+        candidate.undoCoalescingKey = nil
+        let feedback = try candidate.replaceValues(next)
+        self = candidate
+        return feedback
+    }
+
+    private func validateHistory(_ values: [String: Double]) throws {
+        for (id, value) in values where parameters.values[id] != value && parameters.definition(id) != nil {
+            try parameters.validateWrite(id, writer: .history)
+        }
     }
 
     private mutating func replaceValues(_ values: [String: Double]) throws -> [MIDIMessage] {
         let before = parameters.values
-        for (id, value) in values where parameters.definition(id) != nil {
-            try parameters.set(id, value: value)
+        for (id, value) in values where parameters.definition(id) != nil && parameters.values[id] != value {
+            try parameters.set(id, value: value, writer: .history)
         }
         let changed = Set(parameters.values.keys.filter { before[$0] != parameters.values[$0] })
         return try synchronizeParameters(ids: changed)
@@ -229,9 +268,11 @@ public struct CompactSession: Sendable {
             throw ParameterError.invalidScene(id)
         }
         let snapshot = parameters.values
-        for (key, value) in scene.values where parameters.definition(key) != nil {
-            try parameters.set(key, value: value)
+        var candidate = parameters
+        for (key, value) in scene.values where candidate.definition(key) != nil && candidate.values[key] != value {
+            try candidate.set(key, value: value)
         }
+        parameters = candidate
         recordUndo(snapshot, key: nil)
         undoCoalescingKey = nil
         let changed = Set(parameters.values.keys.filter { snapshot[$0] != parameters.values[$0] })
@@ -249,6 +290,7 @@ public struct CompactSession: Sendable {
         for (id, value) in parameters.values where next.definition(id) != nil {
             try next.set(id, value: value)
         }
+        next.configureWriteAuthorization(parameters.writeAuthorization)
         parameters = next
     }
 
@@ -289,6 +331,9 @@ public struct CompactSession: Sendable {
                 try next.set(id, value: value)
             }
         }
+        var authorization = parameters.writeAuthorization
+        authorization.bindingGeneration &+= 1
+        next.configureWriteAuthorization(authorization)
         parameters = next
         if resetValues {
             banks = [.a: .init(), .b: .init()]
@@ -319,7 +364,7 @@ public struct CompactSession: Sendable {
             switch assignment.control {
             case let .fader(index):
                 banks[assignment.layer, default: .init()].faders[index - 1] = raw
-                if includeMotors, assignment.layer == state.layer, index != excludingFader {
+                if includeMotors, writeAuthorization.allowsMechanisms, assignment.layer == state.layer, index != excludingFader {
                     messages += try state.setFader(index, value: raw)
                 }
             case let .encoder(index):
@@ -351,14 +396,14 @@ public struct CompactSession: Sendable {
         return target == state.layer ? try state.setFader(index, value: value) : []
     }
 
-    public mutating func setEncoder(_ index: Int, value: UInt8, layer: CompactLayer? = nil) throws -> [MIDIMessage] {
+    public mutating func setEncoder(_ index: Int, value: UInt8, layer: CompactLayer? = nil, writer: ParameterWriter = .interface) throws -> [MIDIMessage] {
         guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
         let target = layer ?? state.layer
         if case let .parameter(id) = parameters.assignment(.encoder(index), layer: target),
            let definition = parameters.definition(id)
         {
             return try setParameter(id, value: definition.minimum + Double(value) / 127 * (definition.maximum - definition.minimum),
-                                    undoKey: "encoder:\(target.rawValue):\(index)")
+                                    undoKey: "encoder:\(target.rawValue):\(index)", writer: writer)
         }
         banks[target, default: .init()].encoders[index - 1] = value
         guard target == state.layer else { return [] }
@@ -367,7 +412,7 @@ public struct CompactSession: Sendable {
 
     /// Bounded synchronous program. A refused/invalid step is recorded and later steps
     /// continue, as in BCR; all parameter effects reuse the normal guarded write path.
-    public mutating func runMacro(_ id: String, fromAgent: Bool = false, drivesMotors: Bool = true) throws -> [MIDIMessage] {
+    public mutating func runMacro(_ id: String, fromAgent: Bool = false, drivesMotors: Bool = true, writer: ParameterWriter? = nil) throws -> [MIDIMessage] {
         guard let macro = parameters.configuration.macros?.first(where: { $0.id == id }) else { throw ParameterError.invalidAssignment }
         var feedback: [MIDIMessage] = []
         var results: [MacroExecution.OperationResult] = []
@@ -389,7 +434,7 @@ public struct CompactSession: Sendable {
                 case let .resetGroup(group): writes = parameters.configuration.parameters.filter { $0.group == group }.map { ($0.id, $0.defaultValue) }
                 }
                 for (id, value) in writes {
-                    feedback += try setParameter(id, value: value, fromAgent: fromAgent, drivesMotors: drivesMotors, undoKey: key)
+                    feedback += try setParameter(id, value: value, fromAgent: fromAgent, drivesMotors: drivesMotors, undoKey: key, writer: writer)
                     affected.insert(id)
                     for link in parameters.configuration.links ?? [] where link.leader == id {
                         affected.formUnion(link.members)
@@ -411,7 +456,7 @@ public struct CompactSession: Sendable {
             return try CompactSessionUpdate(feedback: runMacro(id))
         }
         let before = parameters.values
-        let slot = try parameters.receive(CompactInput(control: .button(index), layer: state.layer, value: 127, isPressed: true))
+        let slot = try parameters.receive(CompactInput(control: .button(index), layer: state.layer, value: 127, isPressed: true), writer: .interface)
         var update = try CompactSessionUpdate(feedback: synchronizeParameters(ids: Set(parameters.values.keys.filter { before[$0] != parameters.values[$0] })))
         if let slot {
             update.actionIntents = [slot]
@@ -435,7 +480,7 @@ public struct CompactSession: Sendable {
             }
             if case let .runMacro(id) = parameters.assignment(event.control, layer: event.layer) {
                 if event.isPressed == true, activeMacroControls.insert(event.control).inserted {
-                    result.feedback += try runMacro(id)
+                    result.feedback += try runMacro(id, writer: .hardware)
                 }
                 if case let .faderTouch(index) = event.control, event.isPressed == false {
                     endUndoGroup()
@@ -454,7 +499,7 @@ public struct CompactSession: Sendable {
                 {
                     let snapshot = parameters.values
                     let before = parameters.normalizedPosition(id)
-                    try parameters.set(id, value: definition.minimum + Double(event.value) / 127 * (definition.maximum - definition.minimum))
+                    try parameters.set(id, value: definition.minimum + Double(event.value) / 127 * (definition.maximum - definition.minimum), writer: .hardware)
                     // Without touch evidence this may be motor-progress feedback. Never let it
                     // drive another motor and bounce back through a shared binding, and never
                     // propagate it to linked members: only a touched (hand-held) leader leads.
@@ -462,7 +507,7 @@ public struct CompactSession: Sendable {
                     var ids: Set<String> = [id]
                     if touched {
                         let delta = parameters.normalizedPosition(id).flatMap { after in before.map { after - $0 } } ?? 0
-                        ids.formUnion(parameters.propagateLink(from: id, delta: delta, fromAgent: false))
+                        ids.formUnion(parameters.propagateLink(from: id, delta: delta, fromAgent: false, writer: .hardware))
                         recordUndo(snapshot, key: "fader:\(index)")
                     }
                     result.feedback += try synchronizeParameters(includeMotors: touched, ids: ids, excludingFader: index)
@@ -482,7 +527,7 @@ public struct CompactSession: Sendable {
                     result.feedback += try state.reconcileReleasedFader(index)
                 }
             case let .encoder(index):
-                result.feedback += try setEncoder(index, value: event.value, layer: event.layer)
+                result.feedback += try setEncoder(index, value: event.value, layer: event.layer, writer: .hardware)
             case .button:
                 let previous = parameters.values
                 if let slot = try parameters.receive(event) {

@@ -20,6 +20,7 @@
         var text: LocalizedMessage
         var connection: CompactMIDIConnection?
         var nonMotorTest: NonMotorTestAudit?
+        var endpointOrigin: CompactEndpointStamp?
     }
 
     struct ConsoleNotification: Identifiable, Equatable, Sendable {

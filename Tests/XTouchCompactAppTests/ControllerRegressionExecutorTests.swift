@@ -111,10 +111,10 @@
             device.receive(message)
         }
 
-        func connection(_ connected: Bool, generation: UInt64, name: String = "Test Compact", id: Int32 = 1) {
+        func connection(_ connected: Bool, generation: UInt64, name: String = "Test Compact", id: Int32 = 1, provenance: CompactEndpointProvenance = .unknown) {
             self.connected = connected; self.generation = generation
             actualInputID = connected ? id : nil; actualOutputID = connected ? id : nil
-            let endpoint = CompactMIDIEndpoint(id: id, name: name)
+            let endpoint = CompactMIDIEndpoint(id: id, name: name, provenance: provenance)
             onConnection?(CompactMIDIConnection(generation: generation, connectedInput: connected ? endpoint : nil, connectedOutput: connected ? endpoint : nil))
         }
     }
@@ -156,8 +156,8 @@
         var manualAuthority: Bool?
         var resultCertain: Bool?
         var proxyRequests: Int?
-        var authorityMissing = false
         var provenanceChecks: [Bool] = []
+        var endpointQualifications: [CompactEndpointQualification] = []
         var budget = SurfaceWriteBudgets(aggregateLimit: 1)
         var monotonicResults: [Bool] = []
 
@@ -409,7 +409,7 @@
             result["automatic_echo_replay_count"] = raw.last?["echo_replay_count"] ?? 0
             if !provenanceChecks.isEmpty {
                 result["provenance_preserved"] = provenanceChecks.allSatisfy(\.self)
-                result["qualification_upgraded"] = h10Null
+                result["qualification_upgraded"] = endpointQualifications.contains { $0 != .unverified }
             }
             if let preview = raw.last(where: { $0["kind"] as? String == "actual-page-display-plan-and-real-Mock-projection" }) {
                 result["display_plan_valid"] = preview["valid"]
@@ -652,13 +652,14 @@
                 raw.append(["kind": "actual-GUI-MCP-gate-observations", "origin": origin, "listen_only": model.listenOnly,
                             "actual_transport_calls": effects.count - start, "all_planned_output_suppressed": suppressed,
                             "model_output_events": outputEvents.map { ["source": $0.source.rawValue, "delivery": h10Any($0.delivery?.rawValue), "message": h10Any($0.message?.description), "ignored": $0.ignored] }])
-                if authorityMissing {
-                    return "No external authority-to-UI entry point: actual GUI write/value/error retained"
-                }
             case "configure_permissions":
                 guard let model else { throw H10Error.missingOwner(operation) }
                 model.mcpMotorWritesAllowed = arguments["motor"] as? Bool ?? false
                 model.setListenOnly(!(arguments["display"] as? Bool ?? false))
+                var authorization = model.session.writeAuthorization
+                authorization.allowsDisplay = arguments["display"] as? Bool ?? false
+                authorization.allowsMechanisms = arguments["motor"] as? Bool ?? false
+                try model.configureWriteAuthorization(authorization)
                 raw.append(["kind": "existing-permission-entrypoints", "listen_only": model.listenOnly, "agent_motor_permission": model.mcpMotorWritesAllowed,
                             "note": "Agent motor permission is not a new universal GUI permission"])
             case "select_hardware_context":
@@ -705,9 +706,6 @@
                 model.undo(); collectWire()
                 raw.append(["kind": "actual-local-undo-under-Agent-specific-permission", "agent_motor_permission": model.mcpMotorWritesAllowed,
                             "actual_new_transport_calls": effects.count - before, "scope": "Existing Agent-specific permission does not express a universal GUI motor revocation"])
-                if !model.mcpMotorWritesAllowed {
-                    return "Neutral global GUI/undo motor-revocation target has no common product gate: actual mcpMotorWritesAllowed is Agent-specific; explicit local undo follows existing local authorization. Not a published permission-contract violation or H safety regression"
-                }
             case "simulation_feedback":
                 guard simulator != nil else { throw H10Error.missingOwner(operation) }
                 let value = try UInt8(h10Number(arguments, "value"))
@@ -767,24 +765,28 @@
                 raw.append(["kind": "actual-budget-monotonic-input", "monotonic": time, "wall": wall, "accepted": accepted])
             case "authority_reply":
                 guard let model else { throw H10Error.missingOwner(operation) }
-                authorityMissing = true
-                raw.append(["kind": "missing-product-authority-entrypoint", "requested_reply": arguments, "actual_gui_value": model.panelSnapshot.parameterValues["p1"] ?? 0,
-                            "actual_error": model.error.map { String(describing: $0) } ?? "none"])
-                return "Product has no external-authority reply-to-GUI integration; no fixture reducer added"
+                let actualValue = try h10Number(arguments, "actual_value")
+                let accepted = arguments["accepted"] as? Bool ?? false
+                model.parameterAuthority = { request in
+                    .init(accepted: accepted, actualValue: actualValue,
+                          routeGeneration: request.routeGeneration, bindingGeneration: request.bindingGeneration)
+                }
+                raw.append(["kind": "trusted-local-authority-port-configured", "reply": arguments,
+                            "actual_gui_value": model.panelSnapshot.parameterValues["p1"] ?? 0])
             case "receive_unconfigured":
                 try receive(h10String(arguments, "element_id"), value: arguments["value"]!)
             case "attach_endpoint":
                 guard let model else { throw H10Error.missingOwner(operation) }
                 let provenance = try h10String(arguments, "provenance"), name = try h10String(arguments, "name")
                 routeGeneration += 1
-                wire.connection(true, generation: routeGeneration, name: name, id: provenance == "remote_virtual" ? 1001 : 1002)
+                wire.connection(true, generation: routeGeneration, name: name, id: provenance == "remote_virtual" ? 1001 : 1002, provenance: provenance == "remote_virtual" ? .remoteVirtual : .physicalUSB)
                 let recorded = model.connection.connectedInput
-                let retained = provenance == "remote_virtual" ? recorded?.remoteBridgeHost != nil : recorded?.remoteBridgeHost == nil
+                let retained = recorded?.provenance == (provenance == "remote_virtual" ? .remoteVirtual : .physicalUSB)
                 provenanceChecks.append(retained)
+                try endpointQualifications.append(#require(recorded?.qualification))
                 raw.append(["kind": "actual-endpoint-model", "supplied_provenance": provenance, "actual_name": recorded?.name ?? "none", "actual_id": recorded?.id ?? 0,
-                            "actual_remote_bridge_host": h10Any(recorded?.remoteBridgeHost), "qualification_field": "absent in current endpoint model"])
+                            "actual_remote_bridge_host": h10Any(recorded?.remoteBridgeHost), "explicit_provenance": recorded?.provenance.rawValue ?? "none", "qualification": "unchanged-test-only-fake-device"])
                 collectWire()
-                return "Endpoint model stores ID/name and name-derived bridge host, with no explicit supplied provenance/qualification field"
             case "inspect": break
             default: throw H10Error.missingOwner(operation)
             }

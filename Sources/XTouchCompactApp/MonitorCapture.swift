@@ -52,6 +52,11 @@
             row["rawMIDI1Bytes"] = event.message?.midi1Bytes
             row["message"] = event.message?.description
             row["nonMotorTest"] = event.nonMotorTest?.json
+            if let origin = event.endpointOrigin {
+                row["endpointOrigin"] = ["endpoint": CaptureSessionMetadata.endpointJSON(origin.endpoint),
+                                         "connectionGeneration": origin.generation,
+                                         "transportOrigin": origin.endpoint?.provenance.rawValue ?? "unknown"]
+            }
             if let connection = event.connection {
                 row["connection"] = [
                     "generation": connection.generation,

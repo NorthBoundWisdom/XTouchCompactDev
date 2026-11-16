@@ -231,6 +231,7 @@ private func removeOwnedReadyFile() {
         })
         // After an invalidating error, ask the transport to re-establish the link (a new epoch)
         // instead of staying disconnected until the endpoint happens to change.
+        var activeEndpointOrigin = HardwareEndpointOrigin.unavailable
         var recoverAfter: Double?
         func drainMIDI() {
             if let deadline = recoverAfter, ProcessInfo.processInfo.systemUptime >= deadline {
@@ -241,9 +242,15 @@ private func removeOwnedReadyFile() {
                 for event in try midi.drain() {
                     let time = ProcessInfo.processInfo.systemUptime
                     switch event {
-                    case let .link(connected): try surface.transition(epoch: UUID().uuidString, connected: connected, at: time)
-                    case let .message(message): _ = try surface.receive(message, at: time)
-                    case .undecoded: FileHandle.standardError.write(Data("Undecoded device packet\n".utf8))
+                    case let .link(connected, origin):
+                        activeEndpointOrigin = origin
+                        try surface.transition(epoch: UUID().uuidString, connected: connected, at: time)
+                    case let .message(message, origin):
+                        guard origin == activeEndpointOrigin else { throw ControlContractError("invalid_transition") }
+                        _ = try surface.receive(message, at: time)
+                    case let .undecoded(origin):
+                        guard origin == activeEndpointOrigin else { throw ControlContractError("invalid_transition") }
+                        FileHandle.standardError.write(Data("Undecoded device packet\n".utf8))
                     }
                 }
             } catch {
@@ -337,8 +344,9 @@ private func removeOwnedReadyFile() {
                             guard budget.consume(.feedback, at: time, writerID: client.writerID) else { throw ControlContractError("rate_limited") }
                             // Spent before any send: a partly delivered or failing request is still
                             // rate limited. The event commits only after every message was accepted.
+                            let sendOrigin = activeEndpointOrigin
                             for message in plan {
-                                try midi.send(message)
+                                try midi.send(message, expectedOrigin: sendOrigin)
                             }
                             surface = candidate
                             value = try .encoded(event)

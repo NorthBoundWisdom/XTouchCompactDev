@@ -4,12 +4,37 @@ import SurfacePluginContracts
 public struct ParameterEngine: Sendable {
     public private(set) var configuration: SurfaceConfiguration
     public private(set) var values: [String: Double]
+    public private(set) var writeAuthorization = ParameterWriteAuthorization()
     private let actionBindings: [Int: ActionReference]
     init(validatedConfiguration: ValidatedParameterConfiguration, actionBindings: [Int: ActionReference]) throws {
         let configuration = validatedConfiguration.value
         self.actionBindings = actionBindings
         self.configuration = configuration
         values = try Dictionary(uniqueKeysWithValues: configuration.parameters.map { try ($0.id, $0.normalized($0.defaultValue)) })
+    }
+
+    public mutating func configureWriteAuthorization(_ context: ParameterWriteAuthorization) {
+        writeAuthorization = context
+    }
+
+    public func validateWrite(_ id: String, writer: ParameterWriter) throws {
+        try writeAuthorization.validate(parameterID: id, writer: writer,
+                                        routeGeneration: writeAuthorization.routeGeneration, bindingGeneration: writeAuthorization.bindingGeneration)
+    }
+
+    /// A trusted authority correction changes the existing owner, never a physical observation.
+    mutating func receiveAuthority(_ id: String, accepted _: Bool, actualValue: Double,
+                                   routeGeneration: UInt64, bindingGeneration: UInt64) throws
+    {
+        guard routeGeneration == writeAuthorization.routeGeneration, bindingGeneration == writeAuthorization.bindingGeneration else {
+            throw ParameterWriteAuthorizationError.staleContext
+        }
+        guard actualValue.isFinite else { throw ParameterWriteAuthorizationError.invalidAuthorityValue }
+        guard let definition = definition(id) else { throw ParameterError.unknownParameter(id) }
+        let corrected = try definition.normalized(actualValue)
+        guard corrected == actualValue else { throw ParameterWriteAuthorizationError.invalidAuthorityValue }
+        values[id] = corrected
+        // Acceptance is interpreted by the trusted host; no second authority or cached veto lives here.
     }
 
     public func definition(_ id: String) -> ParameterDefinition? {
@@ -26,7 +51,7 @@ public struct ParameterEngine: Sendable {
     /// Apply a leader's normalized change to its link members. Returns the member IDs whose
     /// value changed. Members are clamped and snapped by their own definitions; Agent writes
     /// that the member forbids are skipped rather than failing the leader's write.
-    mutating func propagateLink(from leader: String, delta: Double, fromAgent: Bool) -> Set<String> {
+    mutating func propagateLink(from leader: String, delta: Double, fromAgent: Bool, writer: ParameterWriter? = nil) -> Set<String> {
         guard delta != 0, delta.isFinite else { return [] }
         var changed = Set<String>()
         for link in configuration.links ?? [] where link.leader == leader {
@@ -37,7 +62,7 @@ public struct ParameterEngine: Sendable {
                 }
                 let target = definition.minimum + min(max(position + delta, 0), 1) * (definition.maximum - definition.minimum)
                 let before = values[member]
-                if (try? set(member, value: target)) != nil, values[member] != before {
+                if (try? set(member, value: target, fromAgent: fromAgent, writer: writer)) != nil, values[member] != before {
                     changed.insert(member)
                 }
             }
@@ -49,8 +74,9 @@ public struct ParameterEngine: Sendable {
         configuration.assignments.first { $0.control == control && $0.layer == layer }?.action
     }
 
-    @discardableResult public mutating func set(_ id: String, value: Double, fromAgent: Bool = false) throws -> Double {
+    @discardableResult public mutating func set(_ id: String, value: Double, fromAgent: Bool = false, writer: ParameterWriter? = nil) throws -> Double {
         guard let definition = definition(id) else { throw ParameterError.unknownParameter(id) }
+        try validateWrite(id, writer: writer ?? (fromAgent ? .remote : .interface))
         guard !fromAgent || (definition.agentWritable && definition.externallyProtected != true) else { throw ParameterError.agentDenied(id) }
         let normalized = try definition.normalized(value)
         values[id] = normalized
@@ -58,7 +84,7 @@ public struct ParameterEngine: Sendable {
     }
 
     /// Returns a neutral action intent; the host owns plugin lifecycle.
-    public mutating func receive(_ event: CompactInput) throws -> ActionReference? {
+    public mutating func receive(_ event: CompactInput, writer: ParameterWriter = .hardware) throws -> ActionReference? {
         guard let action = assignment(event.control, layer: event.layer) else { return nil }
         switch action {
         case .runMacro:
@@ -71,7 +97,7 @@ public struct ParameterEngine: Sendable {
             }
             let value = event.isPressed == true ? ((values[id] ?? definition.minimum) == definition.minimum ? definition.maximum : definition.minimum)
                 : definition.minimum + Double(event.value) / 127 * (definition.maximum - definition.minimum)
-            try set(id, value: value)
+            try set(id, value: value, writer: writer)
         case let .agent(slot):
             guard event.isPressed == true else { return nil }
             guard let ref = actionBindings[slot] else { throw ParameterError.invalidAssignment }
@@ -79,22 +105,22 @@ public struct ParameterEngine: Sendable {
         case let .resetGroup(group):
             guard event.isPressed == true else { return nil }
             for p in configuration.parameters where p.group == group {
-                try set(p.id, value: p.defaultValue)
+                try set(p.id, value: p.defaultValue, writer: writer)
             }
         case let .step(id, step):
             if event.isPressed == true {
-                try set(id, value: (values[id] ?? 0) + step)
+                try set(id, value: (values[id] ?? 0) + step, writer: writer)
             }
         case let .set(id, value):
             if event.isPressed == true {
-                try set(id, value: value)
+                try set(id, value: value, writer: writer)
             }
         case let .cycle(id, choices):
             if event.isPressed == true {
                 guard let definition = definition(id) else { throw ParameterError.unknownParameter(id) }
                 let normalized = try choices.map { try definition.normalized($0) }
                 let next = normalized.firstIndex(of: values[id] ?? .nan).map { ($0 + 1) % normalized.count } ?? 0
-                try set(id, value: normalized[next])
+                try set(id, value: normalized[next], writer: writer)
             }
         }
         return nil
