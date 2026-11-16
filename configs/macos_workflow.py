@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -328,8 +329,7 @@ def package(architecture: str = "native", prebuilt_slices: Path | None = None) -
     dmg.with_suffix(".dmg.sha256").write_text(f"{checksum.hexdigest()}  {dmg.name}\n")
     write_build_records([archive, dmg], architecture)
     # Verify extracted final assets, never just the pre-archive build directory.
-    check_package(archive)
-    check_package(dmg)
+    check_packages([archive, dmg])
     print(f"Packaged {archive.relative_to(REPO_ROOT)} (local ad-hoc signature; not notarized)")
     return archive
 
@@ -427,6 +427,15 @@ def validate_package_record(
     ):
         raise ValueError("Package differs from expected clean source/dependency revision")
     return record
+
+
+def check_packages(assets: list[Path], **kwargs) -> None:
+    # Separate extraction directories/processes; retain every structural and native
+    # startup assertion while overlapping independent ZIP/DMG I/O and first frames.
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        checks = [executor.submit(check_package, asset, **kwargs) for asset in assets]
+        for check in checks:
+            check.result()
 
 
 def check_package(

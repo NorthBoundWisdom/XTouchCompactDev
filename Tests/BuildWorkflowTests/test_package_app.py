@@ -102,8 +102,9 @@ class AppPackageTests(unittest.TestCase):
 
     def test_parallel_package_waits_for_both_slice_artifacts_and_preserves_all_smokes(self):
         text = (workflow.REPO_ROOT / ".github/workflows/package.yml").read_text()
-        self.assertIn("arch: [arm64, x86_64]", text)
-        self.assertIn("needs: package-macos", text)
+        self.assertIn("SLICE_ARCH: arm64", text)
+        self.assertIn("SLICE_ARCH: x86_64", text)
+        self.assertIn("needs: compile-intel", text)
         self.assertIn("--prebuilt-slices build/native-slices", text)
         self.assertLess(text.index("Save compiled release slice"), text.index("Stage exact-commit slice"))
         self.assertIn("os: [macos-26, macos-15-intel]", text)
@@ -118,6 +119,23 @@ class AppPackageTests(unittest.TestCase):
                 binary.write_bytes(b"MachO-prefix" + marker.encode() + b"suffix")
                 with self.assertRaisesRegex(ValueError, "Debug acceptance hooks"):
                     workflow.verify_release_test_hooks(binary)
+
+    def test_independent_asset_checks_overlap_and_errors_still_fail_the_package(self):
+        from threading import Barrier
+
+        barrier = Barrier(2)
+        checked = []
+
+        def check(asset, **kwargs):
+            checked.append(asset)
+            barrier.wait(timeout=2)
+            if asset.suffix == ".dmg":
+                raise ValueError("bad final payload")
+
+        with patch.object(workflow, "check_package", side_effect=check):
+            with self.assertRaisesRegex(ValueError, "bad final payload"):
+                workflow.check_packages([Path("app.zip"), Path("app.dmg")])
+        self.assertEqual(set(checked), {Path("app.zip"), Path("app.dmg")})
 
     def test_build_records_pin_source_dependency_architectures_and_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -202,7 +220,7 @@ class AppPackageTests(unittest.TestCase):
             "package --architecture universal",
             "macos-26",
             "macos-15-intel",
-            "needs: package-macos",
+            "needs: compile-intel",
             "GITHUB_SHA",
             "expected_plugins_revision",
             "require_clean=True",

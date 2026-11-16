@@ -33,7 +33,8 @@ clean source SHA, locked dependency SHA, architecture and every payload hash;
 Intel also stages the generated icon in that hashed payload. ARM merges the two
 verified artifacts and packages on its already-prepared runner, without another
 compile or dependency acquisition. Both final assets still receive all existing
-GUI/headless checks, followed by the ARM and Intel smoke matrix.
+GUI/headless checks, followed by the ARM and Intel smoke matrix. Independent ZIP and DMG checks
+run concurrently, preserving every GUI/headless assertion and failure outcome.
 
 Artifacts are selected only by exact names scoped to this run and attempt. The
 ARM producer's late wait fails on producer failure or the original run's 300s
@@ -63,4 +64,3 @@ unchanged here; H must apply BCR 9fc56ae's TCPServer.server_bind override and ad
 the DNS-denial test. No in-scope HTTP fixture had that defect. Real slow-reader
 and lease deadlines remain measured against real sockets and process clocks;
 their waits and safety bounds were preserved.
-
