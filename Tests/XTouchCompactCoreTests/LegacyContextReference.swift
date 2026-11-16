@@ -1,5 +1,6 @@
 import Foundation
 import SurfaceBindingContext
+import SurfaceDeviceContracts
 @testable import XTouchCompactCore
 
 /// Original leaf semantics: a5324f7 CompactState and ParameterEngine, retained only in tests.
@@ -16,6 +17,37 @@ struct LegacyContextComparison: Equatable, Sendable, Codable {
 final class CompactContextAudit: @unchecked Sendable {
     private let lock = NSLock()
     private var records: [LegacyContextComparison] = []
+    private var presentations: [Data: String] = [:]
+    private var presentationBytes = 0
+    private var presentationRequests = 0
+    private var presentationFormats = 0
+    private var presentationHits = 0
+
+    /// Exact byte keys describe every original formatting input. Cache reuse never skips
+    /// compare, precondition or a raw record; the builder is the unchanged reflection call.
+    func presentation(key: Data, render: () -> String) -> String {
+        lock.lock(); defer { lock.unlock() }
+        presentationRequests += 1
+        if let prior = presentations[key] {
+            presentationHits += 1
+            return prior
+        }
+        presentationFormats += 1
+        let result = render()
+        let bytes = key.count + result.utf8.count
+        if presentations.count < 1024, bytes <= 1_048_576 - presentationBytes {
+            presentations[key] = result
+            presentationBytes += bytes
+        }
+        return result
+    }
+
+    var presentationMetrics: [String: Int] {
+        lock.lock(); defer { lock.unlock() }
+        return ["requests": presentationRequests, "formats": presentationFormats,
+                "hits": presentationHits, "entries": presentations.count, "bytes": presentationBytes]
+    }
+
     func compare(_ operation: String, input: String, native: String, candidate: String) {
         lock.lock(); defer { lock.unlock() }
         records.append(.init(operation: operation, input: input, native: native, candidate: candidate))
@@ -37,6 +69,90 @@ extension CompactContextAudit: CompactContextAuditReader {
     }
 }
 
+/// Length-delimited raw bytes, never String's canonical-equivalence equality or a digest.
+/// Numeric encodings retain all bits. The scope DTO enumerates every stored field.
+struct LegacyDisplayKey {
+    private(set) var data: Data
+    init(kind: UInt8) {
+        data = Data([1, kind])
+    }
+
+    mutating func byte(_ value: UInt8) {
+        data.append(value)
+    }
+
+    mutating func uint(_ value: UInt64) {
+        var encoded = value.bigEndian
+        withUnsafeBytes(of: &encoded) { data.append(contentsOf: $0) }
+    }
+
+    mutating func integer(_ value: Int) {
+        uint(UInt64(bitPattern: Int64(value)))
+    }
+
+    mutating func string(_ value: String) {
+        uint(UInt64(value.utf8.count)); data.append(contentsOf: value.utf8)
+    }
+
+    mutating func optionalString(_ value: String?) {
+        guard let value else { byte(0); return }
+        byte(1); string(value)
+    }
+
+    mutating func scope(_ value: CompactResourceScope?) {
+        guard let value else { byte(0); return }
+        byte(1)
+        string(value.hostLayer.rawValue)
+        optionalString(value.source?.rawValue)
+        if let endpoint = value.endpoint {
+            byte(1); optionalString(endpoint.endpointID); optionalString(endpoint.deviceID)
+            uint(endpoint.connectionGeneration); string(endpoint.transportOrigin.rawValue)
+        } else {
+            byte(0)
+        }
+        byte(value.transmitChannel); byte(value.receiveChannel)
+        string(value.lightProtocol)
+        uint(value.bindingGeneration); uint(value.authorizationRouteGeneration)
+    }
+}
+
+extension CompactContextAudit {
+    func display(_ values: [Int]) -> String {
+        var key = LegacyDisplayKey(kind: 1)
+        key.uint(UInt64(values.count))
+        for value in values {
+            key.integer(value)
+        }
+        return presentation(key: key.data) { String(reflecting: values) }
+    }
+
+    func display(_ values: [String]) -> String {
+        var key = LegacyDisplayKey(kind: 2)
+        key.uint(UInt64(values.count))
+        for value in values {
+            key.string(value)
+        }
+        return presentation(key: key.data) { String(reflecting: values) }
+    }
+
+    func display(_ value: CompactResourceScope?) -> String {
+        var key = LegacyDisplayKey(kind: 3)
+        key.scope(value)
+        return presentation(key: key.data) { String(reflecting: value) }
+    }
+
+    func display(_ value: CompactResourceMutation) -> String {
+        var key = LegacyDisplayKey(kind: 4)
+        switch value {
+        case let .upsert(id, scope, payload):
+            key.byte(1); key.integer(id); key.scope(scope); key.optionalString(payload)
+        case let .remove(id): key.byte(2); key.integer(id)
+        case .removeAll: key.byte(3)
+        }
+        return presentation(key: key.data) { String(reflecting: value) }
+    }
+}
+
 struct LegacyResources: CompactResourceReference {
     let log = CompactContextAudit()
     private var ids: [String: Set<Int>] = [:]
@@ -48,10 +164,10 @@ struct LegacyResources: CompactResourceReference {
 
     private func check(_ registry: String, _ snapshot: CompactResourceSnapshot, phase: String) {
         // The original owner was a Set/dictionary, never a FIFO. Preserve actual order in input.
-        log.compare(registry + "." + phase + ".ids", input: String(reflecting: snapshot.ids), native: String(reflecting: ids[registry, default: []].sorted()), candidate: String(reflecting: snapshot.ids.sorted()))
-        let old = ids[registry, default: []].sorted().map { "\($0):" + String(reflecting: scopes[registry]?[$0]) }
-        let next = snapshot.ids.sorted().map { "\($0):" + String(reflecting: snapshot.scopes[$0]) }
-        log.compare(registry + "." + phase + ".scopes", input: String(reflecting: snapshot.ids), native: String(reflecting: old), candidate: String(reflecting: next))
+        log.compare(registry + "." + phase + ".ids", input: log.display(snapshot.ids), native: log.display(ids[registry, default: []].sorted()), candidate: log.display(snapshot.ids.sorted()))
+        let old = ids[registry, default: []].sorted().map { "\($0):" + log.display(scopes[registry]?[$0]) }
+        let next = snapshot.ids.sorted().map { "\($0):" + log.display(snapshot.scopes[$0]) }
+        log.compare(registry + "." + phase + ".scopes", input: log.display(snapshot.ids), native: log.display(old), candidate: log.display(next))
     }
 
     mutating func apply(_ registry: String, event: CompactResourceMutation, before: CompactResourceSnapshot, after: CompactResourceSnapshot, removed: [Int]) {
@@ -75,7 +191,7 @@ struct LegacyResources: CompactResourceReference {
             ids[registry] = []; scopes[registry] = [:]; values[registry] = [:]
             operation = registry == "pending" ? "pending.removeAll.revoked" : registry + ".cache.invalidate"
         }
-        log.compare(operation, input: String(reflecting: event), native: String(reflecting: expectedRemoved.sorted()), candidate: String(reflecting: removed.sorted()))
+        log.compare(operation, input: log.display(event), native: log.display(expectedRemoved.sorted()), candidate: log.display(removed.sorted()))
         check(registry, after, phase: "after")
     }
 
@@ -83,7 +199,7 @@ struct LegacyResources: CompactResourceReference {
         let expected: String = if let id {
             registry == "pending" ? String(ids[registry, default: []].contains(id)) : values[registry]?[id] ?? "nil"
         } else {
-            String(reflecting: ids[registry, default: []].sorted())
+            log.display(ids[registry, default: []].sorted())
         }
         log.compare(registry + ".read", input: id.map(String.init) ?? "inventory", native: expected, candidate: actual)
     }

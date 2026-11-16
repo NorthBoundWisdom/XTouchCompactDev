@@ -1294,6 +1294,7 @@
             var samples = 0, operations = 0, observationCount = 0, feedbackCount = 0, transmissionCount = 0
             var differences: [[String: Any]] = [], rawSamples: [[String: Any]] = [], sceneResults: [[String: Any]] = []
             var contextLeafRows: [[String: Any]] = []
+            var presentationMetrics: [[String: Any]] = []
             for (scene, nativeScene) in zip(catalog.scenarios, original) {
                 let missing = Set(scene.requiresFeatures).subtracting(h10Features)
                 if !missing.isEmpty {
@@ -1366,6 +1367,9 @@
                             try audits.append(("state", #require(state.contextAudit)))
                         }
                         for (leaf, audit) in audits {
+                            if let actual = audit as? CompactContextAudit {
+                                presentationMetrics.append(["scene": scene.id, "owner": id, "driver": side, "leaf": leaf, "metrics": actual.presentationMetrics])
+                            }
                             for row in audit.recordedComparisons {
                                 #expect(row.matches, "J3 true independent leaf mismatch: \(row)")
                                 contextLeafRows.append(["scene": scene.id, "owner": id, "driver": side, "leaf": leaf,
@@ -1381,6 +1385,11 @@
             try JSONSerialization.data(withJSONObject: ["rows": contextLeafRows, "comparisons": contextLeafRows.count,
                                                         "differences": contextLeafRows.filter { !($0["matches"] as? Bool ?? false) }.count], options: [.prettyPrinted, .sortedKeys])
                 .write(to: destination.appendingPathComponent("j3-context-leaf-shadow.json"))
+            try JSONSerialization.data(withJSONObject: presentationMetrics, options: [.prettyPrinted, .sortedKeys])
+                .write(to: destination.appendingPathComponent("presentation-format-counts.json"))
+            let requests = presentationMetrics.reduce(0) { $0 + (($1["metrics"] as? [String: Int])?["requests"] ?? 0) }
+            let formats = presentationMetrics.reduce(0) { $0 + (($1["metrics"] as? [String: Int])?["formats"] ?? 0) }
+            print("J3_PRESENTATION_FORMAT requests=\(requests) actual_reflection_calls=\(formats)")
             print("J3_H10_SHADOW comparisons=\(contextLeafRows.count) differences=\(contextLeafRows.filter { !($0["matches"] as? Bool ?? false) }.count)")
             let actualLock = try h10Object(JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent("configs/control_surface_kit.lock.json"))))
             let report: [String: Any] = try ["kernel_revision": h10String(actualLock, "revision"), "product_behavior": "Kit binding/context/connection runtime; independent tests-only native leaf references",

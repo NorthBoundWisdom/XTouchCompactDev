@@ -30,7 +30,15 @@ class ContextShadowGateTests(unittest.TestCase):
             "import Foundation\n"
             + cls.declarations
             + "\nlet audit = CompactContextAudit()\n"
-            + 'let candidate = CommandLine.arguments[1] == "mismatch" ? "other" : "native"\n'
+            + "let mode = CommandLine.arguments[1]\n"
+            + "let candidate: String\n"
+            + 'if mode == "memo-mismatch" {\n'
+            + '    _ = audit.presentation(key: Data([1])) { "native" }\n'
+            + '    candidate = audit.presentation(key: Data([2])) { "other" }\n'
+            + '} else if mode == "memo-equal" {\n'
+            + '    _ = audit.presentation(key: Data([1])) { "native" }\n'
+            + '    candidate = audit.presentation(key: Data([1])) { "native" }\n'
+            + '} else { candidate = mode == "mismatch" ? "other" : "native" }\n'
             + 'audit.compare("actual-negative-probe", input: "same-real-operation", native: "native", candidate: candidate)\n'
             + 'print("COMPARE_RETURNED records=\\(audit.comparisons.count)")\n'
         )
@@ -98,5 +106,16 @@ class ContextShadowGateTests(unittest.TestCase):
     def test_actual_debug_mismatch_cannot_merely_append_a_record(self):
         result = self.run_probe("mismatch")
         self.assertNotEqual(result.returncode, 0, "A real Debug mismatch returned successfully instead of failing")
+        self.assertIn("J3 shadow mismatch", result.stderr)
+        self.assertNotIn("COMPARE_RETURNED", result.stdout)
+
+    def test_cached_equal_input_still_emits_the_actual_comparison(self):
+        result = self.run_probe("memo-equal")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("COMPARE_RETURNED records=1", result.stdout)
+
+    def test_different_cached_input_remains_a_fatal_actual_mismatch(self):
+        result = self.run_probe("memo-mismatch")
+        self.assertNotEqual(result.returncode, 0, "Memoization must never suppress a real mismatch")
         self.assertIn("J3 shadow mismatch", result.stderr)
         self.assertNotIn("COMPARE_RETURNED", result.stdout)
