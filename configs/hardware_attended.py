@@ -172,7 +172,30 @@ def panel_supplement():
                 "result": "unknown; real device ceiling needs attended measurement and cannot be inferred from fakes",
                 "automatic_command": None,
                 "on_fail": "Stop sending; record evidence and require a new attended plan",
-            }
+            },
+            {
+                "id": "H-C-DEMO",
+                "phase": "Synthetic status panel demonstration",
+                "sends_to_device": True,
+                "moves_motors": False,
+                "confirm_before": "User at the device has just confirmed this bounded display-only demonstration",
+                "prerequisites": [
+                    "Existing explicit display permission and an independent display credential via anonymous descriptor",
+                    "User confirms physical layer A and supplies fresh trusted layer-A encoder input evidence locally",
+                    "Keep all other display mappings disjoint; do not alter presets or select layers from software",
+                ],
+                "procedure": [
+                    "Run the packaged compact mapping with synthetic reference actuals for an agreed short interval at 1Hz first",
+                    "After a new confirmation, try 5Hz with the documented explicit feedback budget",
+                    "Observe six joint rings plus speed and steering rings, phase lights on the first button row, button8 freshness",
+                    "Stop normally, then separately interrupt or stop the synthetic source; verify freshness turns off before remaining displays clear",
+                    "Keep the same pin; rejected cleanup is recorded as unproved, never silently rediscovered or retried",
+                ],
+                "expected_visible": "Only eight encoder rings and the first eight button lights vary; no fader moves; at rest freshness is dark",
+                "result": "prepared only; no physical demonstration performed",
+                "automatic_command": None,
+                "on_fail": "Stop; preserve evidence; do not change layer, preset, permissions or hardware qualification",
+            },
         ],
     }
 

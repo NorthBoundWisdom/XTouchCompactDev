@@ -257,7 +257,7 @@
                 // Operator reports: top encoders sometimes light adjacent pairs; side encoders
                 // empty the left half before filling the right. Keep protocol style nil unless
                 // the host has explicitly selected one; do not rewrite any hardware profile.
-                if let value = result.cellValue {
+                if !session.hasDisplayOnlyRingIntent(index), let value = result.cellValue {
                     result.localRingAppearance = PanelLayout.sideEncoders.contains(index)
                         ? .bipolar(value: value) : .interpolated(value: value)
                 }

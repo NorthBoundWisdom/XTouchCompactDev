@@ -35,6 +35,13 @@ public struct CompactSession: Sendable {
     private var undoStack: [[String: Double]] = []
     private var redoStack: [[String: Double]] = []
     private var undoCoalescingKey: String?
+    /// Presentation provenance only; display values remain owned by `state`.
+    private var displayOnlyRingIntents: Set<Int> = []
+
+    public func hasDisplayOnlyRingIntent(_ index: Int) -> Bool {
+        displayOnlyRingIntents.contains(index)
+    }
+
     public static let undoLimit = 50
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol, indicatorBindings: [Int: IndicatorID] = PluginConfigurationAdapter.agentIndicators) {
@@ -316,7 +323,7 @@ public struct CompactSession: Sendable {
             case let .encoder(index):
                 banks[assignment.layer, default: .init()].encoders[index - 1] = raw
                 if assignment.layer == state.layer {
-                    messages += try state.setRing(index, display: .position(Self.ringSegment(for: raw)))
+                    messages += try setOperatorRing(index, value: raw)
                 }
             case let .button(index):
                 banks[assignment.layer, default: .init()].buttons[index - 1] = raw > 0
@@ -353,7 +360,7 @@ public struct CompactSession: Sendable {
         }
         banks[target, default: .init()].encoders[index - 1] = value
         guard target == state.layer else { return [] }
-        return try state.setRing(index, display: .position(Self.ringSegment(for: value)))
+        return try setOperatorRing(index, value: value)
     }
 
     public mutating func activateButton(_ index: Int) throws -> CompactSessionUpdate {
@@ -461,7 +468,15 @@ public struct CompactSession: Sendable {
     }
 
     public mutating func setDisplayRing(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
-        try state.setRing(index, display: .position(Self.ringSegment(for: value)))
+        let messages = try state.setRing(index, display: .position(Self.ringSegment(for: value)))
+        displayOnlyRingIntents.insert(index)
+        return messages
+    }
+
+    private mutating func setOperatorRing(_ index: Int, value: UInt8) throws -> [MIDIMessage] {
+        let messages = try state.setRing(index, display: .position(Self.ringSegment(for: value)))
+        displayOnlyRingIntents.remove(index)
+        return messages
     }
 
     public mutating func setDisplayButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
@@ -472,7 +487,7 @@ public struct CompactSession: Sendable {
         let values = bank(state.layer)
         var result: [MIDIMessage] = []
         for i in 1 ... 16 {
-            result += try state.setRing(i, display: .position(Self.ringSegment(for: values.encoders[i - 1])))
+            result += try setOperatorRing(i, value: values.encoders[i - 1])
         }
         for i in 1 ... 39 {
             let light: ButtonLight = switch parameters.assignment(.button(i), layer: state.layer) {

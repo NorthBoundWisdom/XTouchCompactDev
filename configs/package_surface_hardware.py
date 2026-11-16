@@ -45,6 +45,7 @@ except ImportError:
 SHARED_FILES = {
     "surface-control-diagnostic-capture.schema.json": "docs/surface-control-diagnostic-capture.schema.json",
     "surface-control-diagnostics.md": "docs/surface-control-diagnostics.md",
+    "status-panel-demo.md": "docs/status-panel-demo.md",
     "control-tools.json": "docs/surface-control-hardware-tools.json",
     "control-examples.json": "docs/surface-control-hardware-examples.json",
     "surface-control-hardware-v1.4.json": "fixtures/surface-control-hardware-v1.4.json",
@@ -73,9 +74,10 @@ def sdk_sources():
             "surface_control",
             "surface_conformance",
             "surface_control_diagnostics",
+            "surface_panel_demo",
         )
         for path in (python / package).rglob("*")
-        if path.is_file() and path.suffix in (".py", ".md")
+        if path.is_file() and path.suffix in (".py", ".md", ".json")
     )
 
 

@@ -700,3 +700,36 @@ Consumers must assign disjoint display targets and reject mapping conflicts befo
 visible writer IDs allow them to detect unexpected writers. Shared credentials cannot identify
 a conflict's originating process. This changes no input permissions, hardware safety gate,
 tool name, schema or default discovery profile.
+
+## Synthetic status-panel demonstration (H-3)
+
+The SDK zip now carries opt-in `surface_panel_demo` and its reference actual recording plus
+`compact` mapping. See packaged `status-panel-demo.md` for the dedicated anonymous token-FD
+launcher. The token must be the display credential, never owner or operator. The example
+calls only discover/snapshot/feedback; it cannot input, renew, reset, select a layer or move
+a motor. Its source is explicitly synthetic actual data recorded from the existing shared
+six-joint and Ackermann simulators, without Pipe or a Swift runtime dependency at demo time.
+
+With `PYTHONPATH` pointing to the SDK zip, the launcher invokes:
+
+```sh
+python3 -B -m surface_panel_demo --url http://127.0.0.1:PORT/mcp \
+  --instance-id INSTANCE --token-fd DISPLAY_FD --mapping compact \
+  --source simulation --hz 5 --duration 15
+```
+
+The public FD number is not a credential. Hardware additionally requires explicit source
+acceptance (`--source hardware`), the existing host display permission, connected endpoints,
+and trusted layer-A input evidence supplied locally. The demo never creates that evidence.
+Use the explicit feedback budget described in `display-budget.md`; start conservatively at 1Hz.
+Eight rings follow six joints, speed and steering; button1..7 show phase and button8 is freshness.
+Normal completion/SIGINT/SIGTERM/stale source clear freshness first and restore attempted targets
+to mapped rest. Cleanup retains the original pin; a rejected cleanup exits nonzero and does not
+prove a dark physical display. No real device was exercised this round.
+
+The source checkout's H attended supplement includes H-C-DEMO, with just-in-time user confirmation,
+visible expectations and normal/interrupted/stale checks; it is prepared only. The GUI's virtual
+renderer has been checked through the same CompactSession display intent, PanelSnapshot and
+RingLEDs fields that SurfacePanelView uses. Its separate legacy MCP endpoint does not expose the
+control-contract demo entry point: the CLI currently connects to standalone XTouchSurfaceSimulator
+or XTouchSurfaceHardware, and does not directly drive the GUI window. No GUI network API was added.
