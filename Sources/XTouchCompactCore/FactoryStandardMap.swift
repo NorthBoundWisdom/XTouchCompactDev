@@ -118,4 +118,9 @@ public struct FactoryStandardMap: Sendable {
         return .noteOn(channel: globalReceiveChannel, number: UInt8(button - 1),
                        velocity: style.velocity(for: light))
     }
+
+    /// Existing device position quantization, shared by the session and independent Mock.
+    static func ringSegment(for value: UInt8) -> Int {
+        1 + (Int(value) * 12 + 63) / 127
+    }
 }

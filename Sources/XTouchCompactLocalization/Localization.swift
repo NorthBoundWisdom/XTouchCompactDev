@@ -29,23 +29,6 @@ public enum AppLanguage: String, CaseIterable, Sendable {
     }
 }
 
-/// Resolve at display time so existing logs and errors follow language changes.
-public struct LocalizedMessage: Equatable, Sendable {
-    public let key: String
-    public let arguments: [String]
-    public let localizedArgumentIndices: Set<Int>
-
-    public init(key: String, arguments: [String], localizedArgumentIndices: Set<Int> = []) {
-        self.key = key; self.arguments = arguments; self.localizedArgumentIndices = localizedArgumentIndices
-    }
-
-    public init(_ key: String, _ arguments: String...) {
-        self.key = key
-        self.arguments = arguments
-        localizedArgumentIndices = []
-    }
-}
-
 public struct Localizer: Sendable {
     public let language: AppLanguage
     public init(language: AppLanguage, preferredLanguages: [String] = Locale.preferredLanguages) {

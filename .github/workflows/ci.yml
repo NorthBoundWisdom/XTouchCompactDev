@@ -47,6 +47,7 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-${{ github.sha }}
           restore-keys: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-
       - run: python3 configs/setup_local_project.py
+      - run: python3 configs/check_host_layers.py
       - run: python3 -m unittest discover -s Tests/BuildWorkflowTests -v
       - run: swift test
       - name: Build the standalone software simulator
@@ -90,6 +91,7 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-${{ github.sha }}
           restore-keys: swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-
       - run: python3 configs/setup_local_project.py
+      - run: python3 configs/check_host_layers.py
       - run: python3 -m unittest discover -s Tests/BuildWorkflowTests -v
       # One build path for tests, executables and the app, so nothing is compiled twice.
       - run: python3 configs/macos_workflow.py test

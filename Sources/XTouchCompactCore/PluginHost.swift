@@ -1,5 +1,3 @@
-import AgentPlugin
-import AgentRemoteBinding
 import Foundation
 import RemoteToolContracts
 import SurfacePluginContracts
@@ -24,6 +22,10 @@ public struct CompactPluginHost: Sendable {
 
     public private(set) var parameterValues: [String: [ParameterID: Double]] = [:]
     public init() {}
+    mutating func configureFeedbackInstances(_ instances: [String]) {
+        feedbackInstances = instances
+    }
+
     public var instanceIDs: [String] {
         installed.keys.sorted()
     }
@@ -119,13 +121,6 @@ public struct CompactPluginHost: Sendable {
         try next.registry.replace(binding, at: time, event: event)
         self = next
     }
-
-    public static func agent(at time: PluginTime = 0) throws -> Self {
-        var host = Self()
-        try host.registerBindings([AgentRemoteBinding(instanceID: AgentRemoteBinding.defaultInstanceID, plugin: AgentPlugin(approvalPolicy: .localOrigins, at: time))], at: time)
-        host.feedbackInstances = [AgentRemoteBinding.defaultInstanceID]
-        return host
-    }
 }
 
 private struct LocalBinding: RemoteBinding {
@@ -156,26 +151,5 @@ private struct LocalBinding: RemoteBinding {
 
     mutating func call(_: String, arguments _: JSONValue, context _: RemoteCallContext) throws -> JSONValue {
         throw PluginError(code: .unsupported)
-    }
-}
-
-/// Version-1 .agent bindings are translated only at this configuration adapter.
-public enum PluginConfigurationAdapter {
-    public static func agentAction(_ slot: Int) -> ActionReference {
-        .init(pluginID: AgentPlugin.pluginID, actionID: AgentPlugin.primaryActionID, index: slot)
-    }
-
-    public static var agentActions: [Int: ActionReference] {
-        Dictionary(uniqueKeysWithValues: (1 ... 8).map { ($0, agentAction($0)) })
-    }
-
-    public static var agentIndicators: [Int: IndicatorID] {
-        Dictionary(uniqueKeysWithValues: (1 ... 8).map { ($0, AgentPlugin.indicatorID(for: $0)) })
-    }
-}
-
-public enum IndicatorPresentation {
-    public static func light(_ state: IndicatorState) -> ButtonLight {
-        switch state.semantic { case .active: .on; case .attention: .blink; default: .off }
     }
 }

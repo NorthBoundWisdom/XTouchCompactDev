@@ -1,0 +1,139 @@
+{
+  "files": {
+    "Sources/CompactRemoteMIDI/CommandLogging.swift": "transport",
+    "Sources/CompactRemoteMIDI/EventJournal.swift": "transport",
+    "Sources/CompactRemoteMIDI/RemoteMIDI.swift": "transport",
+    "Sources/CompactSimulatorTransport/LoopbackHTTPServer.swift": "transport",
+    "Sources/CompactSimulatorTransport/SurfaceClientCredentials.swift": "transport",
+    "Sources/XTouchCompactApp/AppConnectionValues.swift": "values",
+    "Sources/XTouchCompactApp/CaptureSessionMetadata.swift": "composition",
+    "Sources/XTouchCompactApp/ConnectionRemoteBridge.swift": "transport",
+    "Sources/XTouchCompactApp/ConsoleModel+OfflineCapture.swift": "composition",
+    "Sources/XTouchCompactApp/ConsoleModel+Panel.swift": "composition",
+    "Sources/XTouchCompactApp/ConsoleModel.swift": "composition",
+    "Sources/XTouchCompactApp/ContentView.swift": "composition",
+    "Sources/XTouchCompactApp/ControlInspectorView.swift": "composition",
+    "Sources/XTouchCompactApp/CoreMIDIService.swift": "transport",
+    "Sources/XTouchCompactApp/Diagnostics.swift": "composition",
+    "Sources/XTouchCompactApp/EvidenceFile.swift": "composition",
+    "Sources/XTouchCompactApp/ExternalServices.swift": "composition",
+    "Sources/XTouchCompactApp/ExternalServicesSettings.swift": "composition",
+    "Sources/XTouchCompactApp/HardwareInputReviewView.swift": "composition",
+    "Sources/XTouchCompactApp/HardwareObservationView.swift": "composition",
+    "Sources/XTouchCompactApp/InputReviewExporter.swift": "composition",
+    "Sources/XTouchCompactApp/LanguageSettings.swift": "composition",
+    "Sources/XTouchCompactApp/LocalMCPServer.swift": "transport",
+    "Sources/XTouchCompactApp/ModeBar.swift": "composition",
+    "Sources/XTouchCompactApp/MonitorCapture.swift": "composition",
+    "Sources/XTouchCompactApp/NonMotorTestPresentation.swift": "composition",
+    "Sources/XTouchCompactApp/NonMotorTestState.swift": "composition",
+    "Sources/XTouchCompactApp/NonMotorTestView.swift": "composition",
+    "Sources/XTouchCompactApp/OSCTransport.swift": "transport",
+    "Sources/XTouchCompactApp/OfflineCaptureView.swift": "composition",
+    "Sources/XTouchCompactApp/OfflineCaptureWorkspace.swift": "composition",
+    "Sources/XTouchCompactApp/OrganizeWorkspace.swift": "composition",
+    "Sources/XTouchCompactApp/PanelPresentation.swift": "composition",
+    "Sources/XTouchCompactApp/ParameterWorkspace.swift": "composition",
+    "Sources/XTouchCompactApp/PreviewCapture.swift": "composition",
+    "Sources/XTouchCompactApp/SurfacePanelView.swift": "composition",
+    "Sources/XTouchCompactApp/Theme.swift": "composition",
+    "Sources/XTouchCompactApp/WorkspaceTabsView.swift": "composition",
+    "Sources/XTouchCompactApp/XTouchCompactApp.swift": "composition",
+    "Sources/XTouchCompactCore/Agents.swift": "bridge",
+    "Sources/XTouchCompactCore/CaptureIntegrityReview.swift": "device",
+    "Sources/XTouchCompactCore/CaptureMotorAudit.swift": "device",
+    "Sources/XTouchCompactCore/CompactHardwareProfile.swift": "device",
+    "Sources/XTouchCompactCore/CompactHardwareSurface.swift": "bridge",
+    "Sources/XTouchCompactCore/CompactInputObserver.swift": "device",
+    "Sources/XTouchCompactCore/CompactSession.swift": "bridge",
+    "Sources/XTouchCompactCore/CompactState.swift": "device",
+    "Sources/XTouchCompactCore/CompactSurfaceSimulator.swift": "bridge",
+    "Sources/XTouchCompactCore/DeviceConfigurationValidation.swift": "device",
+    "Sources/XTouchCompactCore/FactoryStandardMap.swift": "device",
+    "Sources/XTouchCompactCore/HardwareDeviceAccess.swift": "transport",
+    "Sources/XTouchCompactCore/HardwareValueCache.swift": "device",
+    "Sources/XTouchCompactCore/InputCoverage.swift": "device",
+    "Sources/XTouchCompactCore/MIDI1UMPCodec.swift": "device",
+    "Sources/XTouchCompactCore/MIDIAddress.swift": "device",
+    "Sources/XTouchCompactCore/MockXTouchCompact.swift": "device",
+    "Sources/XTouchCompactCore/Models.swift": "values",
+    "Sources/XTouchCompactCore/NonMotorTests.swift": "device",
+    "Sources/XTouchCompactCore/OSC.swift": "bridge",
+    "Sources/XTouchCompactCore/ParameterConfigurationAdapter.swift": "bridge",
+    "Sources/XTouchCompactCore/ParameterEngine.swift": "runtime",
+    "Sources/XTouchCompactCore/Parameters.swift": "values",
+    "Sources/XTouchCompactCore/PluginComposition.swift": "bridge",
+    "Sources/XTouchCompactCore/PluginConfigurationAdapter.swift": "bridge",
+    "Sources/XTouchCompactCore/PluginHost.swift": "runtime",
+    "Sources/XTouchCompactCore/ProtectedStore.swift": "transport",
+    "Sources/XTouchCompactCore/RecordedCapture.swift": "device",
+    "Sources/XTouchCompactCore/RecordedCaptureReplay.swift": "bridge",
+    "Sources/XTouchCompactCore/SimulationConfiguration.swift": "bridge",
+    "Sources/XTouchCompactCore/SurfaceWriteBudget.swift": "runtime",
+    "Sources/XTouchCompactCore/SurfaceWriteBudgets.swift": "runtime",
+    "Sources/XTouchCompactLocalization/Localization.swift": "composition",
+    "Sources/XTouchCompactLocalization/LocalizationValues.swift": "values",
+    "Sources/XTouchRemoteMIDI/main.swift": "composition",
+    "Sources/XTouchSurfaceHardware/DeviceAccessAudit.swift": "transport",
+    "Sources/XTouchSurfaceHardware/HardwareMIDI.swift": "transport",
+    "Sources/XTouchSurfaceHardware/HardwareMain.swift": "composition",
+    "Sources/XTouchSurfaceHardware/SurfacePrincipals.swift": "transport",
+    "Sources/XTouchSurfaceSimulator/SimulatorMain.swift": "composition",
+    "Sources/XTouchSurfaceSimulator/SurfacePrincipals.swift": "transport"
+  },
+  "schema_version": 1,
+  "targets": {
+    "CompactRemoteMIDI": {
+      "dependencies": []
+    },
+    "CompactSimulatorTransport": {
+      "dependencies": []
+    },
+    "XTouchCompactApp": {
+      "dependencies": [
+        "CompactRemoteMIDI",
+        "XTouchCompactCore",
+        "XTouchCompactLocalization"
+      ]
+    },
+    "XTouchCompactCore": {
+      "dependencies": [
+        "AgentPlugin",
+        "AgentRemoteBinding",
+        "ChassisPlugin",
+        "ChassisRemoteBinding",
+        "ExampleParameterSets",
+        "OutputRemoteBinding",
+        "ParameterOutputPlugin",
+        "RemoteToolContracts",
+        "RobotPlugin",
+        "RobotRemoteBinding",
+        "SurfaceControlContracts",
+        "SurfacePluginContracts"
+      ]
+    },
+    "XTouchCompactLocalization": {
+      "dependencies": []
+    },
+    "XTouchRemoteMIDI": {
+      "dependencies": [
+        "CompactRemoteMIDI"
+      ]
+    },
+    "XTouchSurfaceHardware": {
+      "dependencies": [
+        "CompactSimulatorTransport",
+        "XTouchCompactCore"
+      ]
+    },
+    "XTouchSurfaceSimulator": {
+      "dependencies": [
+        "CompactSimulatorTransport",
+        "XTouchCompactCore"
+      ]
+    }
+  },
+  "validated_runtime_constructors": {
+    "ParameterEngine": "validatedConfiguration"
+  }
+}

@@ -182,7 +182,7 @@ public struct MockXTouchCompact: Sendable {
     }
 
     private mutating func redrawRing(_ index: Int) {
-        rings[index - 1] = .position(CompactSession.ringSegment(for: encoders[index - 1]))
+        rings[index - 1] = .position(FactoryStandardMap.ringSegment(for: encoders[index - 1]))
     }
 
     private func cc(base: UInt8, index: Int, value: UInt8) -> MIDIMessage {

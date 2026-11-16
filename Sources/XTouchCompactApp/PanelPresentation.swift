@@ -11,36 +11,6 @@
     // "the backend does not report this yet": the UI hides the corresponding readout instead of
     // inventing a value. See TODO.md for the backend work that fills each optional.
 
-    /// CoreMIDI endpoint identity; never use transient port indices as persistence keys.
-    struct CompactMIDIEndpoint: Equatable, Sendable, Identifiable {
-        var id: Int32
-        var name: String
-
-        /// Bridge host when this is a development remote-hardware endpoint
-        /// (`XTouchRemoteMIDI client`), nil for a locally attached port.
-        var remoteBridgeHost: String? {
-            RemoteMIDIDefaults.bridgeHost(fromEndpointName: name)
-        }
-    }
-
-    struct CompactMIDIConnection: Equatable, Sendable {
-        var generation: UInt64 = 0
-        var inputs: [CompactMIDIEndpoint] = []
-        var outputs: [CompactMIDIEndpoint] = []
-        var connectedInput: CompactMIDIEndpoint?
-        var connectedOutput: CompactMIDIEndpoint?
-        var error: LocalizedMessage?
-
-        var isConnected: Bool {
-            connectedInput != nil && connectedOutput != nil
-        }
-
-        /// Bridge host if either connected endpoint is remote. Remote evidence is not USB sign-off.
-        var remoteBridgeHost: String? {
-            connectedInput?.remoteBridgeHost ?? connectedOutput?.remoteBridgeHost
-        }
-    }
-
     struct HardwareValuePresentation: Equatable, Sendable {
         var value: UInt8
         var timestamp: Date
