@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -39,13 +40,48 @@ def run(command: list[str | Path], *, capture: bool = False, timeout: int | None
     return result.stdout.strip() if capture else ""
 
 
-def build(configuration: str) -> Path:
+def architectures(architecture: str) -> tuple[str, ...]:
+    if architecture == "universal":
+        return ("arm64", "x86_64")
+    result = platform.machine() if architecture == "native" else architecture
+    if result not in {"arm64", "x86_64"}:
+        raise ValueError("Unsupported macOS architecture")
+    return (result,)
+
+
+def swift_executable(configuration: str, architecture: str) -> Path:
+    binaries = []
+    for arch in architectures(architecture):
+        root = SWIFTPM_ROOT if architecture == "native" else SWIFTPM_ROOT / arch
+        build_path(REPO_ROOT, str(root.relative_to(BUILD_ROOT)))
+        options = ["swift", "build", "--build-path", root, "--configuration", configuration]
+        if architecture != "native":
+            options += ["--triple", f"{arch}-apple-macosx14.0"]
+        run([*options, "--product", PRODUCT])
+        binary = Path(run([*options, "--show-bin-path"], capture=True)) / PRODUCT
+        if not binary.is_file():
+            raise ValueError("Swift build did not produce the app executable")
+        binaries.append(binary)
+    if len(binaries) == 1:
+        return binaries[0]
+    destination = build_path(REPO_ROOT, f"swiftpm/universal/{configuration}")
+    destination.mkdir(parents=True, exist_ok=True)
+    output = destination / PRODUCT
+    run(["lipo", "-create", *binaries, "-output", output])
+    bundle_name = "XTouchCompactDev_XTouchCompactLocalization.bundle"
+    resource = destination / bundle_name
+    build_path(REPO_ROOT, str(resource.relative_to(BUILD_ROOT)))
+    if resource.exists():
+        shutil.rmtree(resource)
+    shutil.copytree(binaries[0].parent / bundle_name, resource)
+    return output
+
+
+def build(configuration: str, architecture: str = "native") -> Path:
     settings = load_app_build_settings(REPO_ROOT)
     for relative in ("swiftpm", f"app/{configuration}/{PRODUCT}.app", "icons/AppIcon.iconset", "icons/AppIcon.png"):
         build_path(REPO_ROOT, relative)
-    options = ["swift", "build", "--build-path", SWIFTPM_ROOT, "--configuration", configuration]
-    run([*options, "--product", PRODUCT])
-    executable = Path(run([*options, "--show-bin-path"], capture=True)) / PRODUCT
+    executable = swift_executable(configuration, architecture)
     bundle = BUILD_ROOT / "app" / configuration / f"{PRODUCT}.app"
     if bundle.is_symlink():
         raise ValueError(f"Refusing to overwrite a symlinked app bundle: {bundle}")
@@ -148,13 +184,13 @@ def verify_bundle(bundle: Path) -> None:
     run(["codesign", "--verify", "--deep", "--strict", bundle])
 
 
-def package() -> Path:
-    bundle = build("release")
+def package(architecture: str = "native") -> Path:
+    bundle = build("release", architecture)
     settings = load_app_build_settings(REPO_ROOT)
     destination = build_path(REPO_ROOT, "package")
     destination.mkdir(parents=True, exist_ok=True)
     archive = destination / (
-        f"{PRODUCT}_v{settings['MARKETING_VERSION']}_{settings['ARCHIVE_ID']}_macOS_{platform.machine()}_ad-hoc.zip"
+        f"{PRODUCT}_v{settings['MARKETING_VERSION']}_{settings['ARCHIVE_ID']}_macOS_{'universal' if architecture == 'universal' else architectures(architecture)[0]}_ad-hoc.zip"
     )
     for artifact in (
         archive,
@@ -178,14 +214,167 @@ def package() -> Path:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             checksum.update(chunk)
     dmg.with_suffix(".dmg.sha256").write_text(f"{checksum.hexdigest()}  {dmg.name}\n")
-    smoke = run([bundle / "Contents/MacOS" / PRODUCT, "--startup-smoke"], capture=True, timeout=30)
-    validate_smoke(smoke)
-    print(smoke)
+    write_build_records([archive, dmg], architecture)
+    # Verify extracted final assets, never just the pre-archive build directory.
+    check_package(archive)
+    check_package(dmg)
     print(f"Packaged {archive.relative_to(REPO_ROOT)} (local ad-hoc signature; not notarized)")
     return archive
 
 
-def validate_smoke(output: str) -> None:
+def sha256(path: Path) -> str:
+    checksum = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            checksum.update(chunk)
+    return checksum.hexdigest()
+
+
+def write_build_records(assets: list[Path], architecture: str) -> None:
+    settings = load_app_build_settings(REPO_ROOT)
+    source = source_metadata()
+    if set(source) != {"XTouchSourceRevision", "XTouchSourceTreeDirty"}:
+        raise ValueError("Cannot record build source provenance")
+    lock = json.loads((REPO_ROOT / "configs/surface_plugins.lock.json").read_text())
+    swift = run(["swift", "--version"], capture=True)
+    for asset in assets:
+        record = {
+            "schema_version": 1,
+            "asset": asset.name,
+            "sha256": sha256(asset),
+            "version": settings["MARKETING_VERSION"],
+            "build": settings["ARCHIVE_ID"],
+            "commit": source["XTouchSourceRevision"],
+            "dirty": source["XTouchSourceTreeDirty"],
+            "architecture": architecture,
+            "architectures": list(architectures(architecture)),
+            "signature": "ad-hoc",
+            "notarized": False,
+            "minimum_macos": "14.0",
+            "swift": swift,
+            "surface_plugins_revision": lock["revision"],
+        }
+        destination = asset.with_suffix(asset.suffix + ".build.json")
+        build_path(REPO_ROOT, str(destination.relative_to(BUILD_ROOT)))
+        destination.write_text(json.dumps(record, indent=2) + "\n")
+
+
+def validate_package_record(
+    archive: Path,
+    *,
+    expected_commit: str | None = None,
+    expected_plugins_revision: str | None = None,
+    require_clean: bool = False,
+) -> dict:
+    record = json.loads(archive.with_suffix(archive.suffix + ".build.json").read_text())
+    if not isinstance(record, dict):
+        raise ValueError("Invalid package record")
+    selected = record.get("architecture")
+    actual = record.get("architectures")
+    if (
+        not isinstance(selected, str)
+        or selected not in {"native", "arm64", "x86_64", "universal"}
+        or not isinstance(actual, list)
+        or any(not isinstance(item, str) or item not in {"arm64", "x86_64"} for item in actual)
+        or len(actual) != len(set(actual))
+        or (selected == "native" and len(actual) != 1)
+        or (selected != "native" and set(actual) != set(architectures(selected)))
+    ):
+        raise ValueError("Invalid architecture record")
+    if (
+        type(record.get("schema_version")) is not int
+        or record.get("schema_version") != 1
+        or record.get("asset") != archive.name
+        or record.get("sha256") != sha256(archive)
+        or record.get("signature") != "ad-hoc"
+        or record.get("notarized") is not False
+        or type(record.get("dirty")) is not bool
+        or not isinstance(record.get("commit"), str)
+        or not re.fullmatch(r"[a-f0-9]{40}", record["commit"])
+        or not isinstance(record.get("surface_plugins_revision"), str)
+        or not re.fullmatch(r"[a-f0-9]{40}", record["surface_plugins_revision"])
+        or record.get("minimum_macos") != "14.0"
+        or not isinstance(record.get("swift"), str)
+        or not record["swift"]
+        or not isinstance(record.get("version"), str)
+        or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", record["version"])
+        or not isinstance(record.get("build"), str)
+        or not re.fullmatch(r"[1-9][0-9]*", record["build"])
+    ):
+        raise ValueError("Package record provenance or checksum mismatch")
+    checksum = archive.with_suffix(archive.suffix + ".sha256").read_text()
+    if checksum != f"{record['sha256']}  {archive.name}\n":
+        raise ValueError("Package checksum sidecar mismatch")
+    if (
+        expected_commit is not None
+        and record["commit"] != expected_commit
+        or expected_plugins_revision is not None
+        and record["surface_plugins_revision"] != expected_plugins_revision
+        or require_clean
+        and record["dirty"]
+    ):
+        raise ValueError("Package differs from expected clean source/dependency revision")
+    return record
+
+
+def check_package(
+    archive: Path,
+    *,
+    expected_commit: str | None = None,
+    expected_plugins_revision: str | None = None,
+    require_clean: bool = False,
+) -> None:
+    archive = archive.resolve()
+    record = validate_package_record(
+        archive,
+        expected_commit=expected_commit,
+        expected_plugins_revision=expected_plugins_revision,
+        require_clean=require_clean,
+    )
+    build_path(REPO_ROOT, "package-check")
+    BUILD_ROOT.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="xtouch-package-", dir=BUILD_ROOT) as temporary:
+        root = Path(temporary)
+        if archive.suffix == ".zip":
+            run(["ditto", "-x", "-k", archive, root])
+            bundle = root / f"{PRODUCT}.app"
+            verify_packaged_payload(bundle, record)
+        elif archive.suffix == ".dmg":
+            mount = root / "mounted"
+            run(["hdiutil", "attach", archive, "-readonly", "-nobrowse", "-mountpoint", mount])
+            try:
+                bundle = root / f"{PRODUCT}.app"
+                run(["ditto", mount / f"{PRODUCT}.app", bundle])
+                verify_packaged_payload(bundle, record)
+            finally:
+                run(["hdiutil", "detach", mount])
+        else:
+            raise ValueError("Expected a ZIP or DMG")
+    print(f"Verified final package {archive.name}")
+
+
+def verify_packaged_payload(bundle: Path, record: dict) -> None:
+    verify_bundle(bundle)
+    info = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
+    if (
+        info.get("CFBundleShortVersionString") != record["version"]
+        or info.get("CFBundleVersion") != record["build"]
+        or info.get("XTouchSourceRevision") != record["commit"]
+        or info.get("XTouchSourceTreeDirty") != record["dirty"]
+    ):
+        raise ValueError("Packaged bundle metadata differs from build record")
+    binary = bundle / "Contents/MacOS" / PRODUCT
+    actual = run(["lipo", "-archs", binary], capture=True).split()
+    if set(actual) != set(record["architectures"]):
+        raise ValueError("Packaged executable architecture mismatch")
+    if platform.machine() in actual:
+        output = run([binary, "--startup-smoke"], capture=True, timeout=30)
+        validate_smoke(output, require_headless=True)
+    else:
+        print("Structural verification passed; native launch requires a matching architecture runner.")
+
+
+def validate_smoke(output: str, *, require_headless: bool = False) -> None:
     for line in output.splitlines():
         try:
             marker = json.loads(line)
@@ -195,6 +384,7 @@ def validate_smoke(output: str) -> None:
             isinstance(marker, dict)
             and marker.get("type") == "xtouch.native_startup"
             and marker.get("hardwareAccessed") is False
+            and (not require_headless or marker.get("windowCreated") is False)
         ):
             return
     raise ValueError("Native startup smoke marker is missing or invalid.")
@@ -202,12 +392,19 @@ def validate_smoke(output: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("build", "core", "run", "test", "package"))
+    parser.add_argument("action", choices=("build", "core", "run", "test", "package", "check-package"))
     parser.add_argument("--configuration", choices=("debug", "release"), default="debug")
+    parser.add_argument("--architecture", choices=("native", "arm64", "x86_64", "universal"), default="native")
+    parser.add_argument("--archive", type=Path)
     args = parser.parse_args(argv)
     if args.action not in {"core", "test"} and sys.platform != "darwin":
         parser.error("App build/run/package requires macOS 14+ and a Swift 6 toolchain.")
     with use_build_environment(REPO_ROOT):
+        if args.action == "check-package":
+            if args.archive is None:
+                parser.error("check-package requires --archive")
+            check_package(args.archive)
+            return 0
         ensure_dependency(REPO_ROOT)
         if args.action == "test":
             run(["swift", "test", "--build-path", SWIFTPM_ROOT])
@@ -225,9 +422,9 @@ def main(argv: list[str] | None = None) -> int:
                 ]
             )
         elif args.action == "package":
-            package()
+            package(args.architecture)
         else:
-            bundle = build(args.configuration)
+            bundle = build(args.configuration, args.architecture)
             if args.action == "run":
                 # Replace Python so terminal signals and exit status belong to the app.
                 executable = bundle / "Contents/MacOS" / PRODUCT

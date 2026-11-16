@@ -3,25 +3,60 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   package-macos:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 10
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - run: python3 configs/check_swift_toolchain.py
       - run: python3 configs/setup_local_project.py
-      # Release build, ad-hoc signed ZIP/DMG with checksums and a startup smoke of the packaged app.
-      - run: python3 configs/macos_workflow.py package
+      - name: Require a main commit for a pushed tag
+        if: github.event_name == 'push'
+        run: git merge-base --is-ancestor HEAD origin/main
+      - name: Build universal ad-hoc ZIP and DMG with provenance and final-payload checks
+        run: python3 configs/macos_workflow.py package --architecture universal
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: xtouch-compact-macos-${{ github.ref_name }}
-          path: |
-            build/package/*.zip
-            build/package/*.zip.sha256
-            build/package/*.dmg
-            build/package/*.dmg.sha256
+          name: xtouch-compact-universal
+          path: build/package/*
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
+  package-smoke:
+    needs: package-macos
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: xtouch-compact-universal
+          path: build/package
+      - name: Verify and launch extracted ZIP and DMG payloads without AppKit or user data
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, os
+          from configs.macos_workflow import check_package
+          assets = sorted(p for p in Path('build/package').iterdir() if p.suffix in {'.zip', '.dmg'})
+          if len(assets) != 2:
+              raise SystemExit('Expected exactly one universal ZIP and DMG')
+          lock = json.loads(Path('configs/surface_plugins.lock.json').read_text())
+          for asset in assets:
+              check_package(asset, expected_commit=os.environ['GITHUB_SHA'],
+                            expected_plugins_revision=lock['revision'], require_clean=True)
+          PY

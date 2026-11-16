@@ -29,6 +29,7 @@
     "Sources/XTouchCompactApp/MCPIntegrationCommand.swift": "composition",
     "Sources/XTouchCompactApp/ModeBar.swift": "composition",
     "Sources/XTouchCompactApp/MonitorCapture.swift": "composition",
+    "Sources/XTouchCompactApp/NativeStartupSmoke.swift": "composition",
     "Sources/XTouchCompactApp/NonMotorTestPresentation.swift": "composition",
     "Sources/XTouchCompactApp/NonMotorTestState.swift": "composition",
     "Sources/XTouchCompactApp/NonMotorTestView.swift": "composition",

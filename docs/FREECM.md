@@ -84,3 +84,5 @@ The private MIT-licensed validator snapshot under `configs/_vendor/` is copied
 from BCR2000Dev with provenance. It is used for configuration checks, never by
 the app. Linux CI exercises the portable scripts and Swift core; macOS CI also
 builds the native ad-hoc app bundle.
+
+The Release ZIP + DMG variant now explicitly selects `--architecture universal`; the direct packaging CLI still defaults to native. Each final artifact has a build record and checksum and is verified from its extracted payload. See [packaging](PACKAGING.md).

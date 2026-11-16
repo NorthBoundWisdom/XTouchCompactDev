@@ -78,8 +78,10 @@ To build an app bundle and local packages:
 
 ```sh
 python3 configs/macos_workflow.py build     # build/app/debug/XTouchCompactApp.app
-python3 configs/macos_workflow.py package   # Release ZIP and DMG under build/package/
+python3 configs/macos_workflow.py package --architecture universal  # ZIP/DMG, checksums and build records
 ```
+
+Packaging supports native, arm64, x86_64 and universal ad-hoc builds, with final ZIP/DMG integrity and isolated startup checks. See [packaging](docs/PACKAGING.md). No notarization or publication is performed.
 
 ### Launch options
 

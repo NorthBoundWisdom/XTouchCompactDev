@@ -11,7 +11,9 @@
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
                 exit(2)
             }
-            if ProcessInfo.processInfo.arguments.contains("--mcp-test-server") {
+            if ProcessInfo.processInfo.arguments.contains("--startup-smoke") {
+                NativeStartupSmoke.run()
+            } else if ProcessInfo.processInfo.arguments.contains("--mcp-test-server") {
                 MCPIntegrationCommand.run()
             } else if ProcessInfo.processInfo.arguments.contains("--snapshot-output") {
                 PreviewCommand.run()
@@ -68,15 +70,6 @@
                     .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                         model.stopCapture()
                         model.flushHardwareValues()
-                    }
-                    .task {
-                        let arguments = ProcessInfo.processInfo.arguments
-                        if arguments.contains("--startup-smoke") {
-                            try? await Task.sleep(for: .milliseconds(300))
-                            print("{\"type\":\"xtouch.native_startup\",\"hardwareAccessed\":false}")
-                            fflush(nil)
-                            NSApplication.shared.terminate(nil)
-                        }
                     }
                     .frame(minWidth: 1200, minHeight: 760)
             }
