@@ -18,7 +18,7 @@ from a local AI agent over MCP.
 | Latest safety changes (U1–U18) | Software-tested only. **Not yet rechecked on hardware (未在实机复核).** |
 | MCP and configuration | Two GUI protocol versions, read-only client tools, guarded parameter/Agent tools, named configuration library and bounded macros are available. Remote permission switches default off. |
 | Optional presentation | Panels → Arm preview is hidden by default; display choices persist separately. Stable IDs cover the 89 built-in physical identities; native AX/mouse acceptance is pending. |
-| Cross-device capture | Common-field inspection and foreign replay refusal are tested; the real BCR recorder fixture is still awaited, with a labelled placeholder in the meantime. |
+| Cross-device capture | Committed Mock recorder fixtures from both hosts exercise common-field inspection and explicit foreign replay refusal; device-specific decoding stays independent. |
 | CI and packaging | Linux Core/macOS checks passed; final universal ZIP/DMG passed both GUI/headless startup on ARM and Intel. [Run evidence](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/43814655110). Packages remain ad-hoc only, without Developer ID/notarization or publication. |
 
 The next attended hardware session starts with **H1** (layer button highlight) and **H6** (touch
