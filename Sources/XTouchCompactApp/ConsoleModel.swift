@@ -25,6 +25,37 @@
         @Published private(set) var bank = CompactParameterBank()
         @Published private(set) var layer: CompactLayer = .a
         @Published private(set) var connection = CompactMIDIConnection()
+        // Latest trusted transport receipt is the IO authority; the Published value is a UI projection.
+        private var currentHardwareConnection = CompactMIDIConnection()
+        private var connectionNotificationRevision: UInt64 = 0
+        private var hardwareRouteRevision: UInt64 = 0
+        private var stableHardwareRouteRevision: UInt64 = 0
+        private var pendingConnectionNotification: (snapshot: CompactMIDIConnection, revision: UInt64)?
+        private var drainingConnectionNotifications = false
+        private var connectionDrainTask: Task<Void, Never>?
+        private static let connectionTurnLimit = 16
+        private static let handoverMessageLimit = 256
+        private static let handoverEnvelopeLimit = 64
+        private struct HandoverInput {
+            let envelope: CompactMIDIInputEnvelope
+            let decoded: [CompactInput]
+            let map: FactoryStandardMap
+            let hostLayer: CompactLayer
+            let hardwareLayer: CompactLayer?
+            let bindingGeneration: UInt64
+            let wallTime: Date
+            let observesSession: Bool
+        }
+
+        private var handoverInputs: [HandoverInput] = []
+        private var flushingHandoverObservations = false
+        private var handoverMessageCount = 0
+        private var handoverFailureReported = false
+        private var hardwareHandoverActive: Bool {
+            hardwareRouteRevision != stableHardwareRouteRevision || handoverFailureReported
+                || flushingHandoverObservations || !handoverInputs.isEmpty
+        }
+
         @Published private(set) var events: [MonitorEvent] = []
         @Published private(set) var mockMIDIInAt: Date?
         @Published private(set) var mockMIDIOutAt: Date?
@@ -219,56 +250,7 @@
             if let routed = self.midi as? any RoutedMIDIService {
                 routed.onRoutedMessages = { [weak self] envelope in self?.receive(envelope) }
             }
-            self.midi.onConnection = { [weak self] snapshot in
-                guard let self else { return }
-                let routeChanged = snapshot.isConnected != connection.isConnected
-                    || snapshot.connectedInput?.id != connection.connectedInput?.id
-                    || snapshot.connectedOutput?.id != connection.connectedOutput?.id
-                    || snapshot.generation != connection.generation
-                if routeChanged {
-                    if hasAttachedHardwareRoute {
-                        hardwareMotorActionCurrent = false
-                        mcpMotorWritesAllowed = false
-                    }
-                    if snapshot.isConnected {
-                        hasAttachedHardwareRoute = true
-                    }
-                    liveHardwareValues = nil
-                    hardwareInputRevisions = [:]
-                    reportedHardwarePresses = [:]
-                    faderMotorDelivery = [:]
-                }
-                if nonMotorTests.approval != nil {
-                    lockNonMotorTests("Connection changed; test output locked.")
-                }
-                connection = snapshot
-                if routeChanged {
-                    var authorization = session.writeAuthorization
-                    authorization.routeGeneration = snapshot.generation
-                    if explicitWriteContext {
-                        authorization.allowsValues = false; authorization.allowsDisplay = false; authorization.allowsMechanisms = false
-                    }
-                    session.configureWriteAuthorization(authorization)
-                }
-                if snapshot.isConnected, let connectionError = error as? ConsoleError, connectionError == .noConnection {
-                    error = nil
-                }
-                if isObservingHardware, let newInput = snapshot.connectedInput?.id {
-                    if let observationInputID, observationInputID != newInput {
-                        resetHardwareObservation()
-                    }
-                    observationInputID = newInput
-                }
-                appendEvent(MonitorEvent(id: makeRecordID(), timestamp: self.now(), direction: nil, source: .application, message: nil,
-                                         control: nil, hostLayer: layer, ignored: false, text: LocalizedMessage("MIDI connection changed"), connection: snapshot))
-                if routeChanged {
-                    hardwareFeedbackNeedsSync = true
-                    if hardwareMode {
-                        // Disconnect/reconnect/endpoint replacement is never an output action.
-                        apply { try $0.connect(assertLayer: false) }
-                    }
-                }
-            }
+            self.midi.onConnection = { [weak self] snapshot in self?.receiveConnectionNotification(snapshot) }
             if let store {
                 do {
                     if let saved = try store.load() {
@@ -310,6 +292,132 @@
             }
             self.midi.select(inputID: inputChoice == 0 ? nil : inputChoice, outputID: outputChoice == 0 ? nil : outputChoice)
             apply { try $0.connect() }
+        }
+
+        private func receiveConnectionNotification(_ snapshot: CompactMIDIConnection) {
+            connectionNotificationRevision &+= 1
+            if snapshot.isConnected != currentHardwareConnection.isConnected
+                || snapshot.connectedInput?.id != currentHardwareConnection.connectedInput?.id
+                || snapshot.connectedOutput?.id != currentHardwareConnection.connectedOutput?.id
+                || snapshot.generation != currentHardwareConnection.generation
+            {
+                hardwareRouteRevision &+= 1
+            }
+            currentHardwareConnection = snapshot
+            pendingConnectionNotification = (snapshot, connectionNotificationRevision)
+            guard !drainingConnectionNotifications, connectionDrainTask == nil else { return }
+            drainConnectionNotifications()
+        }
+
+        private func drainConnectionNotifications() {
+            guard !drainingConnectionNotifications else { return }
+            drainingConnectionNotifications = true
+            defer { drainingConnectionNotifications = false }
+            var handled = 0
+            while let pending = pendingConnectionNotification, handled < Self.connectionTurnLimit {
+                pendingConnectionNotification = nil
+                handled += 1
+                publishConnectionNotification(pending.snapshot, revision: pending.revision)
+            }
+            if pendingConnectionNotification != nil {
+                failHandover("Connection notifications exceeded one bounded turn; hardware output remains withheld.")
+                scheduleConnectionDrain()
+                return
+            }
+            flushHandoverObservations()
+            if pendingConnectionNotification != nil || !handoverInputs.isEmpty {
+                scheduleConnectionDrain()
+            } else {
+                handoverFailureReported = false
+            }
+        }
+
+        private func scheduleConnectionDrain() {
+            guard connectionDrainTask == nil else { return }
+            connectionDrainTask = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard let self else { return }
+                connectionDrainTask = nil
+                drainConnectionNotifications()
+            }
+        }
+
+        private func failHandover(_ message: String) {
+            // Existing continuity/explicit-action gate closes; no timer or resumed queue grants motion.
+            hardwareMotorActionCurrent = false
+            session.discardPendingMotorWrites()
+            guard !handoverFailureReported else { return }
+            handoverFailureReported = true
+            mcpMotorWritesAllowed = false
+            hardwareFeedbackNeedsSync = true
+            error = CompactMIDIError.routeChanged
+            do {
+                appendEvent(MonitorEvent(id: makeRecordID(), timestamp: now(), direction: nil, source: .application,
+                                         message: nil, control: nil, hostLayer: layer, ignored: true,
+                                         text: LocalizedMessage(message), connection: currentHardwareConnection))
+            }
+        }
+
+        private func publishConnectionNotification(_ snapshot: CompactMIDIConnection, revision: UInt64) {
+            let routeChanged = snapshot.isConnected != connection.isConnected
+                || snapshot.connectedInput?.id != connection.connectedInput?.id
+                || snapshot.connectedOutput?.id != connection.connectedOutput?.id
+                || snapshot.generation != connection.generation
+            if routeChanged {
+                if hasAttachedHardwareRoute {
+                    hardwareMotorActionCurrent = false
+                    mcpMotorWritesAllowed = false
+                    guard revision == connectionNotificationRevision else { return }
+                }
+                if snapshot.isConnected {
+                    hasAttachedHardwareRoute = true
+                }
+                liveHardwareValues = nil
+                guard revision == connectionNotificationRevision else { return }
+                hardwareInputRevisions = [:]
+                reportedHardwarePresses = [:]
+                guard revision == connectionNotificationRevision else { return }
+                faderMotorDelivery = [:]
+                guard revision == connectionNotificationRevision else { return }
+            }
+            if nonMotorTests.approval != nil {
+                lockNonMotorTests("Connection changed; test output locked.")
+                guard revision == connectionNotificationRevision else { return }
+            }
+            connection = snapshot
+            guard revision == connectionNotificationRevision else { return }
+            if routeChanged {
+                var authorization = session.writeAuthorization
+                authorization.routeGeneration = snapshot.generation
+                if explicitWriteContext {
+                    authorization.allowsValues = false; authorization.allowsDisplay = false; authorization.allowsMechanisms = false
+                }
+                session.configureWriteAuthorization(authorization)
+            }
+            if snapshot.isConnected, let connectionError = error as? ConsoleError, connectionError == .noConnection {
+                error = nil
+                guard revision == connectionNotificationRevision else { return }
+            }
+            if isObservingHardware, let newInput = snapshot.connectedInput?.id {
+                if let observationInputID, observationInputID != newInput {
+                    resetHardwareObservation()
+                    guard revision == connectionNotificationRevision else { return }
+                }
+                observationInputID = newInput
+            }
+            appendEvent(MonitorEvent(id: makeRecordID(), timestamp: now(), direction: nil, source: .application, message: nil,
+                                     control: nil, hostLayer: layer, ignored: false, text: LocalizedMessage("MIDI connection changed"), connection: snapshot))
+            guard revision == connectionNotificationRevision else { return }
+            if routeChanged {
+                hardwareFeedbackNeedsSync = true
+                guard revision == connectionNotificationRevision else { return }
+                if hardwareMode {
+                    // Disconnect/reconnect/endpoint replacement is never an output action.
+                    apply { try $0.connect(assertLayer: false) }
+                }
+            }
+            guard revision == connectionNotificationRevision else { return }
+            stableHardwareRouteRevision = hardwareRouteRevision
         }
 
         func useHardware(_ enabled: Bool) {
@@ -418,6 +526,7 @@
 
         /// Confirmation is scoped to the current route; it never replays a withheld target.
         private func confirmCurrentMotorAction() {
+            guard !hardwareMode || !hardwareHandoverActive else { error = CompactMIDIError.routeChanged; return }
             guard hardwareMode, connection.isConnected, !listenOnly, !isObservingHardware else { return }
             if !hardwareMotorActionCurrent {
                 session.discardPendingMotorWrites()
@@ -437,8 +546,8 @@
         // MARK: - Explicit nonmotor diagnostics
 
         private var nonMotorContext: NonMotorTransportContext {
-            NonMotorTransportContext(inputID: connection.connectedInput?.id, outputID: connection.connectedOutput?.id,
-                                     recording: monitorCapture != nil, generation: connection.generation)
+            NonMotorTransportContext(inputID: currentHardwareConnection.connectedInput?.id, outputID: currentHardwareConnection.connectedOutput?.id,
+                                     recording: monitorCapture != nil, generation: currentHardwareConnection.generation)
         }
 
         func armNonMotorTests(_ prerequisites: NonMotorTestPrerequisites) {
@@ -731,7 +840,7 @@
 
         /// Trusted local configuration, deliberately independent of Agent permission switches.
         func configureWriteAuthorization(_ context: ParameterWriteAuthorization) throws {
-            guard context.routeGeneration == connection.generation,
+            guard context.routeGeneration == currentHardwareConnection.generation,
                   context.bindingGeneration == session.writeAuthorization.bindingGeneration
             else {
                 throw ParameterWriteAuthorizationError.staleContext
@@ -753,7 +862,7 @@
         }
 
         private func capturePlannedProvenance(_ origin: ParameterWriter) throws -> CompactPlannedProvenance {
-            let stamp = hardwareMode ? CompactEndpointStamp(endpoint: connection.connectedOutput, generation: connection.generation) : .simulation
+            let stamp = hardwareMode ? CompactEndpointStamp(endpoint: currentHardwareConnection.connectedOutput, generation: currentHardwareConnection.generation) : .simulation
             let context = try CompactNeutralProjection.context(instanceID: projectionInstanceID,
                                                                routeGeneration: stamp.generation, bindingGeneration: session.writeAuthorization.bindingGeneration,
                                                                hostLayer: session.state.layer, knownHardwareLayer: session.state.observedLayer,
@@ -946,6 +1055,7 @@
         }
 
         func recallMotors() {
+            guard !hardwareMode || !hardwareHandoverActive else { error = CompactMIDIError.routeChanged; return }
             confirmCurrentMotorAction()
             apply { try $0.recallFaders() }
         }
@@ -1044,11 +1154,13 @@
             catch { self.error = error }
         }
 
-        private func recordHardwareInput(_ input: CompactInput) {
-            guard let inputID = connection.connectedInput?.id else { return }
+        private func recordHardwareInput(_ input: CompactInput, inputID capturedID: Int32? = nil,
+                                         channel capturedChannel: UInt8? = nil, timestamp capturedTime: Date? = nil)
+        {
+            guard let inputID = capturedID ?? currentHardwareConnection.connectedInput?.id else { return }
             hardwareReceiptRevision &+= 1
             hardwareInputRevisions[HardwareInputKey(control: input.control, layer: input.layer)] = hardwareReceiptRevision
-            let channel = session.state.map.transmitChannel
+            let channel = capturedChannel ?? session.state.map.transmitChannel
             if hardwareValueCache?.inputID != inputID || hardwareValueCache?.transmitChannel != channel {
                 hardwareValueCache = HardwareValueCache(inputID: inputID, transmitChannel: channel)
             }
@@ -1056,7 +1168,7 @@
                 liveHardwareValues = HardwareValueCache(inputID: inputID, transmitChannel: channel)
             }
             let previous = hardwareValueCache
-            let timestamp = now()
+            let timestamp = capturedTime ?? now()
             hardwareValueCache?.record(input, at: timestamp)
             liveHardwareValues?.record(input, at: timestamp)
             if previous != hardwareValueCache {
@@ -1092,28 +1204,104 @@
             faderMotorDelivery = [:]
         }
 
+        private func isCurrentHardwareOrigin(_ origin: CompactEndpointStamp) -> Bool {
+            guard let inputID = origin.endpoint?.id, let currentID = currentHardwareConnection.connectedInput?.id else { return false }
+            return origin.generation == currentHardwareConnection.generation && inputID == currentID
+        }
+
         private func receive(_ envelope: CompactMIDIInputEnvelope) {
-            guard envelope.origin.generation == connection.generation,
-                  envelope.origin.endpoint?.id == connection.connectedInput?.id
-            else {
-                for message in envelope.messages {
-                    record(message, direction: .input, source: .hardware, ignored: true, endpointOrigin: envelope.origin)
+            guard isCurrentHardwareOrigin(envelope.origin) else {
+                for message in envelope.messages.prefix(Self.handoverMessageLimit) {
+                    record(message, direction: .input, source: .hardware, ignored: true, endpointOrigin: envelope.origin, recordedAt: envelope.at)
                 }
+                if envelope.messages.count > Self.handoverMessageLimit {
+                    failHandover("An obsolete hardware input batch exceeded the bounded receipt limit.")
+                }
+                return
+            }
+            if hardwareHandoverActive {
+                bufferHandoverInput(envelope)
                 return
             }
             receive(envelope.messages, endpointOrigin: envelope.origin, receiptAt: envelope.at)
         }
 
+        private func bufferHandoverInput(_ envelope: CompactMIDIInputEnvelope) {
+            guard !envelope.messages.isEmpty else { return }
+            guard envelope.messages.count <= Self.handoverMessageLimit else {
+                failHandover("Hardware input continuity was lost: one handover batch exceeded the bounded limit.")
+                return
+            }
+            let map = session.state.map
+            let decoded = envelope.messages.compactMap(map.decode)
+            // Physical safety ownership is immediate, before any Published observer can request motion.
+            // These are trusted decoded contact edges, not fabricated position/layer observations.
+            for input in decoded {
+                if case let .faderTouch(index) = input.control {
+                    session.setSafetyTouch(index, touched: input.isPressed == true)
+                }
+            }
+            guard handoverInputs.count < Self.handoverEnvelopeLimit,
+                  handoverMessageCount + envelope.messages.count <= Self.handoverMessageLimit
+            else {
+                failHandover("Hardware input continuity was lost: the bounded handover receipt queue overflowed.")
+                return
+            }
+            let receipt = HandoverInput(envelope: envelope, decoded: decoded, map: map, hostLayer: session.state.layer,
+                                        hardwareLayer: session.state.observedLayer,
+                                        bindingGeneration: session.writeAuthorization.bindingGeneration, wallTime: now(), observesSession: hardwareMode)
+            handoverInputs.append(receipt)
+            handoverMessageCount += envelope.messages.count
+            for message in envelope.messages {
+                guard isCurrentHardwareOrigin(envelope.origin) else { break }
+                // Handover inputs retain physical evidence only; no old business intent/feedback is replayed.
+                record(message, direction: .input, source: .hardware, ignored: true, endpointOrigin: envelope.origin,
+                       recordedAt: envelope.at, capturedInputReceipt: receipt)
+            }
+        }
+
+        private func flushHandoverObservations() {
+            flushingHandoverObservations = true
+            defer { flushingHandoverObservations = false }
+            var processed = 0
+            while !handoverInputs.isEmpty, pendingConnectionNotification == nil, processed < Self.handoverMessageLimit {
+                let receipt = handoverInputs.removeFirst()
+                handoverMessageCount -= receipt.envelope.messages.count
+                processed += receipt.envelope.messages.count
+                guard isCurrentHardwareOrigin(receipt.envelope.origin),
+                      receipt.map.transmitChannel == session.state.map.transmitChannel,
+                      receipt.map.globalReceiveChannel == session.state.map.globalReceiveChannel else { continue }
+                let revision = hardwareRouteRevision
+                for input in receipt.decoded {
+                    guard revision == hardwareRouteRevision else { break }
+                    if receipt.observesSession, hardwareMode {
+                        session.observeDecodedInput(input)
+                    }
+                    recordHardwareInput(input, inputID: receipt.envelope.origin.endpoint?.id,
+                                        channel: receipt.map.transmitChannel, timestamp: receipt.wallTime)
+                    // A new notification takes priority; the consumed receipt is never replayed.
+                    guard revision == hardwareRouteRevision else { break }
+                }
+            }
+        }
+
         private func receive(_ messages: [MIDIMessage], fromMock: Bool = false, endpointOrigin: CompactEndpointStamp? = nil, receiptAt: Double? = nil) {
+            if !fromMock, hardwareHandoverActive {
+                failHandover("Unattributed hardware input arrived during handover; its route was not inferred.")
+                return
+            }
+            let routingRevision = hardwareRouteRevision
             // Legacy injected transports have no provenance claim. Real transports always supply an envelope.
             let inputOrigin = endpointOrigin ?? (fromMock ? .simulation : .init(endpoint: nil, generation: 0))
             if fromMock, !messages.isEmpty {
                 mockMIDIOutAt = now()
             }
             for message in messages {
+                guard fromMock || routingRevision == hardwareRouteRevision else { return }
                 let event = session.state.map.decode(message)
                 if !fromMock, let event {
                     recordHardwareInput(event)
+                    guard routingRevision == hardwareRouteRevision else { return }
                 }
                 if !fromMock, let event, case let .faderTouch(index) = event.control {
                     session.setSafetyTouch(index, touched: event.isPressed == true)
@@ -1125,8 +1313,10 @@
                 } == true
                 record(message, direction: .input, source: fromMock ? .mock : .hardware,
                        ignored: !safetyOnly && (hardwareMode == fromMock || event == nil), endpointOrigin: inputOrigin, recordedAt: receiptAt)
+                guard fromMock || routingRevision == hardwareRouteRevision else { return }
                 if !fromMock, isObservingHardware {
                     hardwareObserver.receive(message, map: session.state.map, at: now())
+                    guard routingRevision == hardwareRouteRevision else { return }
                 }
             }
             if isObservingHardware, !fromMock {
@@ -1241,13 +1431,15 @@
                 }
                 return nil
             }
-            let route = connection // Pin the entire batch, including synchronous service callbacks.
+            let route = hardwareMode ? currentHardwareConnection : connection // Pin the entire batch, including synchronous service callbacks.
             let outputOrigin = hardwareMode ? CompactEndpointStamp(endpoint: route.connectedOutput, generation: route.generation) : .simulation
             let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
             func scopeIsCurrent() -> Bool {
-                connection.generation == route.generation
-                    && connection.connectedInput?.id == route.connectedInput?.id
-                    && connection.connectedOutput?.id == route.connectedOutput?.id
+                let currentRoute = dispatchHardwareMode ? currentHardwareConnection : connection
+                return (!dispatchHardwareMode || !hardwareHandoverActive)
+                    && currentRoute.generation == route.generation
+                    && currentRoute.connectedInput?.id == route.connectedInput?.id
+                    && currentRoute.connectedOutput?.id == route.connectedOutput?.id
                     && session.writeAuthorization == authorization
                     && session.state.layer == dispatchHostLayer
                     && hardwareMode == dispatchHardwareMode
@@ -1257,6 +1449,18 @@
                     && session.state.map.transmitChannel == dispatchMap.transmitChannel
                     && session.state.map.globalReceiveChannel == dispatchMap.globalReceiveChannel
                     && session.state.lightProtocol == dispatchLightProtocol
+            }
+            if hardwareMode, hardwareHandoverActive, !messages.isEmpty {
+                session.invalidateTransportFeedback()
+                for message in messages {
+                    record(message, direction: .output, source: source, ignored: true, delivery: .suppressed,
+                           endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode,
+                           recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly,
+                           recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration,
+                           recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
+                }
+                error = CompactMIDIError.routeChanged
+                return .suppressed
             }
             var testAllowed = false
             if let authorizedTest {
@@ -1787,9 +1991,9 @@
         private func record(_ message: MIDIMessage, direction: MonitorEvent.Direction,
                             source: MonitorEvent.Source, ignored: Bool = false, delivery: MonitorEvent.Delivery? = nil,
                             nonMotorTest: NonMotorTestAudit? = nil, controlOverride: CompactControl? = nil, endpointOrigin: CompactEndpointStamp? = nil,
-                            recordedHostLayer: CompactLayer? = nil, outputHardwareMode: Bool? = nil, recordedMap: FactoryStandardMap? = nil, recordedLightProtocol: ButtonLightProtocol? = nil, recordedListenOnly: Bool? = nil, recordedAt: Double? = nil, recordedBindingGeneration: UInt64? = nil, recordedHardwareLayer: CompactLayer? = nil, recordedPlannedProvenance: CompactPlannedProvenance? = nil, recordedTransportAt: Double? = nil)
+                            recordedHostLayer: CompactLayer? = nil, outputHardwareMode: Bool? = nil, recordedMap: FactoryStandardMap? = nil, recordedLightProtocol: ButtonLightProtocol? = nil, recordedListenOnly: Bool? = nil, recordedAt: Double? = nil, recordedBindingGeneration: UInt64? = nil, recordedHardwareLayer: CompactLayer? = nil, recordedPlannedProvenance: CompactPlannedProvenance? = nil, recordedTransportAt: Double? = nil, capturedInputReceipt: HandoverInput? = nil)
         {
-            let map = recordedMap ?? session.state.map
+            let map = capturedInputReceipt?.map ?? recordedMap ?? session.state.map
             let control: CompactControl?
             if let controlOverride {
                 control = controlOverride
@@ -1822,11 +2026,11 @@
             let dispatchContext: MonitorEvent.DispatchContext? = direction == .output
                 ? .init(transmitChannel: map.transmitChannel, receiveChannel: map.globalReceiveChannel,
                         lightProtocol: recordedLightProtocol ?? session.state.lightProtocol, listenOnly: recordedListenOnly ?? listenOnly, bindingGeneration: recordedBindingGeneration, knownHardwareLayer: recordedHardwareLayer) : nil
-            appendEvent(MonitorEvent(id: makeRecordID(), timestamp: now(), direction: direction, source: source, message: message,
-                                     control: control, hostLayer: recordedHostLayer ?? session.state.layer,
+            appendEvent(MonitorEvent(id: makeRecordID(), timestamp: capturedInputReceipt?.wallTime ?? now(), direction: direction, source: source, message: message,
+                                     control: control, hostLayer: capturedInputReceipt?.hostLayer ?? recordedHostLayer ?? session.state.layer,
                                      deviceLayer: direction == .input ? map.decode(message)?.layer : nil,
                                      delivery: delivery ?? (direction == .input ? .received : nil),
-                                     ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest, endpointOrigin: endpointOrigin, deviceSource: deviceSource, dispatchContext: dispatchContext, monotonicTime: recordedAt, transportMonotonicTime: recordedTransportAt, capturedBindingGeneration: recordedBindingGeneration ?? (direction == .input ? session.writeAuthorization.bindingGeneration : nil), capturedHardwareLayer: recordedHardwareLayer ?? (direction == .input ? session.state.observedLayer : nil), decodedInput: direction == .input ? map.decode(message) : nil, plannedProvenance: recordedPlannedProvenance))
+                                     ignored: ignored, text: LocalizedMessage(key, message.description), nonMotorTest: nonMotorTest, endpointOrigin: endpointOrigin, deviceSource: deviceSource, dispatchContext: dispatchContext, monotonicTime: recordedAt, transportMonotonicTime: recordedTransportAt, capturedBindingGeneration: capturedInputReceipt?.bindingGeneration ?? recordedBindingGeneration ?? (direction == .input ? session.writeAuthorization.bindingGeneration : nil), capturedHardwareLayer: capturedInputReceipt.map(\.hardwareLayer) ?? recordedHardwareLayer ?? (direction == .input ? session.state.observedLayer : nil), decodedInput: direction == .input ? map.decode(message) : nil, plannedProvenance: recordedPlannedProvenance))
         }
 
         private func appendEvent(_ event: MonitorEvent) {

@@ -144,6 +144,13 @@ public struct CompactState: Sendable {
     /// The domain engine consumes the returned CompactInput and chooses the resulting parameter value.
     public mutating func receive(_ message: MIDIMessage) -> CompactInput? {
         guard let event = map.decode(message) else { return nil }
+        observeDecodedInput(event)
+        return event
+    }
+
+    /// A trusted adapter may retain an input's original decoding across a callback handover.
+    /// This records physical facts only; it does not apply assignments or return feedback.
+    public mutating func observeDecodedInput(_ event: CompactInput) {
         observationRevision &+= 1
         // A release ends a gesture; it cannot prove the device returned to our layer.
         // Once contradicted, withheld motion is obsolete even if fresh positive input
@@ -189,7 +196,6 @@ public struct CompactState: Sendable {
             }
         case .expression, .footswitch: break // No LED, ring or motor is associated with a pedal.
         }
-        return event
     }
 
     /// Use only after a decoded fader-touch release; compare with the observed physical position.

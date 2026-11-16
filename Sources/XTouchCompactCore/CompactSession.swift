@@ -158,6 +158,11 @@ public struct CompactSession: Sendable {
         }
     }
 
+    /// Preserve the actual receipt interpretation; no parameter action or feedback is replayed.
+    public mutating func observeDecodedInput(_ input: CompactInput) {
+        state.observeDecodedInput(input)
+    }
+
     public mutating func updateIndicators(_ states: [IndicatorID: IndicatorState]) throws -> [MIDIMessage] {
         indicators = states
         return try syncVisibleNonMotorFeedback()
