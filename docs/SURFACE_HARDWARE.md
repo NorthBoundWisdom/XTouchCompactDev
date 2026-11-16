@@ -256,3 +256,23 @@ Input event reading had no loss/gap but its worst measured p99 increased by 29.3
 The reliable physical USB MIDI ceiling is unknown until attended measurement.
 The source checkout’s `configs/hardware_attended.py prepare` indexes the prepared-only
 `build/e/xtouch-panel-attended.{json,md}` supplement alongside the original nine steps.
+
+## Multiple display writers (H-4)
+
+The optional dedicated-pipe startup record may add `displays`, an array of 1..7 extra
+64-lowercase-hex display tokens, alongside required owner/operator/display tokens. The
+extended JSON limit is 2048 bytes; all tokens are distinct and duplicate/unknown keys or
+malformed arrays fail startup. Original three-role records keep their 512-byte bound and
+shared quota behavior. Never put a credential in argv, configuration, logs or reports.
+
+In extended mode each display credential has a host-issued distinct opaque writer and an
+independent feedback bucket (default60/s, existing --write-limits.feedback overrides it,
+range1..10000). It does not consume owner/operator aggregate/category quotas. No extra
+principal is persisted. The role catalogue remains four display tools; remote hardware
+input/renew/reset refusals, matching-layer gate and lifecycle zero sends remain unchanged.
+
+Same-target writes are last-accepted-writer-wins, without platform arbitration; every
+accepted event identifies its writer. The consumer must reject intersecting mappings before
+starting a panel beside an operation bridge, and fail on an unexpected writer. Sharing one
+display token gives one indistinguishable writer/shared quota, so use distinct display
+credentials to detect conflicts between processes. Real hardware has not been exercised.

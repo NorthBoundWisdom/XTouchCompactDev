@@ -200,8 +200,9 @@ private func removeOwnedReadyFile() {
             try writeReadyFile(readyPath, readyBytes)
         }
         FileHandle.standardOutput.write(readyBytes + Data("\n".utf8))
-        var budget = writeLimits.map { SurfaceWriteBudgets(input: $0.input_per_window, feedback: $0.feedback_per_window, renew: $0.renew_per_window, admin: $0.admin_per_window) }
-            ?? SurfaceWriteBudgets(aggregateLimit: writeLimit)
+        let displayWriters = credentials?.independentDisplayWriterIDs ?? []
+        var budget = writeLimits.map { SurfaceWriteBudgets(input: $0.input_per_window, feedback: $0.feedback_per_window, renew: $0.renew_per_window, admin: $0.admin_per_window, independentFeedbackWriters: displayWriters) }
+            ?? SurfaceWriteBudgets(aggregateLimit: writeLimit, independentFeedbackWriters: displayWriters)
         // Leases expire on this process's monotonic clock even without requests. Every request
         // processes due expiries at its own time first, so no read or write observes a pending one.
         func advanceHolds(to time: Double) {
@@ -245,7 +246,7 @@ private func removeOwnedReadyFile() {
                         // Mutations run on a copy of the value-type simulator. Only a fully
                         // validated, successful operation consumes the write budget and is committed.
                         func commit(_ candidate: CompactSurfaceSimulator, category: SurfaceWriteBudgets.Category) throws {
-                            guard budget.consume(category, at: time) else { throw ControlContractError("rate_limited") }
+                            guard budget.consume(category, at: time, writerID: client.writerID) else { throw ControlContractError("rate_limited") }
                             simulator = candidate
                         }
                         switch operation {

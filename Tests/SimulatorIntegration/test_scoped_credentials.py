@@ -18,9 +18,10 @@ def credentials():
 
 
 class ScopedHost:
-    def __init__(self, directory, tokens, hardware=False, extra=()):
+    def __init__(self, directory, tokens, hardware=False, extra=(), raw_record=None):
         self.directory = Path(directory)
-        self.tokens = tokens
+        self.tokens = {role: token for role, token in tokens.items() if role != 'displays'}
+        self.tokens.update({'display.' + str(index + 1): token for index, token in enumerate(tokens.get('displays', []))})
         self.script = self.directory / 'test-only-midi.json'
         env = dict(os.environ)
         env.pop('XTOUCH_HARDWARE_TEST_SCRIPT', None)
@@ -35,7 +36,7 @@ class ScopedHost:
         command += ['--surface-client-tokens-stdin', '--surface-instance-id', 'scoped.test', *extra]
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         text=True, cwd=directory, env=env)
-        self.process.stdin.write(json.dumps(tokens) + '\n')
+        self.process.stdin.write(raw_record if raw_record is not None else json.dumps(tokens) + '\n')
         self.process.stdin.close()
         line = self.process.stdout.readline()
         if not line:
@@ -47,7 +48,7 @@ class ScopedHost:
         self.ready = json.loads(line)
         self.clients = {role: Client(self.ready['url'], token, 'scoped.test',
                                     accepted_sources=('hardware',) if hardware else ('simulation',))
-                        for role, token in tokens.items()}
+                        for role, token in self.tokens.items()}
         for client in self.clients.values():
             client.discover()
 

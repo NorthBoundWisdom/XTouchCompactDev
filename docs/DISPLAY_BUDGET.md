@@ -16,7 +16,9 @@ For a panel use the existing explicit option (no new flag or default change):
 Each category accepts 1..10000 requests/window; all four must be supplied. It is mutually exclusive with
 `--write-limit`. The explicit mode advertises existing `writes.independent_limits`; ordinary default
 simulation discovery remains unchanged. In the original three-role credential mode each category is
-shared across clients; this is category isolation, not independent writer quotas.
+shared across clients; this is category isolation. The H-4 optional `displays` startup array
+explicitly enables independent display-writer feedback buckets: each default60/s or the
+configured feedback value, without consuming the owner/operator bucket. Old records are unchanged.
 
 Use 5Hz initially; up to 24 targets at 10Hz (240 feedback requests/s) was accepted with feedback=300.
 Physical delivery and visible smoothness remain unqualified. One ring value requires two display MIDI

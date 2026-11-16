@@ -28,6 +28,18 @@ public struct SurfaceClientCredentials: Sendable {
     public enum Invalid: Error { case dedicatedPipeRequired, record }
     public let ownerToken: String
     let clients: [String: SurfaceClientContext]
+    private let additionalDisplays: Bool
+
+    /// Only explicit extended records opt into independent display feedback budgets.
+    public var independentDisplayWriterIDs: Set<String> {
+        guard additionalDisplays else { return [] }
+        return Set(clients.values.compactMap { client in
+            if case .display = client.scope {
+                return client.writerID
+            }
+            return nil
+        })
+    }
 
     /// Preserve the legacy host principals while guaranteeing all remote clients remain
     /// distinguishable, even if the random generator happens to collide with a stored ID.
@@ -44,16 +56,16 @@ public struct SurfaceClientCredentials: Sendable {
             }
             result[token] = .init(scope: client.scope, writerID: id)
         }
-        return Self(ownerToken: ownerToken, clients: result)
+        return Self(ownerToken: ownerToken, clients: result, additionalDisplays: additionalDisplays)
     }
 
     public static func readStdin() throws -> Self {
         var info = stat()
         guard fstat(STDIN_FILENO, &info) == 0, info.st_mode & S_IFMT == S_IFIFO else { throw Invalid.dedicatedPipeRequired }
         var data = Data()
-        var bytes = [UInt8](repeating: 0, count: 513)
+        var bytes = [UInt8](repeating: 0, count: 2049)
         while true {
-            let count = read(STDIN_FILENO, &bytes, 513 - data.count)
+            let count = read(STDIN_FILENO, &bytes, 2049 - data.count)
             if count < 0, errno == EINTR {
                 continue
             }
@@ -62,17 +74,30 @@ public struct SurfaceClientCredentials: Sendable {
                 break
             }
             data.append(contentsOf: bytes.prefix(count))
-            guard data.count <= 512 else { throw Invalid.record }
+            guard data.count <= 2048 else { throw Invalid.record }
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-              Set(object.keys) == ["owner", "operator", "display"], Set(object.values).count == 3,
-              object.values.allSatisfy({ $0.utf8.count == 64 && $0.utf8.allSatisfy { (48 ... 57).contains($0) || (97 ... 102).contains($0) } })
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let owner = object["owner"] as? String, let operatorToken = object["operator"] as? String,
+              let display = object["display"] as? String else { throw Invalid.record }
+        let additional: [String]
+        if object["displays"] != nil {
+            guard Set(object.keys) == ["owner", "operator", "display", "displays"],
+                  let values = object["displays"] as? [String], (1 ... 7).contains(values.count)
+            else { throw Invalid.record }
+            additional = values
+        } else {
+            guard Set(object.keys) == ["owner", "operator", "display"], data.count <= 512 else { throw Invalid.record }
+            additional = []
+        }
+        let tokens = [owner, operatorToken, display] + additional
+        guard Set(tokens).count == tokens.count,
+              tokens.allSatisfy({ $0.utf8.count == 64 && $0.utf8.allSatisfy { (48 ... 57).contains($0) || (97 ... 102).contains($0) } })
         else { throw Invalid.record }
-        // All values are hex strings; exactly three JSON key tokens must occur, including
-        // escaped spellings. JSONSerialization alone would silently accept duplicate keys.
+        // Only top-level keys exist: display array members are hex strings. Counting keys also
+        // catches duplicate/escaped spellings that JSONSerialization would silently replace.
         let text = String(decoding: data, as: UTF8.self)
         let keys = try NSRegularExpression(pattern: #""(?:[^"\\]|\\.)*"\s*:"#)
-        guard keys.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text)) == 3 else { throw Invalid.record }
+        guard keys.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text)) == object.count else { throw Invalid.record }
         var writers = Set<String>()
         func writer() -> String {
             var result: String
@@ -81,10 +106,14 @@ public struct SurfaceClientCredentials: Sendable {
             } while !writers.insert(result).inserted
             return result
         }
-        return Self(ownerToken: object["owner"]!, clients: [
-            object["owner"]!: .owner,
-            object["operator"]!: .init(scope: .operator, writerID: writer()),
-            object["display"]!: .init(scope: .display, writerID: writer()),
-        ])
+        var clients: [String: SurfaceClientContext] = [
+            owner: .owner,
+            operatorToken: .init(scope: .operator, writerID: writer()),
+            display: .init(scope: .display, writerID: writer()),
+        ]
+        for token in additional {
+            clients[token] = .init(scope: .display, writerID: writer())
+        }
+        return Self(ownerToken: owner, clients: clients, additionalDisplays: !additional.isEmpty)
     }
 }

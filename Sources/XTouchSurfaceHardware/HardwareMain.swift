@@ -273,8 +273,9 @@ private func removeOwnedReadyFile() {
             try writeReadyFile(readyPath, readyBytes)
         }
         FileHandle.standardOutput.write(readyBytes + Data("\n".utf8))
-        var budget = writeLimits.map { SurfaceWriteBudgets(input: $0.input_per_window, feedback: $0.feedback_per_window, renew: $0.renew_per_window, admin: $0.admin_per_window) }
-            ?? SurfaceWriteBudgets(aggregateLimit: writeLimit)
+        let displayWriters = credentials?.independentDisplayWriterIDs ?? []
+        var budget = writeLimits.map { SurfaceWriteBudgets(input: $0.input_per_window, feedback: $0.feedback_per_window, renew: $0.renew_per_window, admin: $0.admin_per_window, independentFeedbackWriters: displayWriters) }
+            ?? SurfaceWriteBudgets(aggregateLimit: writeLimit, independentFeedbackWriters: displayWriters)
         var nextPoll = ProcessInfo.processInfo.systemUptime + 0.02
         try server.runAuthenticated(nextDeadline: { nextPoll }, maintenance: {
             drainMIDI()
@@ -333,7 +334,7 @@ private func removeOwnedReadyFile() {
                             let plan = try surface.displayPlan(feedback, allowed: allowFeedback, at: time, writerID: client.writerID)
                             var candidate = surface
                             let event = try candidate.recordFeedback(feedback, at: time, writerID: client.writerID)
-                            guard budget.consume(.feedback, at: time) else { throw ControlContractError("rate_limited") }
+                            guard budget.consume(.feedback, at: time, writerID: client.writerID) else { throw ControlContractError("rate_limited") }
                             // Spent before any send: a partly delivered or failing request is still
                             // rate limited. The event commits only after every message was accepted.
                             for message in plan {

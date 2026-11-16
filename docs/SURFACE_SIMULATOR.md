@@ -581,7 +581,7 @@ stores the owner's remote writer plus interface/system writers. Every connection
 the old single bearer token still shares that one remote writer. This default is unchanged.
 
 Explicit `--surface-client-tokens-stdin` reads one strict JSON object from a dedicated
-anonymous pipe/FIFO, through EOF, at most 512 bytes. Its only keys are `owner`, `operator`
+anonymous pipe/FIFO, through EOF. The legacy record is at most 512 bytes; its only keys are `owner`, `operator`
 and `display`; each value is a distinct 64-character lowercase-hex token. It conflicts
 with `--token-stdin` and `--token-file`. Tokens stay in memory; do not write or print the
 JSON. Missing/duplicate/unknown keys, duplicate tokens, malformed tokens, excessive
@@ -664,3 +664,39 @@ Input event reading had no loss/gap but its worst measured p99 increased by 29.3
 The reliable physical USB MIDI ceiling is unknown until attended measurement.
 The source checkout’s `configs/hardware_attended.py prepare` indexes the prepared-only
 `build/e/xtouch-panel-attended.{json,md}` supplement alongside the original nine steps.
+
+## Multiple display clients (H-4)
+
+The legacy three-role record remains valid byte for byte, including its 512-byte limit,
+shared aggregate/category quotas and writer attribution. Two clients using the same display
+credential are one writer and share its quota; their events cannot distinguish those clients.
+
+An optional private startup extension adds `displays`, an array of 1..7 additional display
+tokens, while retaining the required `owner`, `operator`, `display` string fields. Generate
+all values in memory and deliver the JSON through the existing dedicated pipe; never write
+or print credentials. For example, an in-memory supervisor may build the record with
+`record = {**legacy_record, "displays": [secrets.token_hex(32)]}`.
+
+The extended record is at most 2048 bytes including whitespace; each token remains exactly
+64 lowercase hexadecimal characters and all tokens across every role must differ. Unknown
+or duplicate keys (including escaped spellings), empty/oversize arrays and malformed values
+fail startup. There are at most eight display credentials including the original `display`.
+Every display credential gets a distinct host-issued opaque writer, kept only in memory,
+rotated at restart and collision-checked against the host principals. Request arguments
+cannot supply identities. The principal-file schema is unchanged and stores no new credentials.
+
+Only this explicit extended mode gives each display credential its own feedback bucket:
+60 requests/s by default, or the feedback category supplied in existing `--write-limits`.
+These display buckets do not consume the owner's/operator's existing aggregate/category
+budgets. `--write-limit` continues to set the owner/operator aggregate; it does not change
+an extended display bucket. Old records retain their original process-wide quota behavior.
+Permission and validation failures remain uncharged; hardware sends that fail after spending
+the budget retain their previous charged-but-uncommitted behavior.
+
+The host does not arbitrate display ownership. Two credentials writing the same target are
+accepted in processing order, the last accepted value wins, and both journal events expose
+their distinct writer_id. A later rejected/rate-limited request does not replace that value.
+Consumers must assign disjoint display targets and reject mapping conflicts before starting;
+visible writer IDs allow them to detect unexpected writers. Shared credentials cannot identify
+a conflict's originating process. This changes no input permissions, hardware safety gate,
+tool name, schema or default discovery profile.
