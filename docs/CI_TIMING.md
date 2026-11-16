@@ -1,30 +1,28 @@
-# Job wall time and warm-cache budget
+# Whole-run wall time and 300s budget
 
-This host follows BCR2000Dev's committed `configs/ci_job_budget.py` policy from
-`73a50eb6dc9d7745f397fecaa46198442cbae7ac`: same step name, summary heading,
-step/result/seconds table and warm/cold decision. It is a standard-library-only
-reporter, not a new runtime dependency. The one host adaptation is CI_JOB_NAME
-for the package workflow's matrix names, which differ from GITHUB_JOB.
+The direct user decision supersedes the earlier warm-only job budget. This host
+matches BCR2000Dev origin/main at the start of C-15,
+`9fc56ae57fe4883af3e0d883d71271cfea9ea0f3`: the **whole workflow run** must
+finish within 300 seconds from creation, including queues, setup and post-job
+cleanup. Cold and warm caches have the same limit, with no exemption.
 
-Every job ends with **Report wall time and enforce warm-cache 300s budget** under
-`if: always()`. The reporter reads the current attempt's GitHub job timestamps,
-measures started_at through the live report, writes GITHUB_STEP_SUMMARY and fails
-that clearly named step only when a restored build key is nonempty and elapsed
-job time exceeds 300 seconds. Run-creation/queue time is reported separately.
-Cold bootstrap is measured and labelled, not hidden or killed by a five-minute
-bootstrap timeout. Post-job cleanup is outside the live check, so completed job
-and created→updated timings must still be checked independently afterward.
+Every job ends with **Report whole-run wall time and enforce 300s budget** under
+`if: always()`. The standard-library reporter reads GitHub timestamps and writes
+**Whole-run wall time and 300s budget**, policy, run/job/cache diagnostics and a
+step/result/seconds table to GITHUB_STEP_SUMMARY. A live created-to-now duration
+above 300 seconds fails that named step. CI_JOB_NAME selects matrix display names.
+Final completed created-to-updated wall time must also be checked independently:
+a job cannot observe its own post-job cleanup or other jobs' future completion.
+The 20-minute hard timeout only guards hung jobs; it does not relax the budget.
 
-Warm means `actions/cache/restore` returned `cache-matched-key`, including a
-usable prefix restore, not only an exact cache hit. Manual `cold_build=true`
-skips restoring project compilation caches; dependency acquisition remains pinned.
-Artifact-only package-smoke jobs have no compilation cache and report an empty
-key rather than pretending a downloaded artifact was a warm build cache.
+A nonempty cache-matched-key (including prefix restores) means warm. Manual
+`cold_build=true` skips project compilation cache restoration only; locked
+SurfacePlugins acquisition is unchanged. Artifact-only smoke jobs report no
+build cache. Timing output never contains GitHub credentials.
 
-Linux/native CI builds all tests first, immediately saves a successful compilation
-cache even if later tests fail, and runs stock SwiftPM tests with --skip-build.
-Universal packaging restores a separate compiler cache, explicitly compiles the
-two existing slice paths, saves after successful compilation, and invokes the
-unchanged package command to assemble/sign/check the final assets. No packaging
-or delivery implementation is changed. New UI acceptance scripts remain local and
-are not CI steps. Time reports never contain the GitHub credential.
+Compile all tests before running them; save the compiler cache immediately after
+successful compilation even when subsequent tests fail. Packaging does the same
+for release slices before assembling, signing and validating ZIP and DMG. Keep
+all GUI/headless startup checks on both runner architectures. Offscreen native
+acceptance remains local, outside CI. Record every cold/warm measurement and
+three consecutive CI runs, including unsuccessful measurements, in ALIGN_C.md.

@@ -14,7 +14,7 @@ permissions:
 jobs:
   package-macos:
     runs-on: macos-26
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
@@ -63,7 +63,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
-      - name: Report wall time and enforce warm-cache 300s budget
+      - name: Report whole-run wall time and enforce 300s budget
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -76,7 +76,7 @@ jobs:
       matrix:
         os: [macos-26, macos-15-intel]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -99,7 +99,7 @@ jobs:
               check_package(asset, expected_commit=os.environ['GITHUB_SHA'],
                             expected_plugins_revision=lock['revision'], require_clean=True)
           PY
-      - name: Report wall time and enforce warm-cache 300s budget
+      - name: Report whole-run wall time and enforce 300s budget
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
