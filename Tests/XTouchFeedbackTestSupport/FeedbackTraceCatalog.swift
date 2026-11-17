@@ -15,9 +15,21 @@ struct FeedbackTraceCatalog {
     private(set) var nodes: [Node] = []
     private var indices: [Data: Int] = [:]
     private var checkedLayouts: Set<String> = []
-    private var itemMemos: [Int: [(SchedulerItem, Int)]] = [:]
-    private var proposalMemos: [UInt64: [(SchedulerProposal, Int)]] = [:]
-    private var planMemos: [Int: [(SchedulerTracePlan, Int)]] = [:]
+    private var lastItems: [Int: (SchedulerItem, Int)] = [:]
+    private var lastPlans: [Int: (SchedulerTracePlan, Int)] = [:]
+    private var lastProposals: [UInt64: (SchedulerProposal, Int)] = [:]
+    private(set) var itemMemoHits = 0
+    private(set) var itemMemoMisses = 0
+    private(set) var planMemoHits = 0
+    private(set) var planMemoMisses = 0
+    private(set) var proposalMemoHits = 0
+    private(set) var proposalMemoMisses = 0
+    private(set) var canonicalHits = 0
+    private(set) var canonicalMisses = 0
+    private var checkedTypes: Set<ObjectIdentifier> = []
+    private var canonicalBytes: [Int: Data] = [:]
+    private(set) var canonicalByteCount = 0
+    static let canonicalByteLimit = 8 * 1024 * 1024
     private let encoder: JSONEncoder = { let value = JSONEncoder(); value.outputFormatting = [.sortedKeys]; return value }()
 
     private func uint(_ value: UInt64, into data: inout Data) {
@@ -100,8 +112,20 @@ struct FeedbackTraceCatalog {
         }
     }
 
-    func canonicalData(_ reference: Int) throws -> Data {
-        try encoder.encode(expand(reference))
+    mutating func canonicalData(_ reference: Int) throws -> Data {
+        guard reference > 0, reference <= nodes.count else { throw Failure.missingReference }
+        if let bytes = canonicalBytes[reference] {
+            canonicalHits += 1; return bytes
+        }
+        canonicalMisses += 1
+        let bytes = try encoder.encode(expand(reference))
+        if bytes.count <= Self.canonicalByteLimit {
+            if canonicalByteCount + bytes.count > Self.canonicalByteLimit {
+                canonicalBytes.removeAll(keepingCapacity: true); canonicalByteCount = 0
+            }
+            canonicalBytes[reference] = bytes; canonicalByteCount += bytes.count
+        }
+        return bytes
     }
 
     func definition(_ reference: Int) throws -> Data {
@@ -288,7 +312,7 @@ enum FeedbackBranchReplay {
             }
             try feedbackRecordPool {
                 let inputBytes = try catalog.canonicalData(record.input)
-                let input = try SchedulerTraceCodec.decodeInput(inputBytes)
+                let input = try SchedulerTraceCodec.decodeInput(payload: SchedulerTraceCodec.decodePayload(inputBytes))
                 let actual = try candidate.apply(input)
                 guard try catalog.step(actual, input: record.input) == record.step else { throw Failure.outputMismatch }
             }
@@ -364,10 +388,11 @@ private func feedbackExactPlan(_ lhs: SchedulerTracePlan, _ rhs: SchedulerTraceP
 }
 
 extension FeedbackTraceCatalog {
-    private mutating func checkStored(_ value: Any, id: String, fields: Set<String>) throws {
-        guard !checkedLayouts.contains(id) else { return }
-        try FeedbackStepPayload.requireLayout(Set(Mirror(reflecting: value).children.compactMap(\.label)), fields)
-        checkedLayouts.insert(id)
+    mutating func checkStored<Value>(_ value: Value, id _: String, fields: @autoclosure () -> Set<String>) throws {
+        let type = ObjectIdentifier(Value.self)
+        guard !checkedTypes.contains(type) else { return }
+        try FeedbackStepPayload.requireLayout(Set(Mirror(reflecting: value).children.compactMap(\.label)), fields())
+        checkedTypes.insert(type)
     }
 
     private mutating func string(_ value: String) throws -> Int {
@@ -387,12 +412,14 @@ extension FeedbackTraceCatalog {
         if !checkedLayouts.contains("item-codec") {
             try FeedbackStrictJSON.fieldsObject(SchedulerTraceCodec.itemPayload(value), ["key", "value", "scope"]); checkedLayouts.insert("item-codec")
         }
-        let bucket = try string(value.key)
-        if let found = itemMemos[bucket]?.first(where: { feedbackExactItem($0.0, value) }) {
-            return found.1
+        let key = try string(value.key)
+        if let previous = lastItems[key], feedbackExactItem(previous.0, value) {
+            itemMemoHits += 1; return previous.1
         }
-        let reference = try intern(SchedulerTraceCodec.itemPayload(value))
-        itemMemos[bucket, default: []].append((value, reference)); return reference
+        itemMemoMisses += 1
+        let scope = try intern(value.scope), payload = try intern(value.value)
+        let result = object(["key": key, "scope": scope, "value": payload])
+        lastItems[key] = (value, result); return result
     }
 
     mutating func plan(_ value: SchedulerTracePlan) throws -> Int {
@@ -401,24 +428,42 @@ extension FeedbackTraceCatalog {
         if !checkedLayouts.contains("plan-codec") {
             try FeedbackStrictJSON.fieldsObject(SchedulerTraceCodec.planPayload(value), ["reference", "payload", "origin", "scope", "source", "endpoint", "evidence", "target", "affected_elements", "classification", "side_effects", "delivery"]); checkedLayouts.insert("plan-codec")
         }
-        let bucket = try intern(value.reference)
-        if let found = planMemos[bucket]?.first(where: { feedbackExactPlan($0.0, value) }) {
-            return found.1
+        // Every field participates in the existing exact Data/node key. No
+        // reference/ordinal bucket, historical value scan, or semantic equality.
+        let reference = try intern(value.reference)
+        if let previous = lastPlans[reference], feedbackExactPlan(previous.0, value) {
+            planMemoHits += 1; return previous.1
         }
-        let reference = try intern(SchedulerTraceCodec.planPayload(value))
-        planMemos[bucket, default: []].append((value, reference)); return reference
+        planMemoMisses += 1
+        let elements = try strings(value.affectedElements.sorted())
+        let classification = try string(value.classification.rawValue)
+        let delivery = try string(value.deliveryMode == .direct ? "direct" : "coalescible")
+        let generation = try string(String(value.endpointEvidence.connectionGeneration))
+        let device = try intern(value.endpointEvidence.deviceID.map { .scalar(.text($0)) } ?? .scalar(.null))
+        let endpointID = try intern(value.endpointEvidence.endpointID.map { .scalar(.text($0)) } ?? .scalar(.null))
+        let transport = try string(value.endpointEvidence.transportOrigin.rawValue)
+        let endpoint = object(["connection_generation": generation, "device_id": device, "endpoint_id": endpointID, "origin": transport])
+        let evidence = try intern(value.capturedEvidence), origin = try intern(value.origin), payload = try intern(value.payload)
+        let scope = try intern(value.scope), effects = try strings(value.sideEffects.map(\.rawValue).sorted())
+        let source = try string(value.source.rawValue), target = try string(value.targetID)
+        let result = object(["affected_elements": elements, "classification": classification, "delivery": delivery, "endpoint": endpoint,
+                             "evidence": evidence, "origin": origin, "payload": payload, "reference": reference, "scope": scope,
+                             "side_effects": effects, "source": source, "target": target])
+        lastPlans[reference] = (value, result); return result
     }
 
     private mutating func proposal(_ value: SchedulerProposal) throws -> Int {
         try checkStored(value, id: "proposal", fields: ["ordinal", "causeOrdinal", "cause", "item"])
-        if let found = proposalMemos[value.ordinal]?.first(where: {
-            $0.0.ordinal == value.ordinal && $0.0.causeOrdinal == value.causeOrdinal && $0.0.cause == value.cause && feedbackExactItem($0.0.item, value.item)
-        }) {
-            return found.1
+        if let previous = lastProposals[value.ordinal], previous.0.ordinal == value.ordinal,
+           previous.0.causeOrdinal == value.causeOrdinal, previous.0.cause == value.cause,
+           feedbackExactItem(previous.0.item, value.item)
+        {
+            proposalMemoHits += 1; return previous.1
         }
-        let reference = try object(["ordinal": string(String(value.ordinal)), "cause_ordinal": string(String(value.causeOrdinal)),
-                                    "cause": string(value.cause.rawValue), "item": item(value.item)])
-        proposalMemos[value.ordinal, default: []].append((value, reference)); return reference
+        proposalMemoMisses += 1
+        let result = try object(["ordinal": string(String(value.ordinal)), "cause_ordinal": string(String(value.causeOrdinal)),
+                                 "cause": string(value.cause.rawValue), "item": item(value.item)])
+        lastProposals[value.ordinal] = (value, result); return result
     }
 
     private mutating func state(_ value: SchedulerStateSnapshot) throws -> Int {
@@ -443,6 +488,12 @@ extension FeedbackTraceCatalog {
                            "retry_after": number(value.retryAfter), "persistent_alignment_differences": strings(value.persistentAlignmentDifferences)])
     }
 
+    var representationCounts: [String: Int] {
+        ["item_hits": itemMemoHits, "item_misses": itemMemoMisses, "plan_hits": planMemoHits, "plan_misses": planMemoMisses,
+         "proposal_hits": proposalMemoHits, "proposal_misses": proposalMemoMisses, "canonical_hits": canonicalHits,
+         "canonical_misses": canonicalMisses, "layout_types": checkedTypes.count]
+    }
+
     mutating func step(_ value: SchedulerStep, input: Int) throws -> Int {
         try checkStored(value.input, id: "envelope", fields: ["owner", "ordinal", "input", "context"])
         for ready in value.snapshot.awaitingReceipt {
@@ -463,7 +514,8 @@ extension FeedbackTraceCatalog {
         default: break
         }
         guard try SchedulerTraceCodec.encodeInput(value.input) == canonicalData(input) else { throw Failure.inputMismatch }
-        FeedbackStepPayload.checkLayout(value)
+        try checkStored(value, id: "step", fields: ["input", "snapshot", "proposals", "removedKeys", "replacedKeys", "deduplicatedKeys", "gateDecisions", "receipts", "alignmentDifferences"])
+        try checkStored(value.snapshot, id: "state", fields: ["owner", "inputOrdinal", "rate", "queued", "withheld", "desired", "acceptedCache", "awaitingGate", "awaitingReceipt", "tokens", "lastRefill", "retryAfter", "persistentAlignmentDifferences"])
         let state = try state(value.snapshot)
         let proposals = try array(value.proposals.map { try proposal($0) })
         let gates = try array(value.gateDecisions.map { try object(["proposal": string(String($0.proposalOrdinal)), "result": intern(FeedbackStepPayload.preflight($0.result))]) })

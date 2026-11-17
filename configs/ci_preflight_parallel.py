@@ -23,7 +23,14 @@ if str(ROOT) not in sys.path:
 from configs.build_paths import build_path
 
 XCODE = "/Applications/Xcode_26.6.app/Contents/Developer"
-SETUP = ["python3", "configs/setup_local_project.py"]
+SETUP = [
+    "python3",
+    "configs/setup_local_project.py",
+    "--scratch-path",
+    "build/swiftpm",
+    "--phase-report",
+    "build/ci-verification/setup/preflight.json",
+]
 INSTALL = ["brew", "install", "swiftformat", "ruff"]
 LINT = ["python3", "configs/format_repo.py", "--check"]
 

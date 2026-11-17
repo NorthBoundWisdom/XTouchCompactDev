@@ -218,7 +218,7 @@ class ValidationGateTests(unittest.TestCase):
         gate = app.index("python3 configs/ci_validation_gate.py --producer preflight-macos")
         self.assertLess(app.index("swift build --build-path build/swiftpm --build-tests"), gate)
         self.assertLess(app.index("name: Link every executable in the test build path"), gate)
-        self.assertEqual(app.count("run: swift build --build-path build/swiftpm\n"), 1)
+        self.assertEqual(app.count("run: swift build --build-path build/swiftpm --manifest-cache local\n"), 1)
         for command in [
             "swift test --build-path build/swiftpm --skip-build",
             "--pattern test_hardware_service.py",

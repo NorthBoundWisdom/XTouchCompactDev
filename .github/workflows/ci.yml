@@ -107,13 +107,15 @@ jobs:
           key: dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
       - name: Join complete lint and setup with fixed tool identity
         run: python3 configs/ci_preflight_parallel.py
-      - run: python3 configs/check_host_layers.py
+      - run: python3 configs/check_host_layers.py --scratch-path build/swiftpm
       - name: Preserve complete preflight diagnostics
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
           name: preflight-diagnostics-${{ github.job }}
-          path: build/ci-verification/preflight/
+          path: |
+            build/ci-verification/preflight/
+            build/ci-verification/setup/
           if-no-files-found: warn
       - name: Report whole-run wall time and enforce 300s budget
         if: always()
@@ -138,14 +140,16 @@ jobs:
         with:
           path: build/dependencies
           key: dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
-      - run: python3 configs/setup_local_project.py
+      - run: python3 configs/setup_local_project.py --scratch-path build/swiftpm --phase-report build/ci-verification/setup/phase.json
       - run: python3 -B configs/run_python_workflow_tests.py --suite workflow
       - name: Preserve Python per-case wall times
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
           name: python-case-times-${{ github.job }}
-          path: build/ci-verification/tests/python-*-case-times.json
+          path: |
+            build/ci-verification/tests/python-*-case-times.json
+            build/ci-verification/setup/
           if-no-files-found: warn
       - name: Report whole-run wall time and enforce 300s budget
         if: always()
@@ -183,13 +187,13 @@ jobs:
           path: build/swiftpm
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-${{ github.sha }}
           restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-
-      - run: python3 configs/setup_local_project.py
+      - run: python3 configs/setup_local_project.py --scratch-path build/swiftpm --phase-report build/ci-verification/setup/phase.json
       # One build path for tests, executables and the app, so nothing is compiled twice.
       - name: Compile native targets and tests
         id: compile
-        run: swift build --build-path build/swiftpm --build-tests
+        run: swift build --build-path build/swiftpm --build-tests --manifest-cache local
       - name: Link every executable in the test build path
-        run: swift build --build-path build/swiftpm
+        run: swift build --build-path build/swiftpm --manifest-cache local
       - name: Save compiled native cache even if later tests fail
         if: always() && steps.compile.outcome == 'success' && github.event_name == 'push'
         uses: actions/cache/save@v6.1.0
@@ -200,7 +204,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 configs/ci_validation_gate.py --producer preflight-macos
-      - run: swift test --build-path build/swiftpm --skip-build
+      - run: swift test --build-path build/swiftpm --skip-build --manifest-cache local
       - name: Exercise hardware service with isolated fake MIDI only
         env:
           XTOUCH_HARDWARE_BINARY: build/swiftpm/debug/XTouchSurfaceHardware
@@ -214,7 +218,7 @@ jobs:
           XTOUCH_HARDWARE_BINARY: build/swiftpm/debug/XTouchSurfaceHardware
           XTOUCH_OWNED_REPORT_ROOT: build/ci-verification/owned-rehearsal
         run: python3 -B configs/run_python_workflow_tests.py --suite simulator --pattern test_owned_virtual_rehearsal.py
-      - run: python3 configs/macos_workflow.py build
+      - run: python3 configs/macos_workflow.py build --manifest-cache local
       - name: Isolated native startup
         run: |
           python3 - <<'PY'
@@ -244,6 +248,7 @@ jobs:
           path: |
             build/ci-verification/tests/python-*-case-times.json
             build/ci-verification/owned-rehearsal/
+            build/ci-verification/setup/
           if-no-files-found: warn
       - name: Report whole-run wall time and enforce 300s budget
         if: always()

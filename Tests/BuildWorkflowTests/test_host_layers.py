@@ -41,6 +41,89 @@ class HostLayerTests(unittest.TestCase):
         self.assertEqual(report["errors"], [])
         self.assertTrue(all(report["roles"][role] > 0 for role in ("runtime", "bridge", "device", "transport")))
 
+    def test_shared_test_support_cannot_become_runtime_or_an_app_cycle(self):
+        with fixture({"Sources/Host/Runtime.swift": ("composition", "struct Runtime {}")}) as (root, manifest):
+            support = {
+                "name": "XTouchFeedbackTestSupport",
+                "type": "regular",
+                "path": "Tests/XTouchFeedbackTestSupport",
+                "dependencies": [
+                    {"byName": [name, None]}
+                    for name in (
+                        "XTouchCompactCore",
+                        "SurfaceFeedbackPlanning",
+                        "SurfaceDeviceContracts",
+                        "SurfaceDeviceConformance",
+                    )
+                ],
+            }
+            support["settings"] = [
+                {
+                    "condition": {"config": "debug", "platformNames": []},
+                    "kind": {"unsafeFlags": {"_0": ["-O", "-assert-config", "Debug"]}},
+                    "tool": "swift",
+                }
+            ]
+            package = {"targets": [support, {"name": "Host", "type": "regular", "dependencies": []}], "products": []}
+            self.assertEqual(check_tree(root, manifest, package)["errors"], [])
+            for flags, config in [
+                (["-Ounchecked"], "debug"),
+                (["-O"], "debug"),
+                (["-O", "-assert-config", "Release"], "debug"),
+                (["-O", "-assert-config", "Debug"], "release"),
+            ]:
+                original = support["settings"]
+                support["settings"] = [
+                    {
+                        "condition": {"config": config, "platformNames": []},
+                        "kind": {"unsafeFlags": {"_0": flags}},
+                        "tool": "swift",
+                    }
+                ]
+                self.assertTrue(any("assertion-preserving" in e for e in check_tree(root, manifest, package)["errors"]))
+                support["settings"] = original
+            package["targets"][1]["settings"] = support["settings"]
+            self.assertTrue(any("optimization escaped" in e for e in check_tree(root, manifest, package)["errors"]))
+            package["targets"][1].pop("settings")
+            package["targets"][1]["dependencies"] = [{"byName": ["XTouchFeedbackTestSupport", None]}]
+            self.assertTrue(
+                any(
+                    "Test-support module in production target" in e
+                    for e in check_tree(root, manifest, package)["errors"]
+                )
+            )
+            package["targets"][1]["dependencies"] = []
+            package["products"] = [{"name": "RuntimeLeak", "targets": ["XTouchFeedbackTestSupport"]}]
+            self.assertTrue(any("exposed as product" in e for e in check_tree(root, manifest, package)["errors"]))
+            package["products"] = []
+            support["dependencies"].append({"byName": ["XTouchCompactApp", None]})
+            self.assertTrue(
+                any("Invalid test-support target boundary" in e for e in check_tree(root, manifest, package)["errors"])
+            )
+            support["dependencies"].pop()
+            support["path"] = "Sources/XTouchFeedbackTestSupport"
+            self.assertTrue(
+                any("Invalid test-support target boundary" in e for e in check_tree(root, manifest, package)["errors"])
+            )
+            support["path"] = "Tests/XTouchFeedbackTestSupport"
+            package["targets"].append(
+                {
+                    "name": "OtherTests",
+                    "type": "test",
+                    "dependencies": [{"byName": ["XTouchFeedbackTestSupport", None]}],
+                }
+            )
+            self.assertTrue(
+                any("Unexpected test-support consumer" in e for e in check_tree(root, manifest, package)["errors"])
+            )
+            (root / "Sources/Host/Runtime.swift").write_text("import XTouchFeedbackTestSupport\nstruct Runtime {}")
+            self.assertTrue(
+                any(
+                    "Test-support module in production source" in e
+                    for e in check_tree(root, manifest, package)["errors"]
+                )
+            )
+
     def test_kernel_conformance_is_test_only_even_if_a_manifest_tries_to_allow_it(self):
         with fixture(
             {"Sources/Host/Runtime.swift": ("composition", "import SurfaceDeviceConformance\nstruct Runtime {}")}

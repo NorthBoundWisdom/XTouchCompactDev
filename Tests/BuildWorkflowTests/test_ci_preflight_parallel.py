@@ -49,7 +49,17 @@ class PreflightParallelTests(unittest.TestCase):
         code, report, logs, output = self.run_fixture(runner)
         self.assertEqual(code, 0)
         self.assertCountEqual(commands, [preflight.SETUP, preflight.INSTALL, preflight.LINT])
-        self.assertEqual(preflight.SETUP, ["python3", "configs/setup_local_project.py"])
+        self.assertEqual(
+            preflight.SETUP,
+            [
+                "python3",
+                "configs/setup_local_project.py",
+                "--scratch-path",
+                "build/swiftpm",
+                "--phase-report",
+                "build/ci-verification/setup/preflight.json",
+            ],
+        )
         self.assertEqual(preflight.INSTALL, ["brew", "install", "swiftformat", "ruff"])
         self.assertEqual(preflight.LINT, ["python3", "configs/format_repo.py", "--check"])
         self.assertEqual([r["name"] for r in report["commands"]["lint"]], ["install", "lint"])

@@ -50,7 +50,9 @@ def architectures(architecture: str) -> tuple[str, ...]:
     return (result,)
 
 
-def swift_executable(configuration: str, architecture: str, prebuilt_slices: Path | None = None) -> Path:
+def swift_executable(
+    configuration: str, architecture: str, prebuilt_slices: Path | None = None, *, manifest_cache: str | None = None
+) -> Path:
     binaries = []
     for arch in architectures(architecture):
         if prebuilt_slices is not None:
@@ -61,6 +63,10 @@ def swift_executable(configuration: str, architecture: str, prebuilt_slices: Pat
             root = SWIFTPM_ROOT if architecture == "native" else SWIFTPM_ROOT / arch
             build_path(REPO_ROOT, str(root.relative_to(BUILD_ROOT)))
             options = ["swift", "build", "--build-path", root, "--configuration", configuration]
+            if manifest_cache is not None:
+                if manifest_cache != "local":
+                    raise ValueError("Only the explicit local manifest cache policy is supported")
+                options += ["--manifest-cache", "local"]
             if architecture != "native":
                 options += ["--triple", f"{arch}-apple-macosx14.0"]
             run([*options, "--product", PRODUCT])
@@ -186,11 +192,21 @@ def prepare_icon() -> Path:
     return output
 
 
-def build(configuration: str, architecture: str = "native", prebuilt_slices: Path | None = None) -> Path:
+def build(
+    configuration: str,
+    architecture: str = "native",
+    prebuilt_slices: Path | None = None,
+    *,
+    manifest_cache: str | None = None,
+) -> Path:
     settings = load_app_build_settings(REPO_ROOT)
     for relative in ("swiftpm", f"app/{configuration}/{PRODUCT}.app", "icons/AppIcon.iconset", "icons/AppIcon.png"):
         build_path(REPO_ROOT, relative)
-    executable = swift_executable(configuration, architecture, prebuilt_slices)
+    executable = (
+        swift_executable(configuration, architecture, prebuilt_slices)
+        if manifest_cache is None
+        else swift_executable(configuration, architecture, prebuilt_slices, manifest_cache=manifest_cache)
+    )
     if configuration == "release":
         verify_release_test_hooks(executable)
     bundle = BUILD_ROOT / "app" / configuration / f"{PRODUCT}.app"
@@ -529,7 +545,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Verified release slice artifacts from this exact source/dependency revision",
     )
     parser.add_argument("--archive", type=Path)
+    parser.add_argument("--manifest-cache", choices=("local",))
     args = parser.parse_args(argv)
+    if args.manifest_cache is not None and (
+        args.action != "build" or args.configuration != "debug" or args.architecture != "native"
+    ):
+        parser.error("--manifest-cache is limited to the explicit native Debug build")
     if args.prebuilt_slices is not None and (args.action != "package" or args.architecture != "universal"):
         parser.error("--prebuilt-slices requires package --architecture universal")
     if args.action not in {"core", "test"} and sys.platform != "darwin":
@@ -561,7 +582,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.action == "package":
             package(args.architecture, args.prebuilt_slices)
         else:
-            bundle = build(args.configuration, args.architecture)
+            bundle = (
+                build(args.configuration, args.architecture)
+                if args.manifest_cache is None
+                else build(args.configuration, args.architecture, manifest_cache=args.manifest_cache)
+            )
             if args.action == "run":
                 # Replace Python so terminal signals and exit status belong to the app.
                 executable = bundle / "Contents/MacOS" / PRODUCT

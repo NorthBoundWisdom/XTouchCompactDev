@@ -3,6 +3,7 @@ import SurfaceDeviceContracts
 import SurfaceFeedbackPlanning
 import Testing
 @testable import XTouchCompactCore
+@testable import XTouchFeedbackTestSupport
 
 private func feedbackPlan(scope: CompactFeedbackScope = .init(), evidence: CompactFeedbackBytes = .init()) throws -> CompactFeedbackPlan {
     var reference = CompactFeedbackBytes(); reference.add(0)

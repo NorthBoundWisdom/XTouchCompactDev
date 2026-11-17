@@ -2,6 +2,7 @@ import Foundation
 import SurfaceBindingContext
 import SurfaceDeviceContracts
 @testable import XTouchCompactCore
+@testable import XTouchFeedbackTestSupport
 
 /// Original leaf semantics: a5324f7 CompactState and ParameterEngine, retained only in tests.
 struct LegacyContextComparison: Equatable, Sendable, Codable {

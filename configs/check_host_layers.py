@@ -7,10 +7,13 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 ROLE_EDGES = {
     "values": {"values"},
     "runtime": {"values", "runtime"},
@@ -313,9 +316,36 @@ def check_tree(root, manifest, package=None):
             errors.append("Unknown file role: " + path)
     if package is not None:
         for target in package["targets"]:
+            name = target["name"]
+            if name == "XTouchFeedbackTestSupport":
+                expected_settings = [
+                    {
+                        "condition": {"config": "debug", "platformNames": []},
+                        "kind": {"unsafeFlags": {"_0": ["-O", "-assert-config", "Debug"]}},
+                        "tool": "swift",
+                    }
+                ]
+                if (
+                    target.get("type") != "regular"
+                    or target.get("path") != "Tests/XTouchFeedbackTestSupport"
+                    or target_dependencies(target)
+                    != {
+                        "XTouchCompactCore",
+                        "SurfaceFeedbackPlanning",
+                        "SurfaceDeviceContracts",
+                        "SurfaceDeviceConformance",
+                    }
+                ):
+                    errors.append("Invalid test-support target boundary")
+                if target.get("settings") != expected_settings:
+                    errors.append("Invalid test-support Debug assertion-preserving optimization")
+                continue
+            if any("unsafeFlags" in setting.get("kind", {}) for setting in target.get("settings", [])):
+                errors.append("Test-support optimization escaped its target: " + name)
             if target.get("type") == "test":
                 continue
-            name = target["name"]
+            if "XTouchFeedbackTestSupport" in target_dependencies(target):
+                errors.append("Test-support module in production target: " + name)
             if name not in targets:
                 errors.append("Unclassified production module: " + name)
                 continue
@@ -324,11 +354,24 @@ def check_tree(root, manifest, package=None):
             extra = target_dependencies(target) - set(targets[name]["dependencies"])
             if extra:
                 errors.append("Forbidden module dependencies: " + name + " -> " + ",".join(sorted(extra)))
+    if package is not None:
+        for target in package["targets"]:
+            if (
+                target.get("type") == "test"
+                and "XTouchFeedbackTestSupport" in target_dependencies(target)
+                and target["name"] not in {"XTouchCompactCoreTests", "XTouchCompactAppTests"}
+            ):
+                errors.append("Unexpected test-support consumer: " + target["name"])
+        for product in package.get("products", []):
+            if "XTouchFeedbackTestSupport" in product.get("targets", []):
+                errors.append("Test-support module exposed as product")
     parsed, declarations, members, member_owners = {}, defaultdict(set), defaultdict(set), defaultdict(set)
     for path in sorted(actual & roles.keys()):
         if roles[path] not in ROLE_EDGES:
             continue
         code = swift_code((root / path).read_text())
+        if "XTouchFeedbackTestSupport" in IMPORTS.findall(code):
+            errors.append("Test-support module in production source: " + path)
         if "SurfaceDeviceConformance" in IMPORTS.findall(code):
             errors.append("Test-only module in production source: " + path + " -> SurfaceDeviceConformance")
         parsed[path] = (code, *source_symbols(code))
@@ -466,9 +509,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--scratch-path", type=Path)
     args = parser.parse_args()
     manifest = json.loads((args.root / "configs/host_layers.json").read_text())
-    package = json.loads(subprocess.check_output(["swift", "package", "dump-package"], cwd=args.root))
+    command = ["swift", "package", "dump-package"]
+    if args.scratch_path is not None:
+        from configs.build_paths import build_path
+
+        if not str(args.scratch_path).startswith("build/"):
+            raise ValueError("Explicit scratch must be under build/")
+        scratch = build_path(args.root, str(args.scratch_path.relative_to("build")))
+        command = ["swift", "package", "--scratch-path", str(scratch), "--manifest-cache", "local", "dump-package"]
+    package = json.loads(subprocess.check_output(command, cwd=args.root))
     report = check_tree(args.root, manifest, package)
     report["errors"].extend(check_owned_virtual(args.root))
     if args.report:

@@ -2,14 +2,10 @@ import Foundation
 import SurfaceDeviceConformance
 
 /// Lexical duplicate-key rejection precedes the value decoder's last-key-wins behavior.
-struct FeedbackStrictJSON {
+enum FeedbackStrictJSON {
     enum Failure: Error { case invalidJSON, duplicateKey, fields, type, decimal, reference, header, identity, coverage }
-    private let bytes: [UInt8]
-    private var offset = 0
     static func object(_ data: Data) throws -> [String: ScenarioPayload] {
-        var reader = FeedbackStrictJSON(bytes: Array(data))
-        try reader.value(depth: 0); reader.space()
-        guard reader.offset == reader.bytes.count, case let .object(value) = try JSONDecoder().decode(ScenarioPayload.self, from: data) else { throw Failure.invalidJSON }
+        guard case let .object(value) = try SchedulerTraceCodec.decodePayload(data) else { throw Failure.invalidJSON }
         return value
     }
 
@@ -42,69 +38,6 @@ struct FeedbackStrictJSON {
 
     static func array(_ value: ScenarioPayload?) throws -> [ScenarioPayload] {
         guard case let .array(value) = value else { throw Failure.type }; return value
-    }
-
-    private var current: UInt8? {
-        offset < bytes.count ? bytes[offset] : nil
-    }
-
-    private mutating func space() {
-        while let byte = current, [9, 10, 13, 32].contains(byte) {
-            offset += 1
-        }
-    }
-
-    private mutating func take(_ byte: UInt8) throws {
-        space(); guard current == byte else { throw Failure.invalidJSON }; offset += 1
-    }
-
-    private mutating func string() throws -> String {
-        try take(34); let start = offset - 1
-        while let byte = current {
-            offset += 1
-            if byte == 34 {
-                return try JSONDecoder().decode(String.self, from: Data(bytes[start ..< offset]))
-            }
-            if byte == 92 {
-                guard current != nil else { throw Failure.invalidJSON }; offset += 1
-            }
-        }
-        throw Failure.invalidJSON
-    }
-
-    private mutating func value(depth: Int) throws {
-        guard depth <= 128 else { throw Failure.invalidJSON }; space()
-        guard let byte = current else { throw Failure.invalidJSON }
-        switch byte {
-        case 123:
-            offset += 1; space(); if current == 125 {
-                offset += 1; return
-            }
-            var keys: Set<String> = []
-            while true {
-                let key = try string(); guard keys.insert(key).inserted else { throw Failure.duplicateKey }
-                try take(58); try value(depth: depth + 1); space()
-                if current == 125 {
-                    offset += 1; return
-                }; try take(44)
-            }
-        case 91:
-            offset += 1; space(); if current == 93 {
-                offset += 1; return
-            }
-            while true {
-                try value(depth: depth + 1); space(); if current == 93 {
-                    offset += 1; return
-                }; try take(44)
-            }
-        case 34: _ = try string()
-        default:
-            let start = offset
-            while let byte = current, ![9, 10, 13, 32, 44, 93, 125].contains(byte) {
-                offset += 1
-            }
-            guard offset > start else { throw Failure.invalidJSON }
-        }
     }
 }
 

@@ -3,6 +3,7 @@ import SurfaceDeviceConformance
 import SurfaceDeviceContracts
 import SurfaceFeedbackPlanning
 import Testing
+@testable import XTouchFeedbackTestSupport
 
 private struct CatalogFixture {
     var catalog = FeedbackTraceCatalog()
@@ -150,7 +151,13 @@ private func catalogPlan(_ proposal: SchedulerProposal) throws -> SchedulerTrace
     #expect(try reference == (catalog.plan(original)))
     let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
     for field in 0 ... 14 {
+        _ = try catalog.plan(original)
+        let misses = catalog.planMemoMisses
         let changed = try plan(field), newReference = try catalog.plan(changed)
+        #expect(catalog.planMemoMisses == misses + 1)
+        let hits = catalog.planMemoHits
+        #expect(try catalog.plan(changed) == newReference)
+        #expect(catalog.planMemoHits == hits + 1)
         #expect(reference != newReference, "Field \(field) must miss even inside the same reference bucket")
         #expect(try catalog.canonicalData(newReference) == encoder.encode(SchedulerTraceCodec.planPayload(changed)))
     }
@@ -333,7 +340,7 @@ private func feedbackReadLines(_ lines: [Data]) throws -> FeedbackCatalogDocumen
     var files = 0, rows = 0, inputs = 0, outputs = 0, mismatches: [[String: Any]] = [], plainDifferences: [[String: Any]] = []
     let started = ProcessInfo.processInfo.systemUptime
     for path in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).filter({ $0.pathExtension == "jsonl" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-        let document = try FeedbackCatalogDocument.read(path)
+        var document = try FeedbackCatalogDocument.read(path)
         files += 1
         let isPin = ["pin-accepted-old-scope.jsonl", "pin-rejected.jsonl"].contains(path.lastPathComponent)
         let original = try (isPin ? pinBaseline ?? baseline : baseline).map { try FeedbackCatalogLines($0.appendingPathComponent(path.lastPathComponent)) }

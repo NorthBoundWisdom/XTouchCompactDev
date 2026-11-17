@@ -1,3 +1,4 @@
+@testable import XTouchFeedbackTestSupport
 #if os(macOS)
     import Foundation
     import SurfaceFeedbackPlanning
