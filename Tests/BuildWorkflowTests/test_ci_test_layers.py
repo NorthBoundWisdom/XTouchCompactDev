@@ -19,9 +19,7 @@ class CITestLayerTests(unittest.TestCase):
                 patch.object(layer.subprocess, "call", return_value=7) as run,
             ):
                 self.assertEqual(layer.main([str(script)]), 7)
-            run.assert_called_once_with(
-                layer.BASE_ARGV + ["--skip", layer.PROOF_PATTERN]
-            )
+            run.assert_called_once_with(layer.BASE_ARGV + ["--skip", layer.PROOF_PATTERN])
 
     def test_unexpected_command_or_layer_is_rejected_without_execution(self):
         for command, selected in [
@@ -70,17 +68,13 @@ class CITestLayerTests(unittest.TestCase):
         normal = (root / ".github/workflows/ci.yml").read_text()
         proof = (root / ".github/workflows/full-proof.yml").read_text()
         self.assertIn("XTOUCH_CI_TEST_LAYER: regression", normal)
-        self.assertEqual(
-            normal.count("shell: python3 configs/ci_swift_test_layer.py {0}"), 1
-        )
+        self.assertEqual(normal.count("shell: python3 configs/ci_swift_test_layer.py {0}"), 1)
         for workflow in [normal, proof]:
             self.assertIn(
                 "swift test --build-path build/swiftpm --skip-build --manifest-cache local list",
                 workflow,
             )
-            self.assertIn(
-                "python3 configs/ci_swift_test_layer.py --verify-list", workflow
-            )
+            self.assertIn("python3 configs/ci_swift_test_layer.py --verify-list", workflow)
         self.assertIn("--filter '" + layer.PROOF_PATTERN + "'", proof)
         for required in [
             "workflow_dispatch:",
