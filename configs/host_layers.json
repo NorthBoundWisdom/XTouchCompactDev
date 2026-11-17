@@ -23,6 +23,7 @@
     "Sources/XTouchCompactApp/EvidenceFile.swift": "composition",
     "Sources/XTouchCompactApp/ExternalServices.swift": "composition",
     "Sources/XTouchCompactApp/ExternalServicesSettings.swift": "composition",
+    "Sources/XTouchCompactApp/GUIVirtualSurface.swift": "composition",
     "Sources/XTouchCompactApp/HardwareInputReviewView.swift": "composition",
     "Sources/XTouchCompactApp/HardwareObservationView.swift": "composition",
     "Sources/XTouchCompactApp/InputReviewExporter.swift": "composition",

@@ -296,6 +296,9 @@
         }
 
         private var accessibleValue: String {
+            if let display = fader.simulatedDisplayPosition {
+                return String(display) + ", " + l.text("Mock") + ", " + l.text("目标") + " " + String(fader.target)
+            }
             if fader.mirrorsHardware {
                 let reading = fader.hardwareReading.map { String($0.value) + " " + l.text($0.isCurrent ? "Last received input" : "Last input · awaiting confirmation") }
                     ?? l.text("Not reported")

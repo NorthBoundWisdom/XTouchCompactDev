@@ -11,10 +11,12 @@
         private var token = ""
         private var requests: [Date] = []
         private let now: () -> Date
+        private let requestLimit: Int
         let router: MCPRouter
-        init(authenticationToken: String = "", serverVersion: String? = nil, now: @escaping () -> Date = Date.init) {
+        init(authenticationToken: String = "", serverVersion: String? = nil, now: @escaping () -> Date = Date.init, requestLimit: Int = 60) {
             token = authenticationToken
             self.now = now
+            self.requestLimit = requestLimit
             let info = Bundle.main.infoDictionary ?? [:]
             let build = (info["CFBundleVersion"] as? String) ?? "unbundled"
             let version = (info["CFBundleShortVersionString"] as? String).map { $0 + "+" + build } ?? build
@@ -85,6 +87,12 @@
             listener.start(queue: .main)
         }
 
+        func revokeAuthentication() {
+            token = ""
+            handler = nil
+            stop()
+        }
+
         func stop() {
             ready = false
             router.stop()
@@ -119,7 +127,7 @@
             }
             let time = now()
             requests = requests.filter { time.timeIntervalSince($0) < 60 }
-            guard requests.count < 60 else { return MCPReply(status: 429) }
+            guard requests.count < requestLimit else { return MCPReply(status: 429) }
             requests.append(time)
             return router.handle(request.body, headers: request.headers)
         }

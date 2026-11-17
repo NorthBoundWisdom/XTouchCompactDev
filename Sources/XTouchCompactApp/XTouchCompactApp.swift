@@ -4,8 +4,10 @@
 
     @main
     enum XTouchLauncher {
+        @MainActor static var virtualOptions: GUIVirtualOptions?
         @MainActor static func main() {
             do {
+                virtualOptions = try GUIVirtualOptions.parse(ProcessInfo.processInfo.arguments)
                 _ = try GUIPluginOptions(arguments: ProcessInfo.processInfo.arguments)
             } catch {
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
@@ -37,17 +39,27 @@
 
         init() {
             let arguments = ProcessInfo.processInfo.arguments
-            let isolated = arguments.contains("--startup-smoke") || arguments.contains("--integration-test")
+            let virtual = XTouchLauncher.virtualOptions
+            let isolated = virtual != nil || arguments.contains("--startup-smoke") || arguments.contains("--integration-test")
             let observing = arguments.contains("--hardware-observe") && !isolated
             if arguments.contains("--startup-smoke") {
                 // Volatile only: do not save/restore the test scene in user preferences.
                 UserDefaults.standard.setVolatileDomain(["ApplePersistenceIgnoreState": true], forName: UserDefaults.argumentDomain)
             }
             let root = isolated || observing ? nil : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("XTouchCompactConsole")
-            let defaults = isolated ? UserDefaults(suiteName: "XTouchCompactDev.tests.\(UUID().uuidString)")! : .standard
-            let languageSettings = LanguageSettings(defaults: defaults)
+            let languageSettings: LanguageSettings
+            if virtual != nil {
+                languageSettings = LanguageSettings(volatile: .system)
+            } else {
+                let defaults = isolated ? UserDefaults(suiteName: "XTouchCompactDev.tests.\(UUID().uuidString)")! : .standard
+                languageSettings = LanguageSettings(defaults: defaults)
+            }
             _language = StateObject(wrappedValue: languageSettings)
-            let model = ConsoleModel(startsMIDI: !isolated, storageRoot: root, isolated: isolated)
+            let model = ConsoleModel(startsMIDI: !isolated, virtualSurfaceOnly: virtual != nil, storageRoot: root, isolated: isolated)
+            if let virtual {
+                do { try model.attachGUIVirtualSurface(inputCapacity: virtual.inputCapacity); try model.guiVirtualSurface?.start(virtual) }
+                catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(2) }
+            }
             // Validated by the launcher before AppKit, storage or MIDI starts.
             let selection = (try? GUIPluginOptions(arguments: arguments))?.selection ?? []
             if !selection.isEmpty {
@@ -79,6 +91,7 @@
                         language.refreshSystemLanguage()
                     }
                     .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                        model.guiVirtualSurface?.revoke()
                         model.stopCapture()
                         model.flushHardwareValues()
                     }

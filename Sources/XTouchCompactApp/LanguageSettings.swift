@@ -4,9 +4,9 @@
 
     @MainActor
     final class LanguageSettings: ObservableObject {
-        private let defaults: UserDefaults
+        private let defaults: UserDefaults?
         @Published var selection: AppLanguage {
-            didSet { defaults.set(selection.rawValue, forKey: "appLanguage") }
+            didSet { defaults?.set(selection.rawValue, forKey: "appLanguage") }
         }
 
         @Published private var systemLanguages = Locale.preferredLanguages
@@ -17,6 +17,16 @@
         init(defaults: UserDefaults = .standard) {
             self.defaults = defaults
             selection = AppLanguage(storedValue: defaults.string(forKey: "appLanguage"))
+        }
+
+        /// Explicit virtual GUI: no Defaults object is created, queried or written.
+        init(volatile selection: AppLanguage = .system) {
+            defaults = nil
+            self.selection = selection
+        }
+
+        var persistsSelection: Bool {
+            defaults != nil
         }
 
         func refreshSystemLanguage() {
@@ -39,8 +49,10 @@
                 }.accessibilityIdentifier("settings.language")
                 ConfigurationLibraryView(snapshot: snapshot, intents: intents)
                 ExternalServicesSettings(snapshot: snapshot, intents: intents)
-                Text(l.text("Language changes apply immediately and are saved automatically."))
-                    .font(.caption).foregroundStyle(.secondary)
+                if language.persistsSelection {
+                    Text(l.text("Language changes apply immediately and are saved automatically."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
             .padding()

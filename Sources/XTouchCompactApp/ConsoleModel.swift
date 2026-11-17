@@ -7,6 +7,7 @@
     import OutputRemoteBinding
     import RemoteToolContracts
     import SurfaceConnectionState
+    import SurfaceControlContracts
     import SurfaceDeviceContracts
     import SurfaceFeedbackPlanning
     import SurfacePluginContracts
@@ -148,9 +149,12 @@
         #endif
         @Published private(set) var mcpTokenCopyStatus: String?
         let isolated: Bool
+        let virtualSurfaceOnly: Bool
+        private(set) var guiVirtualSurface: CompactGUIVirtualSurfacePort?
         private let memoryToken = UUID().uuidString + UUID().uuidString
         func accessToken() throws -> String {
-            isolated ? memoryToken : try MCPTokenStore().token()
+            guard !rejectGUIVirtualEscape() else { throw GUIVirtualError.forbidden }
+            return isolated ? memoryToken : try MCPTokenStore().token()
         }
 
         @Published var mcpEnabled = false
@@ -247,7 +251,7 @@
 
         private(set) var mock: MockXTouchCompact
 
-        init(startsMIDI: Bool = true, midi: (any MIDIService)? = nil, now: (() -> Date)? = nil, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil,
+        init(startsMIDI: Bool = true, virtualSurfaceOnly: Bool = false, midi: (any MIDIService)? = nil, now: (() -> Date)? = nil, storageRoot: URL? = nil, isolated: Bool = false, oscTransport: (any OSCTransport)? = nil,
              mcpPort: UInt16 = 8765,
              offlineReplayYield: @escaping @MainActor () async -> Void = { await Task.yield() },
              runtimeSleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
@@ -258,6 +262,7 @@
              contextReferences: CompactContextReferences? = nil, connectionReference: (any CompactConnectionReference)? = nil,
              feedbackAudit: (any CompactFeedbackAudit)? = nil, feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)? = nil)
         {
+            self.virtualSurfaceOnly = virtualSurfaceOnly
             self.plannedIntentIDFactory = plannedIntentIDFactory
             self.projectionInstanceID = projectionInstanceID
             makeRecordID = recordIDFactory
@@ -266,15 +271,16 @@
             plugins = try! CompactPluginHost.agent(registryEpoch: pluginRegistryEpoch)
             self.offlineReplayYield = offlineReplayYield
             self.mcpPort = mcpPort
-            self.midi = midi ?? CoreMIDIService()
-            self.oscTransport = oscTransport ?? NetworkOSCTransport()
+            self.midi = virtualSurfaceOnly ? GUIVirtualMIDI() : (midi ?? CoreMIDIService())
+            self.oscTransport = virtualSurfaceOnly ? GUIVirtualOSC() : (oscTransport ?? NetworkOSCTransport())
             let wallClock = now ?? Date.init
             self.now = wallClock
             mcp = LocalMCPServer(now: wallClock)
             runtimeClock = eventMonotonicClock ?? (now.map { injected in { injected().timeIntervalSince1970 } } ?? { ProcessInfo.processInfo.systemUptime })
             self.runtimeSleep = runtimeSleep
             self.evidenceWriterFactory = evidenceWriterFactory
-            self.isolated = isolated
+            self.isolated = isolated || virtualSurfaceOnly
+            let storageRoot = virtualSurfaceOnly ? nil : storageRoot
             store = storageRoot.map { ProtectedWorkspaceStore(directory: $0) }
             libraryStore = storageRoot.map(ConfigurationLibraryStore.init(directory:))
             panelStore = storageRoot.map(WorkspacePanelStore.init(directory:))
@@ -331,11 +337,74 @@
                 do { workspacePanels = try panelStore.load() }
                 catch { workspacePanelWarning = LocalizedMessage("Panel settings are protected: %@", error.localizedDescription) }
             }
-            if startsMIDI {
+            if startsMIDI, !virtualSurfaceOnly {
                 do { try self.midi.start() } catch { self.error = error }
             }
             self.midi.select(inputID: inputChoice == 0 ? nil : inputChoice, outputID: outputChoice == 0 ? nil : outputChoice)
             apply { try $0.connect() }
+        }
+
+        func attachGUIVirtualSurface(inputCapacity: Int? = nil) throws {
+            guard virtualSurfaceOnly, guiVirtualSurface == nil else { throw GUIVirtualError.forbidden }
+            guiVirtualSurface = try CompactGUIVirtualSurfacePort(model: self, inputCapacity: inputCapacity, clock: eventMonotonicClock)
+        }
+
+        @discardableResult func rejectGUIVirtualEscape() -> Bool {
+            guard virtualSurfaceOnly else { return false }
+            guiVirtualSurface?.revoke()
+            error = GUIVirtualError.forbidden
+            return true
+        }
+
+        func reportGUIVirtualError(_ failure: any Error) {
+            error = failure
+        }
+
+        func logGUIVirtual(_ text: String) {
+            log(LocalizedMessage(text))
+        }
+
+        func clearGUIVirtualDisplay() {
+            session.invalidateTransportFeedback()
+            session.discardPendingMotorWrites()
+            // Clear software overlays; no output path or physical observation is involved.
+            mock = MockXTouchCompact(map: session.state.map, lightProtocol: .manual)
+            mock.selectPhysicalLayer(session.state.layer)
+            do { try mock.receive(session.connect()) }
+            catch { self.error = error }
+            objectWillChange.send()
+        }
+
+        func validateGUIVirtualDisplayPolicy(kind: String) throws {
+            guard virtualSurfaceOnly, !hardwareMode, !isObservingHardware, guiVirtualSurface?.active == true else { throw GUIVirtualError.inactive }
+            guard session.writeAuthorization.allowsDisplay,
+                  kind != "fader" || session.writeAuthorization.allowsMechanisms else { throw ControlContractError("permission_denied") }
+        }
+
+        func commitGUIVirtualFeedback(_ feedback: ControlFeedback, kind: String, index: Int, journal: SurfaceControlSession) throws {
+            guard virtualSurfaceOnly, !hardwareMode, !isObservingHardware,
+                  let port = guiVirtualSurface, port.active else { throw GUIVirtualError.inactive }
+            let revision = canonicalSessionRevision
+            let authorization = session.writeAuthorization
+            // The display credential never overrides the canonical host policy. Fader
+            // simulation also retains the original mechanism-direction permission.
+            try validateGUIVirtualDisplayPolicy(kind: kind)
+            var candidate = session
+            let messages: [MIDIMessage]
+            switch kind {
+            case "fader": messages = try candidate.setDisplayFader(index, value: UInt8(feedback.value.finiteNumber!))
+            case "encoder": messages = try candidate.setDisplayRing(index, value: UInt8(feedback.value.finiteNumber!))
+            case "button": messages = try candidate.setDisplayButton(index, light: feedback.value == .string("on") ? .on : feedback.value == .string("blink") ? .blink : .off)
+            default: throw ControlContractError("unsupported_feedback")
+            }
+            // Reuse the original device filter on the candidate before any journal,
+            // visible intent or Mock output commits. It still owns touch/layer policy.
+            let admitted = candidate.filterFeedbackForDelivery(messages)
+            guard admitted == messages else { throw ControlContractError("permission_denied") }
+            guard canonicalSessionRevision == revision, session.writeAuthorization == authorization, port.active else { throw ParameterWriteAuthorizationError.staleContext }
+            port.commit(journal); session = candidate
+            mock.receive(admitted)
+            objectWillChange.send()
         }
 
         private func receiveConnectionNotification(_ snapshot: CompactMIDIConnection) {
@@ -467,6 +536,11 @@
         }
 
         func useHardware(_ enabled: Bool) {
+            if virtualSurfaceOnly {
+                if enabled {
+                    _ = rejectGUIVirtualEscape()
+                }; return
+            }
             if isObservingHardware, !enabled {
                 endHardwareObservation()
             }
@@ -502,6 +576,9 @@
         /// entering hardware always goes through listen-only first, and enabling sending does
         /// not replay anything. The user syncs lights explicitly afterwards.
         func setConsoleMode(_ mode: ConsoleMode) {
+            if virtualSurfaceOnly, mode != .mock {
+                _ = rejectGUIVirtualEscape(); return
+            }
             switch mode {
             case .mock:
                 useHardware(false)
@@ -541,6 +618,7 @@
         }
 
         func beginHardwareObservation() {
+            guard !rejectGUIVirtualEscape() else { return }
             setListenOnly(true)
             session.prepareTransportSwitch(inputTouches: [])
             hardwareMode = true
@@ -564,7 +642,7 @@
 
         /// Explicitly leave passive diagnostics for normal writes; enabling itself sends nothing.
         func enableHardwareWriteback() {
-            guard hardwareMode else { return }
+            guard !rejectGUIVirtualEscape(), hardwareMode else { return }
             endHardwareObservation()
             setListenOnly(false)
             confirmCurrentMotorAction()
@@ -680,6 +758,7 @@
         }
 
         func configure() {
+            guard !rejectGUIVirtualEscape() else { return }
             lockNonMotorTests("Profile changed; test output locked.")
             do {
                 guard (1 ... 16).contains(transmitChannel), (1 ... 16).contains(feedbackChannel) else {
@@ -713,6 +792,7 @@
         }
 
         func loadReferenceArmExample(using localizer: Localizer = Localizer(language: .system)) {
+            guard !rejectGUIVirtualEscape() else { return }
             do {
                 var parameters = try CompactPluginHost.referenceArmParameters()
                 for index in parameters.indices {
@@ -724,6 +804,7 @@
         }
 
         func installOptionalPlugins(_ selection: Set<OptionalBusinessPlugin>) {
+            guard !rejectGUIVirtualEscape() else { return }
             do {
                 var next = plugins
                 try next.installOptional(selection, lifetimeID: makeOperationID().uuidString, at: runtimeTime)
@@ -962,6 +1043,7 @@
         @Published private(set) var pendingPreset: SurfaceConfiguration?
 
         func loadPreset(_ configuration: SurfaceConfiguration) {
+            guard !rejectGUIVirtualEscape() else { return }
             do {
                 try configuration.validate()
                 if session.hasNonDefaultValues {
@@ -978,11 +1060,12 @@
 
         /// Only the explicitly confirmed UI action calls this when a replacement is pending.
         func confirmLoadPreset() {
-            guard let configuration = pendingPreset else { return }
+            guard !rejectGUIVirtualEscape(), let configuration = pendingPreset else { return }
             replaceWithPreset(configuration)
         }
 
         private func replaceWithPreset(_ configuration: SurfaceConfiguration) {
+            guard !rejectGUIVirtualEscape() else { return }
             do {
                 let messages = try session.loadConfiguration(configuration, resetValues: true)
                 pendingPreset = nil
@@ -991,6 +1074,7 @@
         }
 
         func applyConfiguration(_ configuration: SurfaceConfiguration) {
+            guard !rejectGUIVirtualEscape() else { return }
             do {
                 let messages = try session.loadConfiguration(configuration)
                 pendingPreset = nil
@@ -999,6 +1083,7 @@
         }
 
         func saveLibraryConfiguration(name: String) {
+            guard !rejectGUIVirtualEscape() else { return }
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { libraryWarning = LocalizedMessage("Configuration name cannot be empty."); return }
             guard !libraryEntries.contains(where: { $0.name == name }) else { libraryWarning = LocalizedMessage("Configuration name already exists."); return }
@@ -1006,7 +1091,7 @@
         }
 
         func requestLibraryAction(_ id: UUID, kind: ConfigurationLibraryRequest.Kind) {
-            guard let entry = libraryEntries.first(where: { $0.id == id }) else { return }
+            guard !rejectGUIVirtualEscape(), let entry = libraryEntries.first(where: { $0.id == id }) else { return }
             pendingLibraryAction = .init(id: id, name: entry.name, kind: kind)
         }
 
@@ -1015,7 +1100,8 @@
         }
 
         func confirmLibraryAction() {
-            guard let request = pendingLibraryAction,
+            guard !rejectGUIVirtualEscape(),
+                  let request = pendingLibraryAction,
                   let entry = libraryEntries.first(where: { $0.id == request.id }) else { return }
             pendingLibraryAction = nil
             switch request.kind {
@@ -1062,11 +1148,13 @@
         }
 
         func resetParameterValues() {
+            guard !rejectGUIVirtualEscape() else { return }
             do { try send(session.loadConfiguration(session.parameters.configuration, resetValues: true)); updateBank(); saveWorkspace() }
             catch { self.error = error }
         }
 
         func selectPorts() {
+            guard !rejectGUIVirtualEscape() else { return }
             lockNonMotorTests("Connection changed; test output locked.")
             appliedInputID = inputChoice == 0 ? nil : inputChoice
             appliedOutputID = outputChoice == 0 ? nil : outputChoice
@@ -1080,6 +1168,23 @@
         }
 
         func setLayer(_ next: CompactLayer) {
+            if virtualSurfaceOnly {
+                do {
+                    guard let port = guiVirtualSurface, port.active else { throw GUIVirtualError.inactive }
+                    let revision = canonicalSessionRevision
+                    let authorization = session.writeAuthorization
+                    guard authorization.allowsMechanisms, authorization.allowsDisplay else { throw ControlContractError("permission_denied") }
+                    var candidate = session
+                    let messages = try candidate.selectLayer(next)
+                    let admitted = candidate.filterFeedbackForDelivery(messages)
+                    guard admitted == messages, revision == canonicalSessionRevision, session.writeAuthorization == authorization else { throw ParameterWriteAuthorizationError.staleContext }
+                    let journal = try port.layerJournal(next)
+                    port.commit(journal); session = candidate
+                    mock.selectPhysicalLayer(next); mock.receive(admitted)
+                    layer = next; updateBank()
+                } catch { guiVirtualSurface?.fail(error); self.error = error }
+                return
+            }
             lockNonMotorTests()
             let previous = session.state.layer
             defer {
@@ -1180,12 +1285,18 @@
 
         /// Simulated rear-panel accessories. Mock only: a real pedal is physical input.
         func moveExpression(_ value: UInt8) {
+            if virtualSurfaceOnly {
+                error = GUIVirtualError.forbidden; return
+            }
             guard !hardwareMode else { return }
             mockExpressionAt = now()
             performMockGesture { try $0.moveExpression(value) }
         }
 
         func pressFootswitch(isDown: Bool) {
+            if virtualSurfaceOnly {
+                error = GUIVirtualError.forbidden; return
+            }
             guard !hardwareMode else { return }
             performMockGesture { $0.pressFootswitch(isDown: isDown) }
         }
@@ -1195,6 +1306,9 @@
         }
 
         private func performMockGesture(_ operation: (inout MockXTouchCompact) throws -> [MIDIMessage]) {
+            if virtualSurfaceOnly, guiVirtualSurface?.active != true {
+                error = GUIVirtualError.inactive; return
+            }
             guard !hardwareMode else { return }
             do { try receive(operation(&mock), fromMock: true, receiptAt: eventMonotonicClock()) }
             catch { self.error = error }
@@ -1394,6 +1508,11 @@
                     }
                     throw error
                 }
+                if fromMock, let port = guiVirtualSurface {
+                    do { try port.commit(port.journal(messages, before: session, candidate: candidate)) }
+                    catch { port.fail(error); throw error }
+                }
+                // Session and journal commit without an external callback between them.
                 session = candidate
                 send(update.feedback, preparedProvenance: preparedProvenance)
                 if session.state.layerMismatch {
@@ -1419,6 +1538,9 @@
                 var next = session
                 let provenance = try capturePlannedProvenance(writer)
                 let messages = try next.withPlannedProvenance(provenance, operation)
+                if virtualSurfaceOnly, next.parameters.configuration != session.parameters.configuration {
+                    _ = rejectGUIVirtualEscape(); throw GUIVirtualError.forbidden
+                }
                 try validateHardwareLayerAssertion(messages)
                 guard canonicalSessionRevision == ownerRevision else { throw ParameterWriteAuthorizationError.staleContext }
                 for (id, value) in next.parameters.values where session.parameters.values[id] != value {
@@ -1869,6 +1991,7 @@
         /// Rename the control's parameter. An unbound fader or encoder gets a new continuous
         /// parameter on the current layer, initialized from the control's current bank value.
         func renameControl(_ control: CompactControl, name: String) {
+            guard !rejectGUIVirtualEscape() else { return }
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
             var configuration = session.parameters.configuration
@@ -1925,6 +2048,7 @@
         }
 
         func captureScene(name: String) {
+            guard !rejectGUIVirtualEscape() else { return }
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let existing = session.parameters.configuration.scenes?.first { $0.name == trimmed }
             do {
@@ -1952,6 +2076,7 @@
         }
 
         func deleteScene(_ id: String) {
+            guard !rejectGUIVirtualEscape() else { return }
             do { try session.deleteScene(id: id); saveWorkspace() } catch { self.error = error }
         }
 
@@ -1973,6 +2098,7 @@
 
         /// Validate and apply a metadata-only edit, then persist it. Values and motors stay put.
         private func commitMetadata(_ configuration: SurfaceConfiguration) {
+            guard !rejectGUIVirtualEscape() else { return }
             do {
                 try configuration.validate()
                 try session.replaceConfigurationKeepingValues(configuration)

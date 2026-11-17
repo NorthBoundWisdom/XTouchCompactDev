@@ -42,7 +42,7 @@
             let observation = observationPresentation
             let result = PanelSnapshot(
                 surfaceStatus: surfaceStatusPresentation,
-                mockPedals: hardwareMode ? nil : MockPedalPresentation(expression: mock.expression, footswitchDown: mock.footswitchDown),
+                mockPedals: hardwareMode || virtualSurfaceOnly ? nil : MockPedalPresentation(expression: mock.expression, footswitchDown: mock.footswitchDown),
                 hardwareDisplayLayer: matchingLiveValues?.lastInputLayer ?? matchingCachedValues?.lastInputLayer,
                 hardwareLayerIsCurrent: matchingLiveValues?.lastInputLayer != nil,
                 nonMotorTests: nonMotorTestPresentation,
@@ -228,6 +228,9 @@
                 index: index, target: bank.faders[index - 1], observed: session.state.observedFader(index),
                 isTouched: session.state.isTouched(index), isMotorPending: session.state.isMotorPending(index)
             )
+            if virtualSurfaceOnly {
+                result.simulatedDisplayPosition = mock.faders[index - 1]
+            }
             if let observation {
                 result.observed = observation.faderPositions[index]
                 result.isTouched = observation.faderTouches[index]

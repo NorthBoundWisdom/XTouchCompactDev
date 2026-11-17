@@ -9,6 +9,9 @@
 
     extension ConsoleModel {
         func setMCPEnabled(_ enabled: Bool) {
+            if enabled, rejectGUIVirtualEscape() {
+                return
+            }
             if !enabled {
                 mcp.stop(); mcpEnabled = false; return
             }
@@ -27,6 +30,7 @@
         }
 
         func copyMCPToken() {
+            guard !rejectGUIVirtualEscape() else { return }
             do {
                 let token = try accessToken()
                 // Isolated acceptance verifies the action/feedback without altering the user's clipboard.
@@ -38,6 +42,7 @@
         }
 
         func routeMCP(_ request: [String: Any]) throws -> [String: Any] {
+            guard !rejectGUIVirtualEscape() else { throw GUIVirtualError.forbidden }
             let name = (request["params"] as? [String: Any])?["name"] as? String
             do {
                 let result = try routeMCPRequest(request)
@@ -136,6 +141,9 @@
         }
 
         func setOSCEnabled(_ enabled: Bool) {
+            if enabled, rejectGUIVirtualEscape() {
+                return
+            }
             let time = runtimeTime
             if !enabled {
                 oscTransport.stop()

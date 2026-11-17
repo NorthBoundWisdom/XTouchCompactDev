@@ -5,6 +5,7 @@
 
     extension ConsoleModel {
         func callConsoleMCPTool(_ tool: ConsoleMCPTool, arguments: JSONValue) throws -> JSONValue {
+            guard !rejectGUIVirtualEscape() else { throw GUIVirtualError.forbidden }
             let args = try tool.validate(arguments)
             switch tool {
             case .listParameters:

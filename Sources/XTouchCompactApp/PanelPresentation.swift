@@ -51,11 +51,16 @@
         /// Hardware console (manual or live send): the cap is the software target the operator
         /// drags, and `hardwareReading` is drawn as a separate marker.
         var capFollowsTarget = false
+        /// Explicit GUI virtual composition only; display is separate from business target.
+        var simulatedDisplayPosition: UInt8?
         /// Nil when no motor command was attempted since the last position input.
         var motorDelivery: MotorDeliveryPresentation?
 
         var panelValue: UInt8? {
-            mirrorsHardware ? hardwareReading?.value : followsObservedPosition ? observed : target
+            if let simulatedDisplayPosition {
+                return simulatedDisplayPosition
+            }
+            return mirrorsHardware ? hardwareReading?.value : followsObservedPosition ? observed : target
         }
 
         /// Device-side position drawn beside the cap when it differs from the cap.
@@ -84,6 +89,9 @@
 
         /// A host write may change target while a hand still owns the physical cap.
         var capPosition: UInt8 {
+            if let simulatedDisplayPosition {
+                return simulatedDisplayPosition
+            }
             if mirrorsHardware {
                 return capFollowsTarget ? target : hardwareReading?.value ?? target
             }

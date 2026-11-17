@@ -372,11 +372,12 @@ both public MCP versions, discard a write response, reject stale CAS, restart a
 default instance at the same port, and isolate A/B processes. They also cover layer
 keys and pedals, JSON-RPC error codes, write-budget ordering, instance-ID and token
 rules, private token files, ready-file ownership and cleanup on SIGTERM/SIGINT,
-`minimal_consumer.py --exercise`, the stdin-pipe requirement, the shared SDK 1.3 round trip
+`minimal_consumer.py --exercise`, the stdin-pipe requirement, the pinned current shared SDK 1.5 round trip against default contract 1.3
 over both MCP versions, mapping-revision pinning, `surface_control_renew` (silent,
 permissioned, budgeted), real-clock lease expiry with no request in flight, and the
 500 ms expiry bound while a slow drip holds the reader for its whole read budget. They import
 the SDK from `build/dependencies/SurfacePlugins/clients/python` without writing bytecode.
+Frozen historical SDK compatibility tests retain their separate old-version fixtures and assertions.
 The retained legacy global-CAS tests also run two real HTTP writers concurrently: all unsequenced feedback is
 accepted, and a stale input is proven unexecuted before an explicit SDK refresh and new input.
 No test here starts a production Pipe service or connects physical hardware.
@@ -753,3 +754,40 @@ Read calls do not consume a write budget. This option does not authorize inputs
 or any hardware mechanism; hardware input remains transport-owned and feedback
 remains display-only. Runtime SDK 1.5 and separate test-support archives are
 packaged independently; published 1.0–1.4 fixtures keep their original bytes.
+
+## Explicit GUI virtual surface (simulation)
+
+`XTouchCompactApp --gui-virtual-surface` exposes the visible GUI's own session
+through a separate display-only loopback endpoint. The private profile is
+`xtouch.compact.gui.virtual` version `1`, with `x.xtouch.gui_virtual`; its source
+is always `simulation`. It creates no native MIDI/OSC transport and does not read
+saved hardware configuration or Keychain credentials. Hardware/source/endpoint,
+preset and external-output attempts revoke the endpoint and its identity before
+returning an error. Start a new explicit GUI process to prepare another session.
+The ordinary GUI launch and standalone services keep their existing behavior.
+
+The launcher must pass two private inherited anonymous pipes:
+`--gui-surface-capability-fd N` supplies exactly one JSON line
+`{"schema":1,"display_token":"<64 hexadecimal characters>"}` and closes within
+two seconds; `--gui-surface-ready-fd N` receives a public ready line after the
+listener is ready. Neither pipe may be stdin/stdout/stderr. Ready contains the
+URL, expected identity, source and `physical_evidence:false`, never the token.
+Use `--gui-surface-port 0` for a private ephemeral loopback port. Optional
+`--surface-input-event-capacity N` enables input retention; without it the new
+GUI endpoint uses contract 1.3, and with it contract 1.5. No remote input,
+parameter, action, renew, reset or device-management operation is permitted.
+
+Use the delivered SDK 1.5 ZIP. Save this endpoint's actual discovery and generate
+an explicit caller mapping with `configs/generate_gui_virtual_mapping.py
+--sdk-zip SDK.zip --discovery discovery.json --output mapping.json`, then run
+`python3 -m surface_panel_demo --url URL --instance-id INSTANCE --source simulation
+--token-fd N --mapping mapping.json` with a separate pipe containing only the
+display token. The mapping is caller owned; the SDK's bundled profile allowlist
+is unchanged. Both supported MCP protocols work with this endpoint.
+
+Local panel gestures feed the same canonical GUI session and its input journal.
+Display feedback changes the visible rings/lights and the simulated fader cap
+position while leaving business parameter targets and accepted input unchanged.
+The simulated cap and parameter target remain separate. Rear-panel pedal inputs
+are initially unknown and hidden in this mode; no hold lease is declared.
+These software displays and automated GUI tests provide no physical qualification.
