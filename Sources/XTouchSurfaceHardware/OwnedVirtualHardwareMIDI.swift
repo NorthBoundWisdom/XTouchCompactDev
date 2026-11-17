@@ -80,8 +80,12 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
 
     private var displayTickets: [UInt64: Receipt] = [:]
     private var displayAwaiting: [UInt64] = []
-    private var receipts: [UInt64] = []
-    private var unattributed: [OwnedReceiptEvidence] = []
+    private enum ReceiptQueueEntry {
+        case matched(UInt64)
+        case unknown(OwnedReceiptEvidence)
+    }
+
+    private var receiptQueue: [ReceiptQueueEntry] = []
 
     var currentOrigin: HardwareEndpointOrigin {
         lock.lock(); defer { lock.unlock() }; return origin
@@ -278,18 +282,18 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         guard !cleanupStarted else { audit.increment("owned_post_cleanup_receipts_ignored"); return }
         guard case let .success(words) = result, words.count <= Self.receiptLimit else { faultLocked(.receiptOverflow); return }
         for packet in words {
-            guard receipts.count + unattributed.count < Self.receiptLimit else { faultLocked(.receiptOverflow); return }
+            guard receiptQueue.count < Self.receiptLimit else { faultLocked(.receiptOverflow); return }
             let match = connected && failure == nil && generation == origin.connectionGeneration && captured == origin
                 ? displayAwaiting.firstIndex(where: { ticket in
                     guard let expected = displayTickets[ticket] else { return false }
                     return packet.timestamp != 0 && expected.timestamp == packet.timestamp && expected.word == packet.word && expected.origin == captured
                 }) : nil
             if let match {
-                receipts.append(displayAwaiting.remove(at: match))
+                receiptQueue.append(.matched(displayAwaiting.remove(at: match)))
             } else {
                 audit.increment("owned_unattributed_display_receipts")
-                unattributed.append(.init(word: packet.word, timestamp: packet.timestamp, generation: generation,
-                                          origin: captured, ticket: nil, transportAccepted: nil))
+                receiptQueue.append(.unknown(.init(word: packet.word, timestamp: packet.timestamp, generation: generation,
+                                                   origin: captured, ticket: nil, transportAccepted: nil)))
             }
         }
     }
@@ -323,13 +327,17 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     /// never an own ticket or an inferred accepted-send result.
     func takeReceiptEvidence() -> [OwnedReceiptEvidence] {
         lock.lock(); defer { lock.unlock() }
-        let matched = receipts.compactMap { displayTickets.removeValue(forKey: $0) }.map {
-            OwnedReceiptEvidence(word: $0.word, timestamp: $0.timestamp, generation: $0.origin.connectionGeneration,
-                                 origin: $0.origin, ticket: $0.ticket, transportAccepted: $0.accepted)
+        let result = receiptQueue.compactMap { entry -> OwnedReceiptEvidence? in
+            switch entry {
+            case let .matched(ticket):
+                guard let receipt = displayTickets.removeValue(forKey: ticket) else { return nil }
+                return .init(word: receipt.word, timestamp: receipt.timestamp, generation: receipt.origin.connectionGeneration,
+                             origin: receipt.origin, ticket: receipt.ticket, transportAccepted: receipt.accepted)
+            case let .unknown(evidence): return evidence
+            }
         }
-        receipts.removeAll(keepingCapacity: true)
-        let unknown = unattributed; unattributed.removeAll(keepingCapacity: true)
-        return matched + unknown
+        receiptQueue.removeAll(keepingCapacity: true)
+        return result
     }
 
     private func drainReceipts() {
@@ -396,7 +404,7 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
             rejectLocked(ticket)
         }
         publications.removeAll(); incoming.removeAll(); handedOff.removeAll()
-        displayTickets.removeAll(); displayAwaiting.removeAll(); receipts.removeAll(); unattributed.removeAll()
+        displayTickets.removeAll(); displayAwaiting.removeAll(); receiptQueue.removeAll()
         guard origin.connectionGeneration < UInt64.max else { lock.unlock(); throw OwnedRehearsalFailure.transport }
         origin = .init(inputID: nil, outputID: nil, connectionGeneration: origin.connectionGeneration + 1, transportOrigin: "localVirtual")
         let closed = origin

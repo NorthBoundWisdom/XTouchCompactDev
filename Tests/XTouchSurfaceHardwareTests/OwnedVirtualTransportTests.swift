@@ -373,3 +373,91 @@ private func leases(_ events: [HardwareMIDIEvent]) -> [OwnedInputLease] {
     #expect(throws: OwnedRehearsalFailure.cleanup) { try other.cleanup() }
     #expect(wire.endpoints.isEmpty && wire.ports.isEmpty && wire.sent.isEmpty)
 }
+
+@Test func ownedReceiptBatchUnknownThenOwnKeepsActualPacketOrder() throws {
+    let (transport, system, _, _) = try fixture()
+    system.holdDisplays = true
+    let origin = transport.currentOrigin
+    try transport.send(.ringDisplay(encoder: 1, value: 5), expectedOrigin: origin)
+    let sent = try #require(system.sent.first), stamp = try #require(system.displayStamps.first)
+    system.destinations[sent.0]?(.success([.init(word: sent.1, timestamp: UInt64.max), .init(word: sent.1, timestamp: stamp)]))
+    let evidence = transport.takeReceiptEvidence()
+    #expect(evidence.count == 2)
+    #expect(evidence.map(\.timestamp) == [UInt64.max, stamp])
+    #expect(evidence.map(\.word) == [sent.1, sent.1])
+    #expect(evidence.map(\.origin) == [origin, origin])
+    #expect(evidence.map(\.generation) == [origin.connectionGeneration, origin.connectionGeneration])
+    #expect(evidence[0].ticket == nil && evidence[0].transportAccepted == nil)
+    #expect(evidence[1].ticket != nil && evidence[1].transportAccepted == true)
+}
+
+@Test func ownedReceiptBatchOwnThenUnknownKeepsActualPacketOrder() throws {
+    let (transport, system, _, _) = try fixture()
+    system.holdDisplays = true
+    let origin = transport.currentOrigin
+    try transport.send(.ringDisplay(encoder: 1, value: 5), expectedOrigin: origin)
+    let sent = try #require(system.sent.first), stamp = try #require(system.displayStamps.first)
+    system.destinations[sent.0]?(.success([.init(word: sent.1, timestamp: stamp), .init(word: sent.1, timestamp: 0)]))
+    let evidence = transport.takeReceiptEvidence()
+    #expect(evidence.count == 2 && evidence.map(\.timestamp) == [stamp, 0])
+    #expect(evidence.map(\.origin) == [origin, origin])
+    #expect(evidence[0].ticket != nil && evidence[0].transportAccepted == true)
+    #expect(evidence[1].ticket == nil && evidence[1].transportAccepted == nil)
+}
+
+@Test func ownedReceiptInterleavedCallbacksKeepOrderWithoutSortingForeignStamps() throws {
+    let (transport, system, _, _) = try fixture()
+    system.holdDisplays = true
+    let origin = transport.currentOrigin
+    try transport.send(.ringDisplay(encoder: 1, value: 5), expectedOrigin: origin)
+    try transport.send(.ringDisplay(encoder: 1, value: 7), expectedOrigin: origin)
+    let callback = try #require(system.destinations[system.sent[0].0])
+    callback(.success([.init(word: 0x20B0_1001, timestamp: UInt64.max),
+                       .init(word: system.sent[0].1, timestamp: system.displayStamps[0])]))
+    callback(.success([.init(word: 0x20B0_1002, timestamp: 0),
+                       .init(word: system.sent[1].1, timestamp: system.displayStamps[1]),
+                       .init(word: 0x20B0_1003, timestamp: 1)]))
+    let evidence = transport.takeReceiptEvidence()
+    #expect(evidence.count == 5)
+    #expect(evidence.map(\.timestamp) == [UInt64.max, system.displayStamps[0], 0, system.displayStamps[1], 1])
+    #expect(evidence.map(\.word) == [0x20B0_1001, system.sent[0].1, 0x20B0_1002, system.sent[1].1, 0x20B0_1003])
+    #expect(evidence.map(\.origin) == Array(repeating: Optional(origin), count: 5))
+    #expect(evidence.map { $0.ticket != nil } == [false, true, false, true, false])
+    #expect(evidence.map(\.transportAccepted) == [nil, true, nil, true, nil])
+}
+
+@Test func ownedReceiptCallbackBeforeSystemReturnNeverInventsAcceptedStatus() throws {
+    let (transport, system, _, _) = try fixture()
+    let origin = transport.currentOrigin
+    var during: [OwnedReceiptEvidence] = []
+    // The real fake destination callback runs synchronously, before this hook and
+    // before system.display returns. The owner consumes the actual pending status.
+    system.sendHook = { during = transport.takeReceiptEvidence() }
+    try transport.send(.ringDisplay(encoder: 1, value: 5), expectedOrigin: origin)
+    #expect(during.count == 1 && during[0].transportAccepted == false)
+    #expect(during[0].word == system.sent[0].1 && during[0].timestamp == system.displayStamps[0])
+    #expect(during[0].origin == origin && during[0].ticket != nil)
+    system.sendHook = nil
+    try transport.send(.ringDisplay(encoder: 1, value: 7), expectedOrigin: origin)
+    let after = transport.takeReceiptEvidence()
+    #expect(after.count == 1 && after[0].transportAccepted == true)
+}
+
+@Test func ownedReceiptSharedQueueEnforcesOneTotalBoundAndPreservesMixedEntries() throws {
+    let (transport, system, _, _) = try fixture()
+    system.holdDisplays = true
+    let origin = transport.currentOrigin
+    try transport.send(.ringDisplay(encoder: 1, value: 5), expectedOrigin: origin)
+    let sent = try #require(system.sent.first), stamp = try #require(system.displayStamps.first)
+    let callback = try #require(system.destinations[sent.0])
+    callback(.success(Array(repeating: .init(word: sent.1, timestamp: 0), count: OwnedVirtualHardwareMIDI.receiptLimit - 1)))
+    callback(.success([.init(word: sent.1, timestamp: stamp)]))
+    callback(.success([.init(word: sent.1, timestamp: UInt64.max)]))
+    #expect(throws: OwnedRehearsalFailure.receiptOverflow) { try transport.drain() }
+    let evidence = transport.takeReceiptEvidence()
+    #expect(evidence.count == OwnedVirtualHardwareMIDI.receiptLimit)
+    #expect(evidence.dropLast().allSatisfy { $0.timestamp == 0 && $0.ticket == nil && $0.transportAccepted == nil })
+    #expect(evidence.last?.timestamp == stamp && evidence.last?.ticket != nil && evidence.last?.transportAccepted == true)
+    #expect(evidence.allSatisfy { $0.origin == origin })
+    #expect(transport.outstandingInputCount == 0)
+}
