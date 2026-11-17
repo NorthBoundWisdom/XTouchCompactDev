@@ -1,5 +1,6 @@
 import Foundation
 import SurfaceDeviceContracts
+import SurfaceFeedbackPlanning
 import SurfacePluginContracts
 
 /// Two independent application banks. The two physical layers select which bank is exposed;
@@ -83,6 +84,20 @@ public struct CompactSession: Sendable {
     }
 
     #if DEBUG
+        package mutating func installFeedbackAudit(_ audit: (any CompactFeedbackAudit)?, scheduler: (any CompactFeedbackSchedulerReference)?) {
+            state.feedbackAudit = audit; state.feedbackSchedulerReference = scheduler
+        }
+
+        package mutating func feedbackShadowDispatch(_ facts: CompactFeedbackDispatchFacts) {
+            var snapshot = state; snapshot.feedbackSchedulerReference = nil; snapshot.feedbackAudit = nil; snapshot.contextReference = nil
+            state.feedbackSchedulerReference?.dispatch(facts, native: snapshot)
+        }
+
+        package mutating func feedbackShadowReceipt(_ plan: CompactFeedbackPlan, result: FeedbackAttemptResult, currentScope: CompactFeedbackScope, currentSource: SurfaceDeviceContracts.DeviceSource, currentEndpoint: SurfaceDeviceContracts.EndpointProvenance) {
+            let scope = state.feedbackScope
+            state.feedbackSchedulerReference?.receipt(plan, result: result, currentScope: currentScope, stateScope: scope, currentSource: currentSource, currentEndpoint: currentEndpoint)
+        }
+
         package mutating func installContextReferences(_ references: CompactContextReferences) {
             state.contextReference = references.resources
             parameters.bindingReference = references.bindings
@@ -92,8 +107,17 @@ public struct CompactSession: Sendable {
     public static let undoLimit = 50
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol, indicatorBindings: [Int: IndicatorID] = PluginConfigurationAdapter.agentIndicators) {
+        self.init(map: map, lightProtocol: lightProtocol, indicatorBindings: indicatorBindings, feedbackAudit: nil, feedbackSchedulerReference: nil)
+    }
+
+    package init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol, indicatorBindings: [Int: IndicatorID] = PluginConfigurationAdapter.agentIndicators,
+                 feedbackAudit: (any CompactFeedbackAudit)?, feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)?)
+    {
         self.indicatorBindings = indicatorBindings
         state = CompactState(map: map, lightProtocol: lightProtocol)
+        #if DEBUG
+            state.feedbackAudit = feedbackAudit; state.feedbackSchedulerReference = feedbackSchedulerReference
+        #endif
         // Establish software-owned display intent even while disconnected. These fixed
         // indices and ring positions are valid by construction; no transport is involved.
         _ = try! syncVisibleNonMotorFeedback()

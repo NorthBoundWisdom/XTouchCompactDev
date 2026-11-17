@@ -109,7 +109,10 @@
     "Sources/XTouchCompactApp/ConnectionContextReference.swift": "composition",
     "Sources/XTouchSurfaceHardware/OwnedRehearsalSteps.swift": "transport",
     "Sources/XTouchSurfaceHardware/OwnedVirtualHardwareMIDI.swift": "transport",
-    "Sources/XTouchSurfaceHardware/OwnedVirtualMIDISystem.swift": "transport"
+    "Sources/XTouchSurfaceHardware/OwnedVirtualMIDISystem.swift": "transport",
+    "Sources/XTouchCompactCore/CompactFeedbackRuntime.swift": "device",
+    "Sources/XTouchCompactApp/ConsoleFeedbackProjection.swift": "composition",
+    "Sources/XTouchSurfaceHardware/HardwareFeedbackShadow.swift": "composition"
   },
   "schema_version": 1,
   "targets": {
@@ -125,7 +128,8 @@
         "XTouchCompactCore",
         "XTouchCompactLocalization",
         "SurfaceDeviceContracts",
-        "SurfaceConnectionState"
+        "SurfaceConnectionState",
+        "SurfaceFeedbackPlanning"
       ]
     },
     "XTouchCompactCore": {
@@ -143,7 +147,8 @@
         "SurfaceControlContracts",
         "SurfacePluginContracts",
         "SurfaceDeviceContracts",
-        "SurfaceBindingContext"
+        "SurfaceBindingContext",
+        "SurfaceFeedbackPlanning"
       ]
     },
     "XTouchCompactLocalization": {
@@ -157,7 +162,9 @@
     "XTouchSurfaceHardware": {
       "dependencies": [
         "CompactSimulatorTransport",
-        "XTouchCompactCore"
+        "XTouchCompactCore",
+        "SurfaceFeedbackPlanning",
+        "SurfaceDeviceContracts"
       ]
     },
     "XTouchSurfaceSimulator": {

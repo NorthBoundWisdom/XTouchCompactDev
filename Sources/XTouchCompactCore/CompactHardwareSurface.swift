@@ -1,10 +1,15 @@
 import Foundation
 import SurfaceControlContracts
+import SurfaceDeviceContracts
+import SurfaceFeedbackPlanning
 import SurfacePluginContracts
 
 /// One value authority for hardware observations and independent display intent.
 /// It never owns a motor model or creates device output during input or lifecycle operations.
 public struct CompactHardwareSurface: Sendable {
+    #if DEBUG
+        package var feedbackAudit: (any CompactFeedbackAudit)?
+    #endif
     public private(set) var controls: SurfaceControlSession
     public private(set) var observedLayer: CompactLayer?
     public private(set) var undecodedCount = 0
@@ -83,12 +88,35 @@ public struct CompactHardwareSurface: Sendable {
             case "blink": light = .blink
             default: throw ControlContractError("invalid_value")
             }
-            return [.buttonLight(button: index, light: light)]
+            return checkedDisplayPlan([.buttonLight(button: index, light: light)], update: update, writer: writerID ?? remoteWriterID, at: time)
         case "encoder":
             guard let value = update.value.exactIntValue, (0 ... 28).contains(value) else { throw ControlContractError("invalid_value") }
-            return [.ringStyle(encoder: index, style: .single), .ringDisplay(encoder: index, value: UInt8(value))]
+            return checkedDisplayPlan([.ringStyle(encoder: index, style: .single), .ringDisplay(encoder: index, value: UInt8(value))], update: update, writer: writerID ?? remoteWriterID, at: time)
         default: throw ControlContractError("unsupported_feedback")
         }
+    }
+
+    private func checkedDisplayPlan(_ messages: [HardwareDisplayMessage], update: ControlFeedback, writer: String, at: Double) -> [HardwareDisplayMessage] {
+        #if DEBUG
+            var scope = CompactFeedbackScope(); scope.hardwareMode = true; scope.hostLayer = observedLayer!
+            scope.transmitChannel = configuration.transmitChannel; scope.receiveChannel = configuration.receiveChannel; scope.lightProtocol = configuration.lightProtocol
+            var evidence = CompactFeedbackBytes(); evidence.add(String(reflecting: update)); evidence.add(String(reflecting: controls.expected))
+            evidence.add(observedLayer?.rawValue); evidence.add(at); evidence.add(writer)
+            // This pure planner has not observed a transport endpoint. Unknown stays unknown.
+            let endpoint = try! EndpointProvenance(endpointID: nil, deviceID: nil, connectionGeneration: 0, transportOrigin: .unknown)
+            let map = try! FactoryStandardMap(transmitChannel: configuration.transmitChannel, globalReceiveChannel: configuration.receiveChannel)
+            for (index, message) in messages.enumerated() {
+                let wire = MIDI1UMPCodec.decode(try! message.word(configuration: configuration))!
+                var reference = CompactFeedbackBytes(); reference.add(index)
+                var origin = CompactFeedbackBytes(); origin.add(writer)
+                var fullEvidence = evidence; fullEvidence.add(String(reflecting: message))
+                let plan = try! CompactFeedbackPlanning.plan(wire, map: map, scope: scope, reference: reference, origin: origin, source: .hardware, endpoint: endpoint, evidence: fullEvidence)
+                precondition(plan.requiredDirections == [.display], "Hardware service cannot express management or mechanism")
+                let proof = CompactFeedbackProof(plan: plan, nativeSnapshot: evidence, authorization: .granted(directions: [.display]), safety: .passed)
+                CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: scope, currentNative: evidence, native: .permitted, audit: feedbackAudit)
+            }
+        #endif
+        return messages
     }
 
     @discardableResult public mutating func recordFeedback(_ update: ControlFeedback, at time: Double, writerID: String? = nil) throws -> ControlEvent {

@@ -2,6 +2,7 @@ import CompactSimulatorTransport
 import Foundation
 import RemoteToolContracts
 import SurfaceControlContracts
+import SurfaceFeedbackPlanning
 import SurfacePluginContracts
 import XTouchCompactCore
 #if canImport(Darwin)
@@ -426,8 +427,23 @@ private func removeOwnedReadyFile() {
                                 // Spent before any send: a partly delivered or failing request is still
                                 // rate limited. The event commits only after every message was accepted.
                                 let sendOrigin = activeEndpointOrigin
-                                for message in plan {
-                                    try midi.send(message, expectedOrigin: sendOrigin)
+                                for (messageIndex, message) in plan.enumerated() {
+                                    #if DEBUG
+                                        let shadow = HardwareFeedbackShadow.plan(message, index: messageIndex, surface: surface, origin: sendOrigin,
+                                                                                 request: feedback, writer: client.writerID, at: time)
+                                        HardwareFeedbackShadow.preflight(shadow, current: midi.currentOrigin)
+                                    #endif
+                                    do {
+                                        try midi.send(message, expectedOrigin: sendOrigin)
+                                        #if DEBUG
+                                            HardwareFeedbackShadow.receipt(shadow, result: .accepted, current: midi.currentOrigin, attempted: true, accepted: true)
+                                        #endif
+                                    } catch {
+                                        #if DEBUG
+                                            HardwareFeedbackShadow.receipt(shadow, result: .rejected(reason: "native_transport_rejected"), current: midi.currentOrigin, attempted: true, accepted: false)
+                                        #endif
+                                        throw error
+                                    }
                                 }
                                 if let owned {
                                     try owned.commitFeedback(expectedOrigin: sendOrigin) { surface = candidate }

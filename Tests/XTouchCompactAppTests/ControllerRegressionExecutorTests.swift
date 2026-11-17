@@ -217,6 +217,7 @@
         var feedbackPlan: ControlFeedback?
         var guiDisplayValue: UInt8?
         var effects: [[String: Any]] = []
+        let feedbackAudit = FeedbackAuditRecorder()
         var raw: [[String: Any]] = []
         var actionDispatches: [Int] = []
         var releases = 0
@@ -262,9 +263,11 @@
                     model = ConsoleModel(startsMIDI: false, midi: wire, now: { [clock] in clock.date }, isolated: true,
                                          eventMonotonicClock: { [clock] in clock.monotonic }, recordIDFactory: { identities.nextRecord() },
                                          operationIDFactory: { identities.nextOperation() }, pluginRegistryEpoch: "fixture.model.epoch." + id,
-                                         plannedIntentIDFactory: { identities.nextOperation().uuidString }, projectionInstanceID: id, contextReferences: legacyReferences(), connectionReference: LegacyConnectionReference())
+                                         plannedIntentIDFactory: { identities.nextOperation().uuidString }, projectionInstanceID: id, contextReferences: legacyReferences(), connectionReference: LegacyConnectionReference(), feedbackAudit: feedbackAudit,
+                                         feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: id, source: source == "hardware" ? .hardware : .simulation, recorder: feedbackAudit))
                 } else {
-                    model = ConsoleModel(startsMIDI: false, midi: wire, now: { [clock] in clock.date }, isolated: true, contextReferences: legacyReferences(), connectionReference: LegacyConnectionReference())
+                    model = ConsoleModel(startsMIDI: false, midi: wire, now: { [clock] in clock.date }, isolated: true, contextReferences: legacyReferences(), connectionReference: LegacyConnectionReference(), feedbackAudit: feedbackAudit,
+                                         feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: id, source: source == "hardware" ? .hardware : .simulation, recorder: feedbackAudit))
                 }
                 model!.observeMonitorEvent = { [weak self] in self?.monitor.append($0) }
                 model!.observeMutation = { [weak self] in self?.mutations.append($0) }
@@ -281,7 +284,8 @@
                     model!.setListenOnly(true)
                 }
             } else if source == "simulation" {
-                simulator = try CompactSurfaceSimulator(instanceID: id, epoch: "h10.simulation.1", configuration: config, eventCapacity: setup["journal_capacity"] as? Int ?? 16, contextReferences: legacyReferences())
+                simulator = try CompactSurfaceSimulator(instanceID: id, epoch: "h10.simulation.1", configuration: config, eventCapacity: setup["journal_capacity"] as? Int ?? 16, contextReferences: legacyReferences(),
+                                                        feedbackAudit: feedbackAudit, feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: id, source: .simulation, recorder: feedbackAudit))
             } else if ["T12", "T23"].contains(scenario) {
                 try makeHardware()
             } else if scenario == "T14" {
@@ -289,10 +293,14 @@
                 styleState?.contextReference = LegacyResources()
                 _ = try styleState!.receive(h10EncoderMessage(16, value: 0))
             } else if scenario != "T26" {
-                session = try makeLegacySession()
+                session = try makeLegacySession(feedbackRecorder: feedbackAudit, feedbackOwner: id, feedbackSource: source == "hardware" ? .hardware : .simulation)
                 try wire.device.receive(session!.loadConfiguration(config, resetValues: true))
                 _ = try session!.connect(assertLayer: false)
                 try wire.device.receive(session!.receive([h10EncoderMessage(16, value: 0)]).feedback)
+            }
+            if styleState != nil {
+                styleState!.feedbackAudit = feedbackAudit
+                styleState!.feedbackSchedulerReference = TestFeedbackSchedulerReference(owner: id, source: source == "hardware" ? .hardware : .simulation, recorder: feedbackAudit)
             }
             if scenario == "T25" {
                 try makeHardware()
@@ -311,6 +319,7 @@
 
         func makeHardware() throws {
             hardware = try CompactHardwareSurface(instanceID: id, epoch: "h10.hardware.1", configuration: .init(receiveChannel: 0, lightProtocol: .manual), hardwareWriterID: "h10.physical", remoteWriterID: "h10.display", eventCapacity: setup["journal_capacity"] as? Int ?? 16)
+            hardware!.feedbackAudit = feedbackAudit
             try hardware!.transition(epoch: "h10.hardware.connected.1", connected: true, at: time)
             _ = try hardware!.receive(h10EncoderMessage(16, value: 0), at: time)
         }
@@ -1353,6 +1362,8 @@
                 for (side, owners) in [("nativeAction", reference), ("typedAction", candidate)] {
                     for id in owners.keys.sorted() {
                         let owner = try #require(owners[id])
+                        let j4Root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J4_SHADOW_REPORT_ROOT"] ?? repo.appendingPathComponent("build/j/j4-shadow").path)
+                        try owner.feedbackAudit.export(to: j4Root.appendingPathComponent(scene.id + "-" + side + "-" + id + ".jsonl"))
                         var audits: [(String, any CompactContextAuditReader)] = []
                         if let model = owner.model {
                             try audits += [("state", #require(model.session.state.contextAudit)), ("bindings", #require(model.session.parameters.contextAudit)), ("connection", #require(model.connectionContextAudit))]

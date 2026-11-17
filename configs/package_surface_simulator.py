@@ -85,13 +85,18 @@ def kernel_provenance(root=ROOT):
         "LICENSE",
         *(
             str(path.relative_to(kernel))
-            for module in ("SurfaceDeviceContracts", "SurfaceBindingContext", "SurfaceConnectionState")
+            for module in (
+                "SurfaceDeviceContracts",
+                "SurfaceBindingContext",
+                "SurfaceConnectionState",
+                "SurfaceFeedbackPlanning",
+            )
             for path in sorted((kernel / "Sources" / module).glob("*.swift"))
         ),
     ]
     return {
         "control_surface_kit_revision": lock["revision"],
-        "control_surface_kit_integration": "contracts-conformance-binding-and-connection",
+        "control_surface_kit_integration": "contracts-conformance-binding-and-connection-feedback-shadow",
         "control_surface_kit_files_sha256": {
             source: hashlib.sha256((kernel / source).read_bytes()).hexdigest() for source in sources
         },

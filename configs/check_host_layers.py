@@ -28,6 +28,7 @@ PURE_IMPORTS = {
         "SurfaceControlContracts",
         "SurfaceDeviceContracts",
         "SurfaceBindingContext",
+        "SurfaceFeedbackPlanning",
     },
     "device": {
         "Foundation",
@@ -35,6 +36,7 @@ PURE_IMPORTS = {
         "SurfaceControlContracts",
         "SurfaceDeviceContracts",
         "SurfaceBindingContext",
+        "SurfaceFeedbackPlanning",
     },
 }
 IMPORTS = re.compile(

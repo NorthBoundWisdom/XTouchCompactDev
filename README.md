@@ -14,6 +14,7 @@ from a local AI agent over MCP.
 | Area | State |
 | --- | --- |
 | Software in Mock mode | Runs end to end: panel, parameters, organization, agents, MCP, monitor, capture and offline review. Covered by deterministic tests on macOS and Linux. |
+| Controller kernel | J3 binding/context/connection uses managed ControlSurfaceKit. J4 feedback plans/preflight/receipts run as a strict Debug shadow: native policy still decides behavior; scheduling is not switched. [Adoption boundary](docs/CONTROL_SURFACE_KIT.md). |
 | Physical bring-up | **Partial.** Inputs, LEDs, rings, layer selection and a limited set of motor checks were sampled on one unit on 2026-11-12/13. Full control coverage is not signed off. |
 | Latest safety changes (U1–U18) | Software-tested only. **Not yet rechecked on hardware (未在实机复核).** |
 | MCP and configuration | Two GUI protocol versions, read-only client tools, guarded parameter/Agent tools, named configuration library and bounded macros are available. Remote permission switches default off. |

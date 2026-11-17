@@ -1,9 +1,12 @@
 # ControlSurfaceKit adoption
 
-J3 uses managed commit `545ba46c3cb5298663c3dd12e53604a5a68da7a0`.
+Current managed commit is `49ad4a7b8aa1160b9369733f0c8681647a41cd51`.
+J3 binding/context/connection is adopted in production; J4 feedback planning,
+preflight and receipts remain a strict Debug shadow. Native code determines
+product behavior in this stage; feedback and scheduling have not switched.
 `configs/control_surface_kit.lock.json` and its stdlib/Git manager own acquisition;
 Swift never compiles the development checkout. SurfacePlugins remains pinned to
-12ba0ed and remains the sole shared business-contract/quantization authority.
+`5ffbac79699505a76298172e8e6f28f7de3df88b` and remains the sole shared business-contract/quantization authority.
 
 Production owners are now:
 
@@ -55,3 +58,33 @@ consume actual deferred IDs and cache-validity IDs; retain payloads in one owner
 Apply the returned invalidation IDs to those payloads. Keep physical safety and
 final pinned transport admission in the adapter. Supply time at receipt/planning;
 do not derive neutral monotonic time from diagnostic wall time.
+
+## J4 complete shadow stage
+
+`SurfaceFeedbackPlanning` supplies immutable plans, explicit stage/full proofs and
+actual boundary receipts beside the existing native decision. The same real
+inputs are checked without changing native return values, touch/layer gates,
+callback ownership, transport calls or post-record scope ordering. Device facts
+and original UTF-8/number bits are retained. A pin refusal after invoking the
+adapter is an admission attempt, not evidence of a physical write or observation.
+
+All three compositions are distinct: permanent Mock keeps its original virtual
+layer behavior; hardware-mode Console retains its explicit local motor/layer
+policy; ordinary and owned hardware services remain typed display-only. The
+managed manifest records `feedback-shadow`, not feedback adoption.
+
+The shared scheduler candidate is test support only. Its mutable state is a value
+that follows session copies; shared classes only collect diagnostic records.
+Unmatched or ambiguous receipts remain unproven and do not update an accepted
+cache. Generation-cache and style/projection policy differences are recorded;
+no scheduler algorithm is adopted here.
+
+Test trace schema 2 uses lossless exact-content catalog nodes. Every persisted
+export is read through the repository's strict reader and cold-replayed by its
+actual node/parent lineage. Header coverage, raw duplicate keys, closed fields,
+canonical references, actual input bytes and nested DTO layouts are checked.
+The test-only legacy resource/binding/connection references remain independent.
+No reference/scheduler collector is installed by default; Release retains the
+native runtime path. Neither virtual tests nor transport acceptance grant
+hardware qualification. A later feedback cut requires a separate review and
+the other host's exact successful CI in the approved order.

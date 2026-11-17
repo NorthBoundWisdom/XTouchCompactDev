@@ -239,8 +239,13 @@ func legacyReferences() -> CompactContextReferences {
     .init(resources: LegacyResources(), bindings: LegacyBindings())
 }
 
-func makeLegacySession() throws -> CompactSession {
-    var result = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+func makeLegacySession(feedbackRecorder: FeedbackAuditRecorder? = nil, feedbackOwner: String = "core", feedbackSource: SurfaceDeviceContracts.DeviceSource = .simulation) throws -> CompactSession {
+    var result: CompactSession = if let feedbackRecorder {
+        try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual, feedbackAudit: feedbackRecorder,
+                           feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: feedbackOwner, source: feedbackSource, recorder: feedbackRecorder))
+    } else {
+        try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+    }
     result.installContextReferences(legacyReferences())
     return result
 }

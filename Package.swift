@@ -26,7 +26,7 @@ let controlSurfaceKit: Package.Dependency = .package(path: "build/dependencies/C
 #if os(macOS)
 let hardwareProducts: [Product] = [.executable(name: "XTouchSurfaceHardware", targets: ["XTouchSurfaceHardware"])]
 let hardwareTargets: [Target] = [
-    .executableTarget(name: "XTouchSurfaceHardware", dependencies: ["XTouchCompactCore", "CompactSimulatorTransport"], linkerSettings: [.linkedFramework("CoreMIDI")]),
+    .executableTarget(name: "XTouchSurfaceHardware", dependencies: ["XTouchCompactCore", "CompactSimulatorTransport", .product(name: "SurfaceDeviceContracts", package: "ControlSurfaceKit"), .product(name: "SurfaceFeedbackPlanning", package: "ControlSurfaceKit")], linkerSettings: [.linkedFramework("CoreMIDI")]),
     .testTarget(name: "XTouchSurfaceHardwareTests", dependencies: ["XTouchSurfaceHardware", "XTouchCompactCore"]),
 ]
 #else
@@ -46,19 +46,19 @@ let package = Package(
     ] + hardwareProducts,
     dependencies: [surfacePlugins, controlSurfaceKit],
     targets: [
-        .target(name: "XTouchCompactCore", dependencies: [.product(name: "SurfaceDeviceContracts", package: "ControlSurfaceKit"), .product(name: "SurfaceBindingContext", package: "ControlSurfaceKit"), .product(name: "SurfaceControlContracts", package: "SurfacePlugins"), .product(name: "SurfacePluginContracts", package: "SurfacePlugins"), .product(name: "AgentPlugin", package: "SurfacePlugins"), .product(name: "RemoteToolContracts", package: "SurfacePlugins"), .product(name: "AgentRemoteBinding", package: "SurfacePlugins"), .product(name: "RobotPlugin", package: "SurfacePlugins"), .product(name: "RobotRemoteBinding", package: "SurfacePlugins"), .product(name: "ChassisPlugin", package: "SurfacePlugins"), .product(name: "ChassisRemoteBinding", package: "SurfacePlugins"), .product(name: "ParameterOutputPlugin", package: "SurfacePlugins"), .product(name: "OutputRemoteBinding", package: "SurfacePlugins"), .product(name: "ExampleParameterSets", package: "SurfacePlugins")]),
+        .target(name: "XTouchCompactCore", dependencies: [.product(name: "SurfaceFeedbackPlanning", package: "ControlSurfaceKit"), .product(name: "SurfaceDeviceContracts", package: "ControlSurfaceKit"), .product(name: "SurfaceBindingContext", package: "ControlSurfaceKit"), .product(name: "SurfaceControlContracts", package: "SurfacePlugins"), .product(name: "SurfacePluginContracts", package: "SurfacePlugins"), .product(name: "AgentPlugin", package: "SurfacePlugins"), .product(name: "RemoteToolContracts", package: "SurfacePlugins"), .product(name: "AgentRemoteBinding", package: "SurfacePlugins"), .product(name: "RobotPlugin", package: "SurfacePlugins"), .product(name: "RobotRemoteBinding", package: "SurfacePlugins"), .product(name: "ChassisPlugin", package: "SurfacePlugins"), .product(name: "ChassisRemoteBinding", package: "SurfacePlugins"), .product(name: "ParameterOutputPlugin", package: "SurfacePlugins"), .product(name: "OutputRemoteBinding", package: "SurfacePlugins"), .product(name: "ExampleParameterSets", package: "SurfacePlugins")]),
         .target(name: "CompactSimulatorTransport"),
         .target(name: "CompactRemoteMIDI"),
         .executableTarget(name: "XTouchRemoteMIDI", dependencies: ["CompactRemoteMIDI"],
                           linkerSettings: [.linkedFramework("CoreMIDI", .when(platforms: [.macOS]))]),
         .executableTarget(name: "XTouchSurfaceSimulator", dependencies: ["XTouchCompactCore", "CompactSimulatorTransport"]),
         .target(name: "XTouchCompactLocalization", resources: [.process("Resources")]),
-        .executableTarget(name: "XTouchCompactApp", dependencies: ["XTouchCompactCore", "XTouchCompactLocalization", "CompactRemoteMIDI", .product(name: "SurfaceDeviceContracts", package: "ControlSurfaceKit"), .product(name: "SurfaceConnectionState", package: "ControlSurfaceKit")],
+        .executableTarget(name: "XTouchCompactApp", dependencies: ["XTouchCompactCore", "XTouchCompactLocalization", "CompactRemoteMIDI", .product(name: "SurfaceFeedbackPlanning", package: "ControlSurfaceKit"), .product(name: "SurfaceDeviceContracts", package: "ControlSurfaceKit"), .product(name: "SurfaceConnectionState", package: "ControlSurfaceKit")],
                           linkerSettings: [.linkedFramework("CoreMIDI", .when(platforms: [.macOS]))]),
-        .testTarget(name: "XTouchCompactCoreTests", dependencies: ["XTouchCompactCore", .product(name: "SurfaceDeviceContracts", package: "ControlSurfaceKit"), .product(name: "SurfaceBindingContext", package: "ControlSurfaceKit"), .product(name: "SurfaceConnectionState", package: "ControlSurfaceKit"), .product(name: "SurfaceDeviceConformance", package: "ControlSurfaceKit")]),
+        .testTarget(name: "XTouchCompactCoreTests", dependencies: ["XTouchCompactCore", .product(name: "SurfaceFeedbackPlanning", package: "ControlSurfaceKit"), .product(name: "SurfaceDeviceContracts", package: "ControlSurfaceKit"), .product(name: "SurfaceBindingContext", package: "ControlSurfaceKit"), .product(name: "SurfaceConnectionState", package: "ControlSurfaceKit"), .product(name: "SurfaceDeviceConformance", package: "ControlSurfaceKit")]),
         .testTarget(name: "CompactRemoteMIDITests", dependencies: ["CompactRemoteMIDI"]),
         .testTarget(name: "XTouchCompactLocalizationTests", dependencies: ["XTouchCompactLocalization"]),
-        .testTarget(name: "XTouchCompactAppTests", dependencies: ["XTouchCompactApp", "XTouchCompactLocalization", .product(name: "SurfaceDeviceContracts", package: "ControlSurfaceKit"), .product(name: "SurfaceBindingContext", package: "ControlSurfaceKit"), .product(name: "SurfaceConnectionState", package: "ControlSurfaceKit"), .product(name: "SurfaceDeviceConformance", package: "ControlSurfaceKit")]),
+        .testTarget(name: "XTouchCompactAppTests", dependencies: ["XTouchCompactApp", "XTouchCompactLocalization", .product(name: "SurfaceFeedbackPlanning", package: "ControlSurfaceKit"), .product(name: "SurfaceDeviceContracts", package: "ControlSurfaceKit"), .product(name: "SurfaceBindingContext", package: "ControlSurfaceKit"), .product(name: "SurfaceConnectionState", package: "ControlSurfaceKit"), .product(name: "SurfaceDeviceConformance", package: "ControlSurfaceKit")]),
     ] + hardwareTargets,
     swiftLanguageModes: [.v6]
 )

@@ -1,6 +1,8 @@
 import Foundation
 import RemoteToolContracts
 import SurfaceControlContracts
+import SurfaceDeviceContracts
+import SurfaceFeedbackPlanning
 import SurfacePluginContracts
 
 /// Isolated software surface. This composition has no MIDI transport, user store,
@@ -18,6 +20,12 @@ public struct CompactSurfaceSimulator: Sendable {
     /// motor intent: an accepted position input on that fader or any layer selection
     /// supersedes it until a new feedback request for the same control re-arms it.
     private var releasedMotorOverlays: Set<String> = []
+
+    #if DEBUG
+        package mutating func installFeedbackShadow(_ audit: (any CompactFeedbackAudit)?, scheduler: (any CompactFeedbackSchedulerReference)?) {
+            session.installFeedbackAudit(audit, scheduler: scheduler)
+        }
+    #endif
 
     public static let profileID = "xtouch.compact.standard.simulation"
     public static let profileVersion = "1.3"
@@ -55,14 +63,18 @@ public struct CompactSurfaceSimulator: Sendable {
     }
 
     package init(instanceID: String, epoch: String, configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024,
-                 remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil, contextReferences: CompactContextReferences?) throws
+                 remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil, contextReferences: CompactContextReferences?, feedbackAudit: (any CompactFeedbackAudit)? = nil, feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)? = nil) throws
     {
         self.configuration = configuration
         self.remoteWriterID = remoteWriterID
         self.systemWriterID = systemWriterID
         self.writeLimits = writeLimits
         let map = try FactoryStandardMap()
-        session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:])
+        #if DEBUG
+            session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:], feedbackAudit: feedbackAudit, feedbackSchedulerReference: feedbackSchedulerReference)
+        #else
+            session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:])
+        #endif
         #if DEBUG
             if let contextReferences {
                 session.installContextReferences(contextReferences)
@@ -70,7 +82,31 @@ public struct CompactSurfaceSimulator: Sendable {
         #endif
         mock = MockXTouchCompact(map: map, lightProtocol: .manual)
         _ = try session.loadConfiguration(configuration, resetValues: true)
-        try mock.receive(session.connect())
+        let initialFeedback = try session.connect()
+        #if DEBUG
+            var initialScope = session.state.feedbackScope; initialScope.authorization = session.writeAuthorization
+            var constructorEvidence = CompactFeedbackBytes(); constructorEvidence.add(instanceID); constructorEvidence.add(epoch)
+            constructorEvidence.add(remoteWriterID); constructorEvidence.add(systemWriterID); constructorEvidence.add("permanent-simulation-constructor")
+            let initialEndpoint = try EndpointProvenance(endpointID: instanceID, deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
+            let initialMap = session.state.map
+            let initialPlans = try initialFeedback.enumerated().map { index, message in
+                var reference = CompactFeedbackBytes(); reference.add(index)
+                var origin = CompactFeedbackBytes(); origin.add(systemWriterID)
+                return try CompactFeedbackPlanning.plan(message, map: initialMap, scope: initialScope, reference: reference,
+                                                        origin: origin, source: .simulation, endpoint: initialEndpoint, evidence: constructorEvidence)
+            }
+            for plan in initialPlans {
+                let facts = session.state.feedbackNativeSnapshot
+                let proof = CompactFeedbackProof(plan: plan, nativeSnapshot: facts, authorization: .granted(directions: plan.requiredDirections), safety: .passed)
+                CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: initialScope, currentNative: facts, native: .permitted, audit: session.state.feedbackAudit)
+            }
+        #endif
+        mock.receive(initialFeedback)
+        #if DEBUG
+            for plan in initialPlans {
+                CompactFeedbackShadow.receipt(plan: plan, result: .accepted, currentScope: initialScope, nativeCurrent: true, attempted: true, accepted: true, audit: session.state.feedbackAudit)
+            }
+        #endif
         controls = try SurfaceControlSession(instanceID: instanceID, epoch: epoch,
                                              profile: Self.profile(configuration: configuration, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity), eventCapacity: eventCapacity, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
         try controls.validateWriterID(remoteWriterID)
@@ -166,7 +202,7 @@ public struct CompactSurfaceSimulator: Sendable {
                 // Only parameter mappings are exposed by this software composition.
                 // New action bindings require an explicit host composition, not a bypass.
                 guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
-                next.mock.receive(update.feedback)
+                next.receiveMockFeedback(update.feedback, at: time, writerID: writer, operation: "input")
                 if kind == "touch" {
                     try next.applyMomentaryTouch(index: index, layer: layer, pressed: input.value == .bool(true))
                 }
@@ -191,7 +227,7 @@ public struct CompactSurfaceSimulator: Sendable {
         guard case let .parameter(id) = session.parameters.assignment(.faderTouch(index), layer: layer),
               let definition = session.parameters.definition(id) else { return }
         let feedback = try session.setParameter(id, value: pressed ? definition.maximum : definition.minimum, fromAgent: true)
-        mock.receive(feedback)
+        receiveMockFeedback(feedback, operation: "momentary-touch")
     }
 
     private func mappedValue(kind: String, index: Int, layer: CompactLayer) -> JSONValue? {
@@ -236,7 +272,7 @@ public struct CompactSurfaceSimulator: Sendable {
             let messages = try next.mock.touchFader(index, isTouched: false)
             let update = try next.session.receive(messages)
             guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
-            next.mock.receive(update.feedback)
+            next.receiveMockFeedback(update.feedback, at: time, writerID: systemWriterID, operation: "hold-expiry")
             try next.applyMomentaryTouch(index: index, layer: layer, pressed: false)
             try events.append(next.controls.recordHoldExpiry(controlID: expiry.controlID,
                                                              mappedValue: next.mappedValue(kind: kind, index: index, layer: layer), at: time, writerID: systemWriterID))
@@ -252,7 +288,7 @@ public struct CompactSurfaceSimulator: Sendable {
     private mutating func switchLayer(_ layer: CompactLayer, at time: Double) throws {
         guard layer != session.state.layer else { return }
         mock.selectPhysicalLayer(layer)
-        try mock.receive(session.selectLayer(layer))
+        try receiveMockFeedback(session.selectLayer(layer), at: time, writerID: systemWriterID, operation: "layer")
         for id in try (controls.snapshot(at: time)).feedback.keys where Self.isFader(id) {
             releasedMotorOverlays.insert(id)
         }
@@ -288,7 +324,7 @@ public struct CompactSurfaceSimulator: Sendable {
         let active = layer == next.session.state.layer
         if active {
             next.releasedMotorOverlays.remove(feedback.control_id)
-            try next.applyDisplay(feedback)
+            try next.applyDisplay(feedback, at: time, writerID: writer)
         }
         let event = try next.controls.recordFeedback(feedback, disposition: active ? .accepted : .ignored,
                                                      reason: active ? nil : "inactive_layer", origin: .remote, at: time, writerID: writer)
@@ -296,7 +332,7 @@ public struct CompactSurfaceSimulator: Sendable {
         return event
     }
 
-    private mutating func applyDisplay(_ feedback: ControlFeedback) throws {
+    private mutating func applyDisplay(_ feedback: ControlFeedback, at: Double? = nil, writerID: String? = nil) throws {
         let (layer, kind, index) = try Self.address(feedback.control_id)
         guard layer == session.state.layer else { return }
         let messages: [MIDIMessage]
@@ -308,7 +344,50 @@ public struct CompactSurfaceSimulator: Sendable {
             messages = try session.setDisplayButton(index, light: light)
         default: throw ControlContractError("unsupported_feedback")
         }
+        receiveMockFeedback(messages, at: at, writerID: writerID, operation: "display", request: String(reflecting: feedback))
+    }
+
+    /// Permanent software composition only. Virtual layer commands retain their
+    /// original 1.3 behavior and do not acquire a hardware/local-attendance policy.
+    private mutating func receiveMockFeedback(_ messages: [MIDIMessage], at: Double? = nil, writerID: String? = nil,
+                                              operation: String, request: String? = nil)
+    {
+        #if DEBUG
+            var scope = session.state.feedbackScope; scope.authorization = session.writeAuthorization
+            var evidence = CompactFeedbackBytes(); evidence.add(String(reflecting: controls.expected)); evidence.add(operation); evidence.add(request)
+            evidence.add(at != nil); if let at {
+                evidence.add(at)
+            }; evidence.add(writerID)
+            let endpoint = try! EndpointProvenance(endpointID: controls.expected.instance_id, deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
+            let plans = messages.enumerated().map { index, message in
+                var reference = CompactFeedbackBytes(); reference.add(index); reference.add(operation)
+                var origin = CompactFeedbackBytes(); origin.add(writerID)
+                let planned: CompactPlannedProvenance? = if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
+                    session.state.producedMotorProvenance(Int(number))
+                } else {
+                    nil
+                }
+                return try! CompactFeedbackPlanning.plan(message, map: session.state.map, scope: scope, reference: reference,
+                                                         origin: origin, source: .simulation, endpoint: endpoint, evidence: evidence, planned: planned)
+            }
+            var dispatchActor = CompactFeedbackBytes(); dispatchActor.add(writerID)
+            var dispatchEvidence = evidence; dispatchEvidence.add(scope)
+            session.feedbackShadowDispatch(.init(scope: scope, source: .simulation, origin: dispatchActor, endpointEvidence: endpoint,
+                                                 dispatchEvidence: dispatchEvidence, currentScope: scope, nativeSnapshot: session.state.feedbackNativeSnapshot,
+                                                 hardwareMotorActionCurrent: false, testAllowed: false, authorizedTestRequested: false, managementIntent: true))
+            for plan in plans {
+                let facts = session.state.feedbackNativeSnapshot
+                let proof = CompactFeedbackProof(plan: plan, nativeSnapshot: facts, authorization: .granted(directions: plan.requiredDirections), safety: .passed)
+                CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: scope, currentNative: facts, native: .permitted, audit: session.state.feedbackAudit)
+            }
+        #endif
         mock.receive(messages)
+        #if DEBUG
+            for plan in plans {
+                CompactFeedbackShadow.receipt(plan: plan, result: .accepted, currentScope: scope, nativeCurrent: true, attempted: true, accepted: true, audit: session.state.feedbackAudit)
+                session.feedbackShadowReceipt(plan, result: .accepted, currentScope: scope, currentSource: .simulation, currentEndpoint: endpoint)
+            }
+        #endif
     }
 
     /// Rotation is a host lifecycle operation. Fresh epochs must come from host
@@ -343,7 +422,7 @@ public struct CompactSurfaceSimulator: Sendable {
     public mutating func selectLayer(_ layer: CompactLayer, epoch: String, at time: Double) throws {
         guard epoch != controls.expected.epoch else { throw ControlContractError("invalid_argument") }
         var next = self
-        try next.mock.receive(next.session.selectLayer(layer))
+        try next.receiveMockFeedback(next.session.selectLayer(layer), at: time, writerID: systemWriterID, operation: "reset-layer")
         next.releasedMotorOverlays.removeAll() // The epoch rotation clears all display intent.
         let expected = controls.discovery().expected
         try next.controls.reset(expected: expected, expectedSequence: controls.discovery().latest_sequence,

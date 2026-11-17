@@ -8,6 +8,7 @@
     import RemoteToolContracts
     import SurfaceConnectionState
     import SurfaceDeviceContracts
+    import SurfaceFeedbackPlanning
     import SurfacePluginContracts
     import SwiftUI
     import UniformTypeIdentifiers
@@ -213,16 +214,36 @@
         private let runtimeSleep: @MainActor (Duration) async throws -> Void
         private let evidenceWriterFactory: (URL) throws -> any EvidenceWriting
         private var canonicalSessionRevision: UInt64 = 0
-        private(set) var session: CompactSession {
-            didSet {
-                canonicalSessionRevision &+= 1
-                guard explicitWriteContext,
-                      session.writeAuthorization.bindingGeneration != oldValue.writeAuthorization.bindingGeneration else { return }
-                var context = session.writeAuthorization
-                context.allowsValues = false; context.allowsDisplay = false; context.allowsMechanisms = false
-                session.configureWriteAuthorization(context)
+        #if DEBUG
+            private var sessionStorage: CompactSession
+            private(set) var session: CompactSession {
+                get { sessionStorage }
+                set {
+                    let previous = sessionStorage
+                    sessionStorage = newValue
+                    canonicalSessionRevision &+= 1
+                    guard explicitWriteContext,
+                          sessionStorage.writeAuthorization.bindingGeneration != previous.writeAuthorization.bindingGeneration else { return }
+                    var context = sessionStorage.writeAuthorization
+                    context.allowsValues = false; context.allowsDisplay = false; context.allowsMechanisms = false
+                    // The original stored-property observer does not recursively fire.
+                    // Keep that exact one-revision behavior for the Debug projection.
+                    sessionStorage.configureWriteAuthorization(context)
+                }
             }
-        }
+        #else
+            private(set) var session: CompactSession {
+                didSet {
+                    canonicalSessionRevision &+= 1
+                    guard explicitWriteContext,
+                          session.writeAuthorization.bindingGeneration != oldValue.writeAuthorization.bindingGeneration else { return }
+                    var context = session.writeAuthorization
+                    context.allowsValues = false; context.allowsDisplay = false; context.allowsMechanisms = false
+                    session.configureWriteAuthorization(context)
+                }
+            }
+
+        #endif
 
         private(set) var mock: MockXTouchCompact
 
@@ -234,7 +255,8 @@
              eventMonotonicClock: (() -> Double)? = nil, recordIDFactory: @escaping () -> UUID = UUID.init,
              operationIDFactory: @escaping () -> UUID = UUID.init, pluginRegistryEpoch: String? = nil,
              plannedIntentIDFactory: @escaping () -> String = { UUID().uuidString }, projectionInstanceID: String = "xtouch.console",
-             contextReferences: CompactContextReferences? = nil, connectionReference: (any CompactConnectionReference)? = nil)
+             contextReferences: CompactContextReferences? = nil, connectionReference: (any CompactConnectionReference)? = nil,
+             feedbackAudit: (any CompactFeedbackAudit)? = nil, feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)? = nil)
         {
             self.plannedIntentIDFactory = plannedIntentIDFactory
             self.projectionInstanceID = projectionInstanceID
@@ -257,12 +279,15 @@
             libraryStore = storageRoot.map(ConfigurationLibraryStore.init(directory:))
             panelStore = storageRoot.map(WorkspacePanelStore.init(directory:))
             let map = try! FactoryStandardMap() // Constant channels are valid by construction.
-            session = CompactSession(map: map, lightProtocol: .manual)
             #if DEBUG
+                sessionStorage = CompactSession(map: map, lightProtocol: .manual, feedbackAudit: feedbackAudit, feedbackSchedulerReference: feedbackSchedulerReference)
                 if let contextReferences {
-                    session.installContextReferences(contextReferences)
+                    sessionStorage.installContextReferences(contextReferences)
                 }
                 self.connectionReference = connectionReference
+                self.feedbackAudit = feedbackAudit
+            #else
+                session = CompactSession(map: map, lightProtocol: .manual)
             #endif
             mock = MockXTouchCompact(map: map, lightProtocol: .manual)
             self.midi.onMessages = { [weak self] messages in self?.receive(messages, receiptAt: self?.eventMonotonicClock()) }
@@ -921,7 +946,7 @@
                 if fromAgent {
                     sendAgentFeedback(messages)
                 } else {
-                    send(messages); updateBank()
+                    send(messages, preparedProvenance: provenance); updateBank()
                 }
                 if let fact {
                     observeMutation?(fact)
@@ -1349,9 +1374,10 @@
                 let baseRevision = canonicalSessionRevision
                 var candidate = session
                 let update: CompactSessionUpdate
+                let preparedProvenance: CompactPlannedProvenance
                 do {
-                    let provenance = try capturePlannedProvenance(.hardware)
-                    update = try candidate.withPlannedProvenance(provenance) { try $0.receive(messages) }
+                    preparedProvenance = try capturePlannedProvenance(.hardware)
+                    update = try candidate.withPlannedProvenance(preparedProvenance) { try $0.receive(messages) }
                     guard canonicalSessionRevision == baseRevision else { throw ParameterWriteAuthorizationError.staleContext }
                     // Publish actual physical observations before calling the external authority.
                     // The candidate alone still owns the proposed business writes and feedback.
@@ -1369,7 +1395,7 @@
                     throw error
                 }
                 session = candidate
-                send(update.feedback)
+                send(update.feedback, preparedProvenance: preparedProvenance)
                 if session.state.layerMismatch {
                     if !notifications.contains(where: { $0.id == "layer" }) {
                         notifications.append(ConsoleNotification(id: "layer", level: .warning, message: LocalizedMessage("Device layer differs from the host; motor output is blocked."), persistent: false))
@@ -1407,7 +1433,7 @@
                 guard canonicalSessionRevision == ownerRevision else { throw ParameterWriteAuthorizationError.staleContext }
                 session = next
                 let fact = changes.isEmpty ? nil : mutationFact(operation: "apply", targets: changes.keys.sorted(), accepted: true, reason: nil, scope: scope, at: eventMonotonicClock(), values: changes)
-                send(messages)
+                send(messages, preparedProvenance: provenance)
                 updateBank()
                 if let fact {
                     observeMutation?(fact)
@@ -1429,10 +1455,17 @@
             try session.state.validateLayerAssertion()
         }
 
+        #if DEBUG
+            var feedbackAudit: (any CompactFeedbackAudit)?
+            func installFeedbackShadow(_ audit: (any CompactFeedbackAudit)?, scheduler: (any CompactFeedbackSchedulerReference)?) {
+                feedbackAudit = audit; sessionStorage.installFeedbackAudit(audit, scheduler: scheduler)
+            }
+        #endif
+
         // MARK: - Single outgoing MIDI boundary
 
         @discardableResult
-        private func send(_ messages: [MIDIMessage], authorizedTest: AuthorizedNonMotorTest? = nil,
+        private func send(_ messages: [MIDIMessage], preparedProvenance: CompactPlannedProvenance? = nil, authorizedTest: AuthorizedNonMotorTest? = nil,
                           testAudit: NonMotorTestAudit? = nil) -> MonitorEvent.Delivery
         {
             let authorization = session.writeAuthorization
@@ -1472,6 +1505,50 @@
                     && session.state.map.globalReceiveChannel == dispatchMap.globalReceiveChannel
                     && session.state.lightProtocol == dispatchLightProtocol
             }
+            #if DEBUG
+                func feedbackScope(current: Bool) -> CompactFeedbackScope {
+                    var scope = CompactFeedbackScope()
+                    let selectedRoute = current ? (dispatchHardwareMode ? currentHardwareConnection : connection) : route
+                    scope.inputID = selectedRoute.connectedInput?.id; scope.outputID = selectedRoute.connectedOutput?.id
+                    scope.transportGeneration = selectedRoute.generation; scope.connected = selectedRoute.isConnected
+                    scope.authorization = current ? session.writeAuthorization : authorization
+                    scope.hostLayer = current ? session.state.layer : dispatchHostLayer
+                    scope.hardwareMode = current ? hardwareMode : dispatchHardwareMode
+                    scope.listenOnly = current ? listenOnly : dispatchListenOnly
+                    scope.observationMode = current ? isObservingHardware : dispatchObservationMode
+                    scope.agentMotorPermission = source == .agent ? (current ? mcpMotorWritesAllowed : dispatchAgentMotorPermission) : nil
+                    scope.transmitChannel = current ? session.state.map.transmitChannel : dispatchMap.transmitChannel
+                    scope.receiveChannel = current ? session.state.map.globalReceiveChannel : dispatchMap.globalReceiveChannel
+                    scope.lightProtocol = current ? session.state.lightProtocol : dispatchLightProtocol
+                    scope.handoverInactive = !dispatchHardwareMode || !current || !hardwareHandoverActive
+                    return scope
+                }
+                func plannedForFeedbackPlan(_ message: MIDIMessage) -> CompactPlannedProvenance? {
+                    if case .controlChange(_, 1 ... 9, _) = message {
+                        return plannedForMessage(message)
+                    }
+                    return preparedProvenance
+                }
+                let feedbackPlans = messages.enumerated().map { index, message in
+                    ConsoleFeedbackProjection.plan(message, index: index, actor: source, scope: feedbackScope(current: false),
+                                                   route: route, output: outputOrigin, planned: plannedForFeedbackPlan(message),
+                                                   knownLayer: dispatchKnownHardwareLayer, map: dispatchMap, at: dispatchAt, authorizedTest: authorizedTest)
+                }
+                var feedbackFinished: Set<Int> = []
+                func feedbackReceipt(_ index: Int, _ result: FeedbackAttemptResult, attempted: Bool, accepted: Bool, nativeCurrent: Bool? = nil) {
+                    guard feedbackFinished.insert(index).inserted else { preconditionFailure("J4 duplicate receipt") }
+                    CompactFeedbackShadow.receipt(plan: feedbackPlans[index], result: result, currentScope: feedbackScope(current: true),
+                                                  nativeCurrent: nativeCurrent ?? scopeIsCurrent(), attempted: attempted, accepted: accepted, audit: feedbackAudit)
+                    let currentOutput = hardwareMode ? CompactEndpointStamp(endpoint: currentHardwareConnection.connectedOutput, generation: currentHardwareConnection.generation) : .simulation
+                    sessionStorage.feedbackShadowReceipt(feedbackPlans[index], result: result, currentScope: feedbackScope(current: true),
+                                                         currentSource: hardwareMode ? .hardware : .simulation, currentEndpoint: try! ConsoleNeutralProjection.endpoint(currentOutput))
+                }
+                defer {
+                    for index in feedbackPlans.indices where !feedbackFinished.contains(index) {
+                        feedbackReceipt(index, .notAttempted(reason: "native_early_return"), attempted: false, accepted: false)
+                    }
+                }
+            #endif
             if hardwareMode, hardwareHandoverActive, !messages.isEmpty {
                 session.invalidateTransportFeedback()
                 for message in messages {
@@ -1492,6 +1569,26 @@
                     testAllowed = true
                 } catch { self.error = error; lockNonMotorTests() }
             }
+            #if DEBUG
+                let capturedScope = feedbackScope(current: false)
+                var dispatchEvidence = ConsoleFeedbackProjection.evidence(route, output: outputOrigin, planned: nil,
+                                                                          knownLayer: dispatchKnownHardwareLayer, at: dispatchAt, authorizedTest: authorizedTest)
+                dispatchEvidence.add(capturedScope)
+                var dispatchActor = CompactFeedbackBytes(); dispatchActor.add(source.rawValue)
+                sessionStorage.feedbackShadowDispatch(.init(scope: capturedScope, source: dispatchHardwareMode ? .hardware : .simulation,
+                                                            origin: dispatchActor, endpointEvidence: try! ConsoleNeutralProjection.endpoint(outputOrigin),
+                                                            dispatchEvidence: dispatchEvidence, currentScope: feedbackScope(current: true),
+                                                            nativeSnapshot: session.state.feedbackNativeSnapshot,
+                                                            hardwareMotorActionCurrent: hardwareMotorActionCurrent,
+                                                            testAllowed: testAllowed, authorizedTestRequested: authorizedTest != nil,
+                                                            managementIntent: !dispatchHardwareMode || source != .agent && messages.contains {
+                                                                if case .programChange = $0 {
+                                                                    true
+                                                                } else {
+                                                                    false
+                                                                }
+                                                            }, diagnostic: authorizedTest.map { .init(gate: nonMotorTests.gate, authorization: $0, context: nonMotorContext) }))
+            #endif
             if authorizedTest != nil && !testAllowed || hardwareMode && (listenOnly || isObservingHardware && !testAllowed) {
                 if hardwareMode, !messages.isEmpty {
                     hardwareFeedbackNeedsSync = true
@@ -1521,6 +1618,10 @@
                 case .controlChange(_, 1 ... 9, _): true
                 default: false
                 }
+                #if DEBUG
+                    CompactFeedbackShadow.stage(plan: feedbackPlans[messageIndex], requirements: [isMechanism ? .mechanism : .display],
+                                                allowed: authorization == session.writeAuthorization && (isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay), audit: feedbackAudit)
+                #endif
                 guard authorization == session.writeAuthorization,
                       isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay
                 else {
@@ -1553,7 +1654,26 @@
                            nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                     return .suppressed
                 }
-                guard !session.filterFeedbackForDelivery([message]).isEmpty else {
+                #if DEBUG
+                    // The isolated native copy evaluates this exact proposal. Only the next
+                    // original call below mutates the canonical session.
+                    var nativeGateCopy = session
+                    nativeGateCopy.installFeedbackAudit(nil, scheduler: nil)
+                    var gateFacts = session.state.feedbackNativeSnapshot
+                    gateFacts.add(feedbackScope(current: true))
+                    let copyPermitted = !nativeGateCopy.filterFeedbackForDelivery([message]).isEmpty
+                #endif
+                let nativePermitted = !session.filterFeedbackForDelivery([message]).isEmpty
+                #if DEBUG
+                    let nativeSafety: NativeSafetyResult = copyPermitted ? .passed : .rejected(reason: "native_device_filter")
+                    let plan = feedbackPlans[messageIndex]
+                    let proof = CompactFeedbackProof(plan: plan, nativeSnapshot: gateFacts,
+                                                     authorization: .granted(directions: plan.requiredDirections), safety: nativeSafety)
+                    let nativeVerdict: FeedbackPreflight = nativePermitted ? .permitted : .rejected(.nativeRejected(reason: "native_device_filter"))
+                    CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: feedbackScope(current: true),
+                                                    currentNative: gateFacts, native: nativeVerdict, audit: feedbackAudit)
+                #endif
+                guard nativePermitted else {
                     withheldMotor = true
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                     continue
@@ -1562,6 +1682,9 @@
                     mock.receive(message)
                     mockMIDIInAt = now()
                     record(message, direction: .output, source: source, delivery: .sent, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: eventMonotonicClock())
+                    #if DEBUG
+                        feedbackReceipt(messageIndex, .accepted, attempted: true, accepted: true)
+                    #endif
                     continue
                 }
                 if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
@@ -1585,6 +1708,9 @@
                     }
                     record(message, direction: .output, source: source, delivery: .sent,
                            nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: eventMonotonicClock())
+                    #if DEBUG
+                        feedbackReceipt(messageIndex, .accepted, attempted: true, accepted: true)
+                    #endif
                     // Acceptance belongs to the pinned old scope. A synchronous callback may
                     // already own a different route/binding/mode; old completion cannot edit it.
                     guard scopeIsCurrent() else {
@@ -1595,6 +1721,10 @@
                         expireHardwareFacts(beforeOrAt: receiptCutoff)
                     }
                 } catch {
+                    #if DEBUG
+                        feedbackReceipt(messageIndex, transportAttempted ? .rejected(reason: "native_transport_rejected") : .notAttempted(reason: "native_pre_dispatch_rejected"),
+                                        attempted: transportAttempted, accepted: false)
+                    #endif
                     guard scopeIsCurrent() else {
                         record(message, direction: .output, source: source, ignored: true, delivery: .failed,
                                nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: transportAttempted ? eventMonotonicClock() : nil)
@@ -1696,7 +1826,7 @@
                 guard canonicalSessionRevision == ownerRevision else { throw ParameterWriteAuthorizationError.staleContext }
                 session = candidate
                 let fact = mutationFact(operation: "set_parameter", targets: [id], accepted: true, reason: nil, scope: scope, at: eventMonotonicClock(), values: [id: candidate.parameters.values[id]!])
-                sendAgentFeedback(messages)
+                sendAgentFeedback(messages, preparedProvenance: provenance)
                 if let fact {
                     observeMutation?(fact)
                 }
@@ -1717,8 +1847,8 @@
             error = failure; mcpEnabled = mcp.isRunning
         }
 
-        func sendAgentFeedback(_ messages: [MIDIMessage]) {
-            agentOutput = true; send(messages); agentOutput = false; updateBank()
+        func sendAgentFeedback(_ messages: [MIDIMessage], preparedProvenance: CompactPlannedProvenance? = nil) {
+            agentOutput = true; send(messages, preparedProvenance: preparedProvenance); agentOutput = false; updateBank()
         }
 
         func logAgentCall(_ name: String) {

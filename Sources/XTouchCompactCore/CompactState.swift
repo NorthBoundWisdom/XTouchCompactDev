@@ -5,6 +5,10 @@ import SurfaceBindingContext
 /// the caller routes them through its CoreMIDI transport. No physical motor is used by tests.
 public struct CompactState: Sendable {
     #if DEBUG
+        package var feedbackAudit: (any CompactFeedbackAudit)?
+        package var feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)?
+        private var feedbackDerivedDepth = 0
+        private var feedbackCallerProvenance: CompactPlannedProvenance?
         package var contextReference: (any CompactResourceReference)?
         package var contextAudit: (any CompactContextAuditReader)? {
             contextReference?.audit
@@ -46,8 +50,65 @@ public struct CompactState: Sendable {
     private var pressedButtons: Set<Int> = []
     private var pushedEncoders: Set<Int> = []
 
+    package var feedbackScope: CompactFeedbackScope {
+        var scope = CompactFeedbackScope()
+        scope.hostLayer = layer; scope.transmitChannel = map.transmitChannel
+        scope.receiveChannel = map.globalReceiveChannel; scope.lightProtocol = lightProtocol
+        scope.bindingGeneration = resourceScope.bindingGeneration
+        scope.authorizationRouteGeneration = resourceScope.authorizationRouteGeneration
+        return scope
+    }
+
+    /// A transient complete gate snapshot, never another value owner or observation.
+    package var feedbackNativeSnapshot: CompactFeedbackBytes {
+        var facts = CompactFeedbackBytes()
+        facts.add(layer.rawValue); facts.add(observedLayer?.rawValue)
+        facts.add(observationRevision); facts.add(layerObservationRevision)
+        for index in 1 ... 9 {
+            facts.add(index); facts.add(touchedFaders.contains(index)); facts.add(safetyTouches.contains(index))
+            for value in [desiredFader[index], observedFaders[index], lastMotorCommands[index]] {
+                facts.add(value != nil); if let value {
+                    facts.add(Int(value))
+                }
+            }
+            facts.add(observedIsCurrent.contains(index)); facts.add(faderObservationRevisions[index, default: 0])
+            facts.add(pendingProvenance[index]); facts.add(producedProvenance[index])
+        }
+        return facts
+    }
+
+    #if DEBUG
+        private mutating func feedbackIntent(_ intent: CompactFeedbackIntent) {
+            guard feedbackDerivedDepth == 0, feedbackSchedulerReference != nil else { return }
+            // Copy first; a mutating value existential must not observe itself via an inout alias.
+            var snapshot = self; snapshot.feedbackSchedulerReference = nil; snapshot.feedbackAudit = nil
+            snapshot.contextReference = nil
+            let scope = feedbackScope
+            feedbackSchedulerReference?.receive(intent, scope: scope, native: snapshot)
+        }
+
+        private func feedbackProducedProvenance(_ messages: [MIDIMessage]) -> [CompactPlannedProvenance?] {
+            messages.map { message in
+                if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
+                    return producedProvenance[Int(number)]
+                }
+                return feedbackCallerProvenance
+            }
+        }
+
+        private mutating func feedbackGenerated(_ messages: [MIDIMessage]) {
+            guard feedbackDerivedDepth == 0, feedbackSchedulerReference != nil else { return }
+            let scope = feedbackScope
+            let provenance = feedbackProducedProvenance(messages)
+            feedbackSchedulerReference?.generated(messages, scope: scope, provenance: provenance)
+        }
+    #endif
+
     /// Planning provenance is transient caller input; stored index entries capture its value.
     mutating func setResourceProvenance(_ provenance: CompactPlannedProvenance?) {
+        #if DEBUG
+            feedbackCallerProvenance = provenance
+        #endif
         resourceScope.source = provenance?.source
         resourceScope.endpoint = provenance?.endpoint
     }
@@ -317,6 +378,11 @@ public struct CompactState: Sendable {
     /// use assertLayer: false: invalidate old observations/intents without output.
     /// Neither path clears touch or recalls bank targets.
     public mutating func connect(assertLayer: Bool = true) throws -> [MIDIMessage] {
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                feedbackIntent(.clear)
+            }
+        #endif
         lastMotorCommands.removeAll()
         observedIsCurrent.removeAll()
         observedFaders.removeAll()
@@ -339,6 +405,11 @@ public struct CompactState: Sendable {
     /// Change host intent without claiming that a layer command reached the device.
     /// Used during listening and before the transport accepts an explicit assertion.
     public mutating func selectHostLayer(_ layer: CompactLayer) {
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                feedbackIntent(.clear)
+            }
+        #endif
         clearPending(); pendingProvenance.removeAll(); producedProvenance.removeAll()
         desiredFader.removeAll()
         invalidateMotorCommandHistory()
@@ -385,7 +456,30 @@ public struct CompactState: Sendable {
             observedLayer = event.layer
             layerObservationRevision = observationRevision
         }
+        #if DEBUG
+            switch event.control {
+            case let .encoder(index): if feedbackSchedulerReference != nil {
+                    feedbackIntent(.invalidate(keys: ["ring.\(index)"]))
+                }
+            case let .button(index):
+                if event.isPressed == true, (34 ... 39).contains(index) {
+                    if feedbackSchedulerReference != nil {
+                        feedbackIntent(.invalidate(keys: (34 ... 39).map { "button.\($0)" }))
+                    }
+                } else if event.isPressed == false, feedbackSchedulerReference != nil {
+                    feedbackIntent(.invalidate(keys: ["button.\(index)"]))
+                }
+            default: break
+            }
+        #endif
         if layerMismatch {
+            #if DEBUG
+                for index in 1 ... 9 {
+                    if feedbackSchedulerReference != nil {
+                        feedbackIntent(.cancel(key: "fader.\(index)"))
+                    }
+                }
+            #endif
             clearPending(); pendingProvenance.removeAll(); producedProvenance.removeAll()
         }
         switch event.control {
@@ -427,6 +521,20 @@ public struct CompactState: Sendable {
     /// Use only after a decoded fader-touch release; compare with the observed physical position.
     public mutating func reconcileReleasedFader(_ index: Int) throws -> [MIDIMessage] {
         guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                feedbackIntent(.release(key: "fader.\(index)"))
+            }
+        #endif
+        let messages = try reconcileReleasedFaderNative(index)
+        #if DEBUG
+            feedbackGenerated(messages)
+        #endif
+        return messages
+    }
+
+    private mutating func reconcileReleasedFaderNative(_ index: Int) throws -> [MIDIMessage] {
+        guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
         guard !isTouched(index), !layerMismatch, pendingContains(index),
               let desired = desiredFader[index] else { return [] }
         let originalProvenance = pendingProvenance[index]
@@ -447,6 +555,20 @@ public struct CompactState: Sendable {
 
     /// When touched, only update desired state; never drive the motor against the user's hand.
     public mutating func setFader(_ index: Int, value: UInt8, provenance: CompactPlannedProvenance? = nil) throws -> [MIDIMessage] {
+        guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                try feedbackIntent(.request(key: "fader.\(index)", message: map.motorPosition(fader: index, value: value), provenance: provenance))
+            }
+        #endif
+        let messages = try _setFader(index, value: value, provenance: provenance)
+        #if DEBUG
+            feedbackGenerated(messages)
+        #endif
+        return messages
+    }
+
+    private mutating func _setFader(_ index: Int, value: UInt8, provenance: CompactPlannedProvenance? = nil) throws -> [MIDIMessage] {
         guard (1 ... 9).contains(index) else { throw CompactError.invalidIndex("fader", index) }
         producedProvenance.removeValue(forKey: index)
         desiredFader[index] = value
@@ -517,6 +639,13 @@ public struct CompactState: Sendable {
 
     /// Discard withheld writes without inventing a layer assertion or losing physical evidence.
     public mutating func discardPendingMotorWrites() {
+        #if DEBUG
+            for index in 1 ... 9 {
+                if feedbackSchedulerReference != nil {
+                    feedbackIntent(.cancel(key: "fader.\(index)"))
+                }
+            }
+        #endif
         clearPending(); pendingProvenance.removeAll(); producedProvenance.removeAll(); desiredFader.removeAll(); invalidateMotorCommandHistory()
     }
 
@@ -527,6 +656,11 @@ public struct CompactState: Sendable {
     /// Forget a withheld motor intent without claiming a physical observation, so a later
     /// touch release cannot replay an older target over a newer, motor-less write.
     public mutating func discardMotorIntent(_ index: Int) {
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                feedbackIntent(.cancel(key: "fader.\(index)"))
+            }
+        #endif
         desiredFader.removeValue(forKey: index)
         removePending(index); pendingProvenance.removeValue(forKey: index)
         producedProvenance.removeValue(forKey: index)
@@ -534,6 +668,11 @@ public struct CompactState: Sendable {
 
     /// A physical fader report owns its own position. Parameter snapping must never echo a motor command.
     public mutating func acceptPhysicalFader(_ index: Int) {
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                feedbackIntent(.cancel(key: "fader.\(index)"))
+            }
+        #endif
         desiredFader.removeValue(forKey: index)
         removePending(index); pendingProvenance.removeValue(forKey: index)
         producedProvenance.removeValue(forKey: index)
@@ -541,6 +680,20 @@ public struct CompactState: Sendable {
     }
 
     public mutating func setButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
+        guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                try feedbackIntent(.request(key: "button.\(index)", message: map.buttonLight(button: index, light: light, style: lightProtocol), provenance: feedbackCallerProvenance))
+            }
+        #endif
+        let messages = try _setButton(index, light: light)
+        #if DEBUG
+            feedbackGenerated(messages)
+        #endif
+        return messages
+    }
+
+    private mutating func _setButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
         guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
         desiredButtons[index] = light
         guard cachedButton(index) != light else { return [] }
@@ -550,6 +703,20 @@ public struct CompactState: Sendable {
 
     public mutating func setRing(_ index: Int, display: RingDisplay) throws -> [MIDIMessage] {
         guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                try feedbackIntent(.request(key: "ring.\(index)", message: map.encoderRingValue(encoder: index, display: display), provenance: feedbackCallerProvenance))
+            }
+        #endif
+        let messages = try _setRing(index, display: display)
+        #if DEBUG
+            feedbackGenerated(messages)
+        #endif
+        return messages
+    }
+
+    private mutating func _setRing(_ index: Int, display: RingDisplay) throws -> [MIDIMessage] {
+        guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
         let midi = try map.encoderRingValue(encoder: index, display: display)
         desiredRings[index] = display
         guard cachedRing(index) != display else { return [] }
@@ -558,6 +725,30 @@ public struct CompactState: Sendable {
     }
 
     public mutating func setRingStyle(_ index: Int, style: RingStyle) throws -> [MIDIMessage] {
+        guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                try feedbackIntent(.style(key: "style.\(index)", message: map.encoderRingStyle(encoder: index, style: style), projectionKey: "ring.\(index)", provenance: feedbackCallerProvenance))
+            }
+            feedbackDerivedDepth += 1
+        #endif
+        defer {
+            #if DEBUG
+                feedbackDerivedDepth -= 1
+            #endif
+        }
+        let messages = try _setRingStyle(index, style: style)
+        #if DEBUG
+            // Only the outer operation contributes native output; redraw is derived.
+            if feedbackDerivedDepth == 1 {
+                let scope = feedbackScope; let provenance = feedbackProducedProvenance(messages)
+                feedbackSchedulerReference?.generated(messages, scope: scope, provenance: provenance)
+            }
+        #endif
+        return messages
+    }
+
+    private mutating func _setRingStyle(_ index: Int, style: RingStyle) throws -> [MIDIMessage] {
         guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
         desiredStyles[index] = style
         guard cachedStyle(index) != style else { return [] }
@@ -572,6 +763,11 @@ public struct CompactState: Sendable {
     }
 
     public mutating func invalidateNonMotorFeedback() {
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                feedbackIntent(.invalidate(keys: (1 ... 39).map { "button.\($0)" } + (1 ... 16).flatMap { ["ring.\($0)", "style.\($0)"] }))
+            }
+        #endif
         clearButtonCache()
         clearRingCache()
         clearStyleCache()
@@ -583,6 +779,17 @@ public struct CompactState: Sendable {
     }
 
     public mutating func restoreNonMotorFeedback() throws -> [MIDIMessage] {
+        #if DEBUG
+            if feedbackSchedulerReference != nil {
+                feedbackIntent(.refresh(order: (1 ... 16).map { "style.\($0)" } + (1 ... 16).map { "ring.\($0)" } + (1 ... 39).map { "button.\($0)" }))
+            }
+            feedbackDerivedDepth += 1
+        #endif
+        defer {
+            #if DEBUG
+                feedbackDerivedDepth -= 1
+            #endif
+        }
         var result: [MIDIMessage] = []
         for index in desiredStyles.keys.sorted() {
             if let style = desiredStyles[index] {
@@ -599,6 +806,12 @@ public struct CompactState: Sendable {
                 result += try setButton(index, light: light)
             }
         }
+        #if DEBUG
+            if feedbackDerivedDepth == 1 {
+                let scope = feedbackScope; let provenance = feedbackProducedProvenance(result)
+                feedbackSchedulerReference?.generated(result, scope: scope, provenance: provenance)
+            }
+        #endif
         return result
     }
 }
@@ -609,6 +822,10 @@ public extension CompactState {
     func reconfigured(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) -> CompactState {
         var next = CompactState(map: map, lightProtocol: lightProtocol)
         #if DEBUG
+            next.feedbackCallerProvenance = feedbackCallerProvenance
+            next.feedbackSchedulerReference = feedbackSchedulerReference
+            next.feedbackSchedulerReference?.reset()
+            next.feedbackAudit = feedbackAudit
             next.contextReference = contextReference
             next.contextReference?.reset()
         #endif

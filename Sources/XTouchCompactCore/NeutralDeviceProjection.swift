@@ -73,6 +73,16 @@ public enum CompactNeutralProjection: Sendable {
                                 effectID: String, context: DeviceContext, endpoint: EndpointProvenance,
                                 source: SurfaceDeviceContracts.DeviceSource, at: Double) throws -> EffectDescriptor
     {
+        let (target, affected, value, category, sideEffects) = try feedbackShape(message, map: map, hostLayer: hostLayer)
+        return try .init(id: effectID, targetID: target, affectedElements: affected, value: value,
+                         classification: category, sideEffects: sideEffects, context: context, endpoint: endpoint,
+                         source: source, timing: .immediate, at: at)
+    }
+
+    /// Device knowledge shared by effects and immutable feedback plans; no clock is invented.
+    package static func feedbackShape(_ message: MIDIMessage, map: FactoryStandardMap, hostLayer: CompactLayer) throws
+        -> (String, Set<String>, DeviceValue, EffectClassification, Set<EffectDirection>)
+    {
         let target: String, affected: Set<String>, value: DeviceValue, category: EffectClassification, sideEffects: Set<EffectDirection>
         if case let .programChange(_, number) = message {
             target = "device.layer"; affected = Set((1 ... 9).map { elementID(.fader($0)) })
@@ -105,9 +115,7 @@ public enum CompactNeutralProjection: Sendable {
             }
             sideEffects = []
         }
-        return try .init(id: effectID, targetID: target, affectedElements: affected, value: value,
-                         classification: category, sideEffects: sideEffects, context: context, endpoint: endpoint,
-                         source: source, timing: .immediate, at: at)
+        return (target, affected, value, category, sideEffects)
     }
 
     public static func capabilities(hardwareService: Bool = false) throws -> DeviceCapabilities {
