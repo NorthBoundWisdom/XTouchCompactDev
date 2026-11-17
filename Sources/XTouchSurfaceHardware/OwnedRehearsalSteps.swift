@@ -10,7 +10,7 @@ enum OwnedRehearsalStep: Equatable {
 
 enum OwnedRehearsalFailure: String, Error, CustomStringConvertible {
     case invalidPipe, invalidFrame, lineOverflow, bufferOverflow, inputOverflow, receiptOverflow
-    case staleGeneration, unexpectedInput, endpointOwnership, transport, cleanup, finishTimeout
+    case staleGeneration, unexpectedInput, endpointOwnership, transport, cleanup, finishTimeout, terminal
     var description: String {
         "owned-virtual-rehearsal physical_evidence=false: \(rawValue)"
     }
@@ -30,6 +30,8 @@ final class OwnedRehearsalSteps {
         guard descriptor > STDERR_FILENO, fstat(descriptor, &info) == 0,
               info.st_mode & S_IFMT == S_IFIFO, info.st_uid == getuid()
         else { throw OwnedRehearsalFailure.invalidPipe }
+        let originalFlags = fcntl(descriptor, F_GETFL)
+        guard originalFlags >= 0, originalFlags & O_ACCMODE != O_WRONLY else { throw OwnedRehearsalFailure.invalidPipe }
         let copy = fcntl(descriptor, F_DUPFD_CLOEXEC, STDERR_FILENO + 1)
         guard copy >= 0 else { throw OwnedRehearsalFailure.invalidPipe }
         let flags = fcntl(copy, F_GETFL)

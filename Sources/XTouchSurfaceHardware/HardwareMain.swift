@@ -303,6 +303,8 @@ private func removeOwnedReadyFile() {
                 exit(0)
             } catch {
                 if let owned {
+                    do { try surface.transition(epoch: UUID().uuidString, connected: false, at: ProcessInfo.processInfo.systemUptime) }
+                    catch { audit.emit("owned_virtual_owner_invalidation_failed") }
                     var cleanupFailed = false
                     do { try owned.cleanup() } catch { cleanupFailed = true }
                     audit.emit(cleanupFailed ? "owned_virtual_fatal_cleanup_failed" : "owned_virtual_fatal", operation: (error as? OwnedRehearsalFailure)?.rawValue ?? "transport_error")
@@ -344,7 +346,14 @@ private func removeOwnedReadyFile() {
             try writeReadyFile(readyPath, readyBytes)
         }
         FileHandle.standardOutput.write(readyBytes + Data("\n".utf8))
-        owned?.startPeer()
+        do { try owned?.startPeer() }
+        catch {
+            if let owned {
+                do { try owned.cleanup() } catch { audit.emit("owned_virtual_fatal_cleanup_failed") }
+            }
+            removeOwnedReadyFile()
+            throw error
+        }
         let displayWriters = credentials?.independentDisplayWriterIDs ?? []
         var budget = writeLimits.map { SurfaceWriteBudgets(input: $0.input_per_window, feedback: $0.feedback_per_window, renew: $0.renew_per_window, admin: $0.admin_per_window, independentFeedbackWriters: displayWriters) }
             ?? SurfaceWriteBudgets(aggregateLimit: writeLimit, independentFeedbackWriters: displayWriters)

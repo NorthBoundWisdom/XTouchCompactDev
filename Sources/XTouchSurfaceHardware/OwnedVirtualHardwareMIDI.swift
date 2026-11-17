@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import SurfaceControlContracts
 import XTouchCompactCore
@@ -12,6 +13,31 @@ struct OwnedInputLease: Equatable, Sendable {
 
 struct OwnedRehearsalCompleted: Error {}
 
+struct OwnedReceiptEvidence: Equatable, Sendable {
+    let word: UInt32
+    let timestamp: UInt64
+    let generation: UInt64
+    let origin: HardwareEndpointOrigin?
+    let ticket: UInt64?
+    let transportAccepted: Bool?
+}
+
+/// One-time creation evidence retained by the specific destination callback, including
+/// callbacks delivered after that endpoint has retired. Never fill from the current route.
+private final class OwnedCallbackScope: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: HardwareEndpointOrigin?
+    func install(_ origin: HardwareEndpointOrigin) {
+        lock.lock(); defer { lock.unlock() }
+        precondition(value == nil)
+        value = origin
+    }
+
+    var snapshot: HardwareEndpointOrigin? {
+        lock.lock(); defer { lock.unlock() }; return value
+    }
+}
+
 /// One serial owner drains commands and commits/rejects input leases. CoreMIDI callbacks
 /// only move already-reserved, bounded tickets; they never enqueue Tasks or mutate surface values.
 final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
@@ -23,6 +49,8 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     private let audit: DeviceAccessAudit
     private let steps: () throws -> [OwnedRehearsalStep]
     private let clock: @Sendable () -> Double
+    private let stamp: @Sendable () -> UInt64
+    private var lastStamp: UInt64 = 0
     private let lock = NSLock()
     private var client: UInt32 = 0
     private var input: UInt32 = 0
@@ -45,6 +73,7 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     private struct Receipt {
         let ticket: UInt64
         let word: UInt32
+        let timestamp: UInt64
         let origin: HardwareEndpointOrigin
         var accepted = false
     }
@@ -52,6 +81,7 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     private var displayTickets: [UInt64: Receipt] = [:]
     private var displayAwaiting: [UInt64] = []
     private var receipts: [UInt64] = []
+    private var unattributed: [OwnedReceiptEvidence] = []
 
     var currentOrigin: HardwareEndpointOrigin {
         lock.lock(); defer { lock.unlock() }; return origin
@@ -62,9 +92,9 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     }
 
     init(system: any OwnedVirtualMIDISystem, configuration: CompactHardwareConfiguration, audit: DeviceAccessAudit,
-         steps: @escaping () throws -> [OwnedRehearsalStep], clock: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime }) throws
+         steps: @escaping () throws -> [OwnedRehearsalStep], clock: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime }, stamp: @escaping @Sendable () -> UInt64 = { mach_absolute_time() }) throws
     {
-        self.system = system; self.configuration = configuration; self.audit = audit; self.steps = steps; self.clock = clock
+        self.system = system; self.configuration = configuration; self.audit = audit; self.steps = steps; self.clock = clock; self.stamp = stamp
         client = try system.client { [weak self] ref in self?.removed(ref) }
         do {
             let inputRef = try system.input(client: client) { [weak self] result, generation in self?.received(result, generation: generation) }
@@ -78,8 +108,21 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         }
     }
 
-    func startPeer() {
+    func startPeer() throws {
+        lock.lock(); defer { lock.unlock() }
+        guard !cleanupStarted else { throw OwnedRehearsalFailure.terminal }
+        if let failure {
+            throw failure
+        }
         startedPeer = true
+    }
+
+    var isConnected: Bool {
+        lock.lock(); defer { lock.unlock() }; return connected && failure == nil && !cleanupStarted
+    }
+
+    var outstandingDisplayCount: Int {
+        lock.lock(); defer { lock.unlock() }; return displayTickets.count
     }
 
     private func nextTicketLocked() throws -> UInt64 {
@@ -105,13 +148,15 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
 
     private func establish() throws {
         lock.lock()
+        guard !cleanupStarted else { lock.unlock(); throw OwnedRehearsalFailure.terminal }
         guard origin.connectionGeneration < UInt64.max else { lock.unlock(); throw OwnedRehearsalFailure.transport }
         let generation = origin.connectionGeneration + 1
         lock.unlock()
         let newSource = try system.source(client: client)
         let newDestination: UInt32
+        let callbackScope = OwnedCallbackScope()
         do {
-            newDestination = try system.destination(client: client) { [weak self] result in self?.receivedDisplay(result, generation: generation) }
+            newDestination = try system.destination(client: client) { [weak self] result in self?.receivedDisplay(result, generation: generation, captured: callbackScope.snapshot) }
         } catch {
             do { try system.disposeEndpoint(newSource) } catch { cleanupUncertain = true; throw OwnedRehearsalFailure.cleanup }
             throw error
@@ -128,6 +173,7 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
             throw error
         }
         let next = HardwareEndpointOrigin(inputID: inputID, outputID: outputID, connectionGeneration: generation, transportOrigin: "localVirtual")
+        callbackScope.install(next)
         lock.lock(); source = newSource; destination = newDestination; origin = next; lock.unlock()
         do { try system.connect(input: input, source: newSource, generation: generation) }
         catch {
@@ -144,9 +190,18 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     }
 
     private func validateOwnedEndpoints() throws {
-        lock.lock(); let src = source, dst = destination, captured = origin; let allowed = connected && failure == nil; lock.unlock()
-        guard allowed, src != 0, dst != 0,
-              try system.identity(src) == captured.inputID, try system.identity(dst) == captured.outputID else { throw OwnedRehearsalFailure.endpointOwnership }
+        lock.lock(); let src = source, dst = destination, captured = origin; let terminal = cleanupStarted
+        let allowed = connected && failure == nil; lock.unlock()
+        guard !terminal else { throw OwnedRehearsalFailure.terminal }
+        guard allowed, src != 0, dst != 0 else { throw OwnedRehearsalFailure.endpointOwnership }
+        do {
+            guard try system.identity(src) == captured.inputID, try system.identity(dst) == captured.outputID else {
+                throw OwnedRehearsalFailure.endpointOwnership
+            }
+        } catch {
+            lock.lock(); faultLocked(.endpointOwnership); lock.unlock()
+            throw OwnedRehearsalFailure.endpointOwnership
+        }
     }
 
     private func publish(_ message: MIDIMessage, generation: UInt64) throws {
@@ -159,7 +214,7 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         let now = clock()
         guard now.isFinite else { throw OwnedRehearsalFailure.invalidFrame }
         lock.lock()
-        guard connected, failure == nil, generation == origin.connectionGeneration else { lock.unlock(); throw OwnedRehearsalFailure.staleGeneration }
+        guard !cleanupStarted, connected, failure == nil, generation == origin.connectionGeneration else { lock.unlock(); throw OwnedRehearsalFailure.staleGeneration }
         guard tickets.count < Self.inputLimit else { faultLocked(.inputOverflow); lock.unlock(); throw OwnedRehearsalFailure.inputOverflow }
         let ticket: UInt64
         do { ticket = try nextTicketLocked() }
@@ -175,7 +230,7 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
 
     private func received(_ result: Result<[UInt32], OwnedRehearsalFailure>, generation: UInt64) {
         lock.lock(); defer { lock.unlock() }
-        guard connected, failure == nil, generation == origin.connectionGeneration else { audit.increment("owned_stale_input_callbacks"); return }
+        guard !cleanupStarted, connected, failure == nil, generation == origin.connectionGeneration else { audit.increment("owned_stale_input_callbacks"); return }
         guard case let .success(words) = result, words.count <= Self.inputLimit else { faultLocked(.inputOverflow); return }
         for word in words {
             guard let ticket = publications.first, var lease = tickets[ticket],
@@ -192,7 +247,7 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     func commit(_ lease: OwnedInputLease, accepted: Bool, _ canonicalCommit: () -> Void) throws {
         try validateOwnedEndpoints()
         lock.lock(); defer { lock.unlock() }
-        guard failure == nil, connected, lease.origin == origin, handedOff.contains(lease.ticket), tickets[lease.ticket] == lease else {
+        guard !cleanupStarted, failure == nil, connected, lease.origin == origin, handedOff.contains(lease.ticket), tickets[lease.ticket] == lease else {
             rejectLocked(lease.ticket); throw OwnedRehearsalFailure.staleGeneration
         }
         canonicalCommit()
@@ -203,7 +258,7 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     func commitFeedback(expectedOrigin: HardwareEndpointOrigin, _ canonicalCommit: () -> Void) throws {
         try validateOwnedEndpoints()
         lock.lock(); defer { lock.unlock() }
-        guard connected, failure == nil, origin == expectedOrigin else { throw OwnedRehearsalFailure.staleGeneration }
+        guard !cleanupStarted, connected, failure == nil, origin == expectedOrigin else { throw OwnedRehearsalFailure.staleGeneration }
         canonicalCommit()
     }
 
@@ -218,17 +273,24 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         lock.lock(); rejectLocked(lease.ticket); lock.unlock()
     }
 
-    private func receivedDisplay(_ result: Result<[UInt32], OwnedRehearsalFailure>, generation: UInt64) {
+    private func receivedDisplay(_ result: Result<[OwnedDisplayWord], OwnedRehearsalFailure>, generation: UInt64, captured: HardwareEndpointOrigin?) {
         lock.lock(); defer { lock.unlock() }
-        guard connected, failure == nil, generation == origin.connectionGeneration else { audit.increment("owned_stale_display_callbacks"); return }
+        guard !cleanupStarted else { audit.increment("owned_post_cleanup_receipts_ignored"); return }
         guard case let .success(words) = result, words.count <= Self.receiptLimit else { faultLocked(.receiptOverflow); return }
-        for word in words {
-            guard let ticket = displayAwaiting.first, let expected = displayTickets[ticket], expected.word == word, expected.origin == origin else {
-                // The public display destination is never an input route, even for foreign traffic.
-                audit.increment("owned_foreign_display_receipts_ignored"); continue
+        for packet in words {
+            guard receipts.count + unattributed.count < Self.receiptLimit else { faultLocked(.receiptOverflow); return }
+            let match = connected && failure == nil && generation == origin.connectionGeneration && captured == origin
+                ? displayAwaiting.firstIndex(where: { ticket in
+                    guard let expected = displayTickets[ticket] else { return false }
+                    return packet.timestamp != 0 && expected.timestamp == packet.timestamp && expected.word == packet.word && expected.origin == captured
+                }) : nil
+            if let match {
+                receipts.append(displayAwaiting.remove(at: match))
+            } else {
+                audit.increment("owned_unattributed_display_receipts")
+                unattributed.append(.init(word: packet.word, timestamp: packet.timestamp, generation: generation,
+                                          origin: captured, ticket: nil, transportAccepted: nil))
             }
-            guard receipts.count < Self.receiptLimit else { faultLocked(.receiptOverflow); return }
-            displayAwaiting.removeFirst(); receipts.append(ticket)
         }
     }
 
@@ -236,35 +298,57 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         try validateOwnedEndpoints()
         let word = try message.word(configuration: configuration)
         lock.lock()
-        guard connected, failure == nil, expectedOrigin == origin else { lock.unlock(); throw ControlContractError("invalid_transition") }
+        guard !cleanupStarted, connected, failure == nil, expectedOrigin == origin else { lock.unlock(); throw ControlContractError("invalid_transition") }
         guard displayTickets.count < Self.receiptLimit else { faultLocked(.receiptOverflow); lock.unlock(); throw OwnedRehearsalFailure.receiptOverflow }
         let ticket: UInt64
         do { ticket = try nextTicketLocked() }
         catch { faultLocked(.transport); lock.unlock(); throw error }
+        let nowStamp = stamp()
+        guard nowStamp != 0, lastStamp < UInt64.max else { faultLocked(.transport); lock.unlock(); throw OwnedRehearsalFailure.transport }
+        let timestamp = max(nowStamp, lastStamp + 1)
+        lastStamp = timestamp
         let captured = origin, dst = destination
-        displayTickets[ticket] = .init(ticket: ticket, word: word, origin: captured); displayAwaiting.append(ticket)
+        displayTickets[ticket] = .init(ticket: ticket, word: word, timestamp: timestamp, origin: captured); displayAwaiting.append(ticket)
         lock.unlock()
-        do { try system.display(message, configuration: configuration, output: output, destination: dst) }
+        do { try system.display(message, configuration: configuration, output: output, destination: dst, timestamp: timestamp) }
         catch { lock.lock(); faultLocked(.transport); lock.unlock(); throw error }
-        audit.emitOwned("owned_virtual_send_accepted", origin: captured, word: word, ticket: ticket)
+        audit.emitOwned("owned_virtual_send_accepted", origin: captured, word: word, ticket: ticket, packetTimestamp: timestamp)
         lock.lock(); displayTickets[ticket]?.accepted = true
         let stillCurrent = failure == nil && connected && origin == captured
         lock.unlock()
         guard stillCurrent else { throw OwnedRehearsalFailure.staleGeneration }
     }
 
-    private func drainReceipts() {
-        lock.lock()
-        let result = receipts.compactMap { displayTickets.removeValue(forKey: $0) }
+    /// Serial-owner consumption only. Unknown receipts carry actual callback evidence,
+    /// never an own ticket or an inferred accepted-send result.
+    func takeReceiptEvidence() -> [OwnedReceiptEvidence] {
+        lock.lock(); defer { lock.unlock() }
+        let matched = receipts.compactMap { displayTickets.removeValue(forKey: $0) }.map {
+            OwnedReceiptEvidence(word: $0.word, timestamp: $0.timestamp, generation: $0.origin.connectionGeneration,
+                                 origin: $0.origin, ticket: $0.ticket, transportAccepted: $0.accepted)
+        }
         receipts.removeAll(keepingCapacity: true)
-        lock.unlock()
-        for receipt in result {
-            audit.emitOwned("owned_virtual_display_receipt", origin: receipt.origin, word: receipt.word, ticket: receipt.ticket, accepted: receipt.accepted)
+        let unknown = unattributed; unattributed.removeAll(keepingCapacity: true)
+        return matched + unknown
+    }
+
+    private func drainReceipts() {
+        for evidence in takeReceiptEvidence() {
+            if let ticket = evidence.ticket, let origin = evidence.origin {
+                audit.emitOwned("owned_virtual_display_receipt", origin: origin, word: evidence.word, ticket: ticket,
+                                accepted: evidence.transportAccepted, packetTimestamp: evidence.timestamp)
+            } else {
+                audit.emitUnattributed(evidence)
+            }
         }
     }
 
     func drain() throws -> [HardwareMIDIEvent] {
-        lock.lock(); let currentFailure = failure; lock.unlock()
+        lock.lock(); let terminal = cleanupStarted; let currentFailure = failure; let checkUID = connected; lock.unlock()
+        guard !terminal else { throw OwnedRehearsalFailure.terminal }
+        if checkUID {
+            try validateOwnedEndpoints()
+        }
         if let currentFailure {
             throw currentFailure
         }
@@ -312,7 +396,7 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
             rejectLocked(ticket)
         }
         publications.removeAll(); incoming.removeAll(); handedOff.removeAll()
-        displayTickets.removeAll(); displayAwaiting.removeAll(); receipts.removeAll()
+        displayTickets.removeAll(); displayAwaiting.removeAll(); receipts.removeAll(); unattributed.removeAll()
         guard origin.connectionGeneration < UInt64.max else { lock.unlock(); throw OwnedRehearsalFailure.transport }
         origin = .init(inputID: nil, outputID: nil, connectionGeneration: origin.connectionGeneration + 1, transportOrigin: "localVirtual")
         let closed = origin
@@ -338,19 +422,23 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
 
     /// Called only by the serial owner on finish/error; never from a CoreMIDI callback/signal.
     func cleanup() throws {
+        lock.lock()
         if cleanupStarted {
-            if cleanupUncertain {
+            let uncertain = cleanupUncertain
+            lock.unlock()
+            if uncertain {
                 throw OwnedRehearsalFailure.cleanup
             }
             return
         }
         cleanupStarted = true
+        lock.unlock()
         var failed = cleanupUncertain
         do { try closeEndpoints() } catch { failed = true }
-        for port in [input, output] where port != 0 {
+        lock.lock(); let ports = [input, output]; input = 0; output = 0; lock.unlock()
+        for port in ports where port != 0 {
             do { try system.disposePort(port) } catch { failed = true }
         }
-        input = 0; output = 0
         audit.emitOwned(failed ? "owned_virtual_cleanup_failed" : "owned_virtual_cleanup_complete", origin: currentOrigin)
         // The one client survives reconnect and is disposed by CoreMIDI at process exit.
         cleanupUncertain = failed

@@ -39,7 +39,7 @@ final class DeviceAccessAudit: @unchecked Sendable {
         return (try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])).map { $0 + Data("\n".utf8) } ?? Data()
     }
 
-    func emitOwned(_ event: String, origin: HardwareEndpointOrigin, word: UInt32? = nil, ticket: UInt64? = nil, accepted: Bool? = nil, receivedAt: Double? = nil, ownerAccepted: Bool? = nil) {
+    func emitOwned(_ event: String, origin: HardwareEndpointOrigin, word: UInt32? = nil, ticket: UInt64? = nil, accepted: Bool? = nil, receivedAt: Double? = nil, ownerAccepted: Bool? = nil, packetTimestamp: UInt64? = nil) {
         guard rehearsal else { return }
         var fields = (try? JSONSerialization.jsonObject(with: line(event))) as? [String: Any] ?? [:]
         fields["endpoint_origin"] = ["input_id": origin.inputID.map { $0 as Any } ?? NSNull(), "output_id": origin.outputID.map { $0 as Any } ?? NSNull(),
@@ -58,6 +58,29 @@ final class DeviceAccessAudit: @unchecked Sendable {
         }
         if let ownerAccepted {
             fields["owner_accepted"] = ownerAccepted
+        }
+        if let packetTimestamp {
+            fields["packet_timestamp"] = String(packetTimestamp)
+        }
+        if let body = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) {
+            FileHandle.standardError.write(body + Data([10]))
+        }
+    }
+
+    func emitUnattributed(_ evidence: OwnedReceiptEvidence) {
+        guard rehearsal else { return }
+        var fields = (try? JSONSerialization.jsonObject(with: line("owned_virtual_unattributed_receipt"))) as? [String: Any] ?? [:]
+        fields["word"] = String(format: "%08x", evidence.word)
+        fields["packet_timestamp"] = String(evidence.timestamp)
+        fields["callback_generation"] = String(evidence.generation)
+        fields["attribution"] = "unknown"
+        fields["ticket"] = NSNull()
+        fields["transport_accepted"] = NSNull()
+        if let origin = evidence.origin {
+            fields["endpoint_origin"] = ["input_id": origin.inputID.map { $0 as Any } ?? NSNull(), "output_id": origin.outputID.map { $0 as Any } ?? NSNull(),
+                                         "connection_generation": String(origin.connectionGeneration), "transport_origin": origin.transportOrigin]
+        } else {
+            fields["endpoint_origin"] = NSNull()
         }
         if let body = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) {
             FileHandle.standardError.write(body + Data([10]))

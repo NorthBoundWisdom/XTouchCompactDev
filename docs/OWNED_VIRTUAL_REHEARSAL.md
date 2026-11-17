@@ -51,3 +51,15 @@ python3 generate_owned_virtual_mapping.py --delivery DELIVERY \
 Pass that explicit mapping path to `python3 -m surface_panel_demo --mapping PATH`, with
 `--source hardware` and a private token FD. It changes display intent only. The synthetic
 actual data and this rehearsal are software evidence; no physical device is qualified.
+
+Idle maintenance re-reads only the two owned endpoint UIDs. A changed or unreadable UID
+revokes the scope before a read can continue reporting the old connection; it does not
+wait for another input or feedback request. Cleanup is terminal, including uncertain
+cleanup: no later drain/reconnect/start/publish/send can recreate or use the transport.
+
+Every owned display send uses a distinct nonzero native packet timestamp. Callback
+records retain the actual timestamp and complete word. Only the same captured endpoint
+scope, timestamp and word correlate to an own pending ticket. Other public-destination
+traffic remains explicitly unattributed with its actual callback generation/evidence;
+it never receives an own ticket or an inferred accepted result, and cannot acknowledge
+a pending own send or complete finish. Such evidence is never a physical observation.

@@ -97,9 +97,24 @@ private func decode(_ text: String) throws -> OwnedRehearsalStep {
     }
     list.packet.wordCount = 1
     list.packet.words.0 = 0x20B0_2501
+    list.packet.timeStamp = 123_456_789
+    if case let .success(packets) = CoreMIDIOwnedSystem.boundedDisplayWords(&list) {
+        #expect(packets == [.init(word: 0x20B0_2501, timestamp: 123_456_789)])
+    } else {
+        Issue.record("Bounded receipt lost its actual packet stamp")
+    }
     if case let .success(words) = CoreMIDIOwnedSystem.boundedWords(&list) {
         #expect(words == [0x20B0_2501])
     } else {
         Issue.record("A bounded actual packet was rejected")
+    }
+}
+
+@Test func ownedStepReaderRejectsTheWriteEndBeforeAnyOwnedFactory() throws {
+    var descriptors: [Int32] = [0, 0]
+    #expect(pipe(&descriptors) == 0)
+    defer { close(descriptors[0]); close(descriptors[1]) }
+    #expect(throws: OwnedRehearsalFailure.invalidPipe) {
+        try OwnedRehearsalSteps(descriptor: descriptors[1], configuration: .init(receiveChannel: 1, lightProtocol: .observed114))
     }
 }
