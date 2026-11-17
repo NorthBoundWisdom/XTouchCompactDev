@@ -204,7 +204,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 configs/ci_validation_gate.py --producer preflight-macos
-      - run: swift test --build-path build/swiftpm --skip-build --manifest-cache local
+      # Only the unchanged all-scenario twin-owner migration proof moves to full-proof.yml.
+      # All product regressions, applicable scenarios and fixed native goldens remain here.
+      - name: Verify the complete test inventory is partitioned without loss
+        run: |
+          mkdir -p build/ci-verification/tests
+          swift test --build-path build/swiftpm --skip-build --manifest-cache local list > build/ci-verification/tests/swift-test-list.txt
+          python3 configs/ci_swift_test_layer.py --verify-list build/ci-verification/tests/swift-test-list.txt
+      - name: Run product regressions with the explicit regression-layer entry point
+        env:
+          XTOUCH_CI_TEST_LAYER: regression
+        shell: python3 configs/ci_swift_test_layer.py {0}
+        run: swift test --build-path build/swiftpm --skip-build --manifest-cache local
       - name: Exercise hardware service with isolated fake MIDI only
         env:
           XTOUCH_HARDWARE_BINARY: build/swiftpm/debug/XTouchSurfaceHardware

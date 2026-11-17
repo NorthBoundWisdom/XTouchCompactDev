@@ -1,0 +1,54 @@
+name: Complete controller migration proof
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 2 * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - 'configs/**'
+      - 'Sources/**'
+      - 'Tests/**'
+permissions:
+  contents: read
+jobs:
+  full-proof-macos:
+    runs-on: macos-26-intel
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - run: xcodebuild -version
+      - run: python3 configs/check_swift_toolchain.py
+      - run: python3 configs/restore_git_mtimes.py
+      - name: Identify the Swift toolchain for the build cache
+        run: python3 -c "import hashlib, subprocess; v = subprocess.run(['swift', '--version'], capture_output=True); print('SWIFT_ID=' + hashlib.sha256(v.stdout + v.stderr).hexdigest()[:16])" >> "$GITHUB_ENV"
+      - name: Restore both locked dependencies without adding a writer
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: build/dependencies
+          key: dependencies-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('configs/surface_plugins.lock.json', 'configs/control_surface_kit.lock.json') }}
+      - name: Restore native build without adding a writer
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: build/swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-${{ github.sha }}
+          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-
+      - run: python3 configs/setup_local_project.py --scratch-path build/swiftpm --phase-report build/ci-verification/setup/phase.json
+      - run: swift build --build-path build/swiftpm --build-tests --manifest-cache local
+      - run: swift build --build-path build/swiftpm --manifest-cache local
+      - name: Verify the complete test inventory is partitioned without loss
+        run: |
+          mkdir -p build/ci-verification/tests
+          swift test --build-path build/swiftpm --skip-build --manifest-cache local list > build/ci-verification/tests/swift-test-list.txt
+          python3 configs/ci_swift_test_layer.py --verify-list build/ci-verification/tests/swift-test-list.txt
+      - name: Run the unchanged complete independent-owner proof
+        # Original J2/J3/J4 methods, inputs, current/cold replay and assertions are unchanged.
+        run: swift test --build-path build/swiftpm --skip-build --manifest-cache local --filter 'independentNativeAndTypedOwnersMatchEveryApplicableControllerStep'
