@@ -139,5 +139,11 @@ class CIJobBudgetTests(unittest.TestCase):
         native_cache = ci.split("Save compiled native cache", 1)[1].split("uses:", 1)[0]
         self.assertIn("always()", native_cache)
         self.assertIn("steps.compile.outcome == 'success'", native_cache)
-        self.assertIn("steps.link.outcome == 'success'", native_cache)
+        self.assertIn("steps.cache-inputs.outputs.changed == 'true'", native_cache)
+        cache_inputs = ci.split("name: Check whether a new native cache is needed", 1)[1].split(
+            "name: Save compiled", 1
+        )[0]
+        self.assertIn('git diff --quiet "$previous" HEAD -- Package.swift Package.resolved Sources Tests', cache_inputs)
+        for name in ("surface_plugins", "control_surface_kit"):
+            self.assertIn(f"configs/{name}.lock.json", cache_inputs)
         self.assertIn("CI_JOB_NAME: package-smoke (${{ matrix.os }})", package)

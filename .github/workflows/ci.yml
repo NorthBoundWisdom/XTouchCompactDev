@@ -168,12 +168,11 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
       - run: xcodebuild -version
-      - run: python3 configs/check_swift_toolchain.py
+      - name: Validate Swift and identify the native build cache
+        run: python3 configs/check_swift_toolchain.py --github-env "$GITHUB_ENV"
       # SwiftPM rebuilds any input whose mtime changed. Commit times keep a restored build incremental:
       # files untouched since the cached build look unchanged, changed files rebuild.
       - run: python3 configs/restore_git_mtimes.py
-      - name: Identify the Swift toolchain for the build cache
-        run: python3 -c "import hashlib, subprocess; v = subprocess.run(['swift', '--version'], capture_output=True); print('SWIFT_ID=' + hashlib.sha256(v.stdout + v.stderr).hexdigest()[:16])" >> "$GITHUB_ENV"
       - name: Cache the locked SurfacePlugins checkout
         uses: actions/cache@v6.1.0
         with:
@@ -193,9 +192,11 @@ jobs:
       - name: Compile native targets and tests
         id: compile
         run: swift build --build-path build/swiftpm --build-tests --manifest-cache local
-      - name: Link every executable in the test build path
-        id: link
-        run: swift build --build-path build/swiftpm --manifest-cache local
+      - name: Verify every executable was linked by the test build
+        run: |
+          for product in XTouchCompactApp XTouchSurfaceHardware XTouchSurfaceSimulator XTouchRemoteMIDI; do
+            test -x "build/swiftpm/debug/$product"
+          done
       - name: Require exact validation success before native execution
         env:
           GH_TOKEN: ${{ github.token }}
@@ -236,8 +237,22 @@ jobs:
           print(output)
           PY
       # Release ZIP/DMG packaging runs in package.yml (version tags and manual runs), not on every push.
+      - name: Check whether a new native cache is needed
+        id: cache-inputs
+        if: always() && steps.compile.outcome == 'success' && github.event_name == 'push'
+        env:
+          RESTORED_BUILD_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
+        run: |
+          previous="${RESTORED_BUILD_KEY##*-}"
+          if [[ "$previous" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "$previous^{commit}" &&
+             git diff --quiet "$previous" HEAD -- Package.swift Package.resolved Sources Tests \
+               ':!Tests/BuildWorkflowTests' configs/surface_plugins.lock.json configs/control_surface_kit.lock.json; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
       - name: Save compiled native cache even if regression checks failed
-        if: always() && steps.compile.outcome == 'success' && steps.link.outcome == 'success' && github.event_name == 'push'
+        if: always() && steps.compile.outcome == 'success' && steps.cache-inputs.outputs.changed == 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: build/swiftpm

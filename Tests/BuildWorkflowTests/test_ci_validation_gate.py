@@ -217,8 +217,14 @@ class ValidationGateTests(unittest.TestCase):
         self.assertNotIn("swiftpm-${{ runner.os }}-${{ env.SWIFT_ID }}-", app)
         gate = app.index("python3 configs/ci_validation_gate.py --producer preflight-macos")
         self.assertLess(app.index("swift build --build-path build/swiftpm --build-tests"), gate)
-        self.assertLess(app.index("name: Link every executable in the test build path"), gate)
-        self.assertEqual(app.count("run: swift build --build-path build/swiftpm --manifest-cache local\n"), 1)
+        products = app.index("name: Verify every executable was linked by the test build")
+        self.assertLess(products, gate)
+        for product in ("XTouchCompactApp", "XTouchSurfaceHardware", "XTouchSurfaceSimulator", "XTouchRemoteMIDI"):
+            self.assertIn(product, app[products:gate])
+        self.assertIn('test -x "build/swiftpm/debug/$product"', app[products:gate])
+        self.assertEqual(
+            app.count("run: swift build --build-path build/swiftpm --build-tests --manifest-cache local\n"), 1
+        )
         for command in [
             "swift test --build-path build/swiftpm --skip-build",
             "--pattern test_hardware_service.py",

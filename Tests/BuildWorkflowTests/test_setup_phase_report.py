@@ -323,7 +323,6 @@ class NativeManifestPolicyTests(unittest.TestCase):
             commands,
             [
                 "swift build --build-path build/swiftpm --build-tests --manifest-cache local",
-                "swift build --build-path build/swiftpm --manifest-cache local",
                 "swift test --build-path build/swiftpm --skip-build --manifest-cache local",
             ],
         )
