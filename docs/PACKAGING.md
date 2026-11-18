@@ -46,7 +46,7 @@ have window sessions, so final packages exercise both entries on ARM and Intel.
 This is an isolated process startup check, not visual or physical acceptance.
 
 The manual/tag package workflow builds universal ad-hoc assets and uploads their
-records/checksums. Separate ARM (`macos-26`) and Intel (`macos-15-intel`) jobs fetch
+records/checksums. Separate ARM (`macos-26`) and Intel (`macos-26-intel`) jobs fetch
 the final assets and launch both extracted payloads, requiring a clean exact
 GITHUB_SHA and the checkout's exact dependency lock. There is no publish job.
 The pinned compiler lane remains unchanged. This round does not push or create a

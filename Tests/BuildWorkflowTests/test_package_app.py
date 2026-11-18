@@ -107,7 +107,7 @@ class AppPackageTests(unittest.TestCase):
         self.assertIn("needs: compile-intel", text)
         self.assertIn("--prebuilt-slices build/native-slices", text)
         self.assertLess(text.index("Save compiled release slice"), text.index("Stage exact-commit slice"))
-        self.assertIn("os: [macos-26, macos-15-intel]", text)
+        self.assertIn("os: [macos-26, macos-26-intel]", text)
         self.assertIn("if len(assets) != 2:", text)
 
     def test_release_payload_rejects_each_debug_acceptance_identifier(self):
@@ -219,7 +219,7 @@ class AppPackageTests(unittest.TestCase):
             "tags: ['v*']",
             "package --architecture universal",
             "macos-26",
-            "macos-15-intel",
+            "macos-26-intel",
             "needs: compile-intel",
             "GITHUB_SHA",
             "expected_plugins_revision",
