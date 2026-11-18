@@ -45,33 +45,6 @@
         return .controlChange(channel: address.channel, number: address.number, value: value)
     }
 
-    private func h10Same(_ left: Any, _ right: Any) -> Bool {
-        if left is NSNull || right is NSNull {
-            return left is NSNull && right is NSNull
-        }
-        if let a = left as? NSNumber, let b = right as? NSNumber {
-            return (CFGetTypeID(a) == CFBooleanGetTypeID()) == (CFGetTypeID(b) == CFBooleanGetTypeID()) && a.doubleValue == b.doubleValue
-        }
-        return (left as? String) != nil && (left as? String) == (right as? String)
-    }
-
-    private func h10Assertion(_ assertion: [String: Any], instance: String, before: [String: [String: Any]], after: [String: [String: Any]]) -> Bool {
-        let target = assertion["instance_id"] as? String ?? instance
-        guard let metric = assertion["metric"] as? String, let a = after[target]?[metric], let relation = assertion["relation"] as? String else { return false }
-        let b = before[target]?[metric]
-        switch relation {
-        case "equals": return assertion["value"].map { h10Same(a, $0) } ?? false
-        case "not_equals": return assertion["value"].map { !h10Same(a, $0) } ?? false
-        case "unchanged": return b.map { h10Same(a, $0) } ?? false
-        case "increased": return (a as? NSNumber).flatMap { aa in (b as? NSNumber).map { aa.doubleValue > $0.doubleValue } } ?? false
-        case "at_least": return (a as? NSNumber).flatMap { aa in (assertion["value"] as? NSNumber).map { aa.doubleValue >= $0.doubleValue } } ?? false
-        case "increased_by":
-            guard let a = a as? NSNumber, let b = b as? NSNumber, let amount = assertion["value"] as? NSNumber else { return false }
-            return a.doubleValue - b.doubleValue == amount.doubleValue
-        default: return false
-        }
-    }
-
     private func h10SentRingCache(_ state: CompactState, index: Int) throws -> RingDisplay? {
         guard let value = Mirror(reflecting: state).children.first(where: { $0.label == "lastSentRings" })?.value as? [Int: RingDisplay] else {
             throw H10Error.malformed("Actual CompactState.lastSentRings cache is not observable")
@@ -123,16 +96,6 @@
         }
     }
 
-    private struct H10CapturedAttempt {
-        let message: MIDIMessage
-        let accepted: Bool
-        let context: DeviceContext
-        let endpoint: EndpointProvenance
-        let source: SurfaceDeviceContracts.DeviceSource
-        let hostLayer: CompactLayer
-        let at: Double
-    }
-
     @MainActor private final class H10Wire: RoutedMIDIService {
         var onMessages: (([MIDIMessage]) -> Void)?
         var onRoutedMessages: ((CompactMIDIInputEnvelope) -> Void)?
@@ -140,7 +103,6 @@
         var inputDescriptor: CompactMIDIEndpoint?
         var onConnection: ((CompactMIDIConnection) -> Void)?
         var records: [(MIDIMessage, Bool)] = []
-        var observeAttempt: ((MIDIMessage, Bool) -> Void)?
         var connected = false
         var actualInputID: Int32?
         var actualOutputID: Int32?
@@ -163,7 +125,6 @@
         func select(inputID _: Int32?, outputID _: Int32?) {}
         func send(_ message: MIDIMessage) throws {
             records.append((message, !reject))
-            observeAttempt?(message, !reject)
             if reject {
                 throw CompactMIDIError.outputUnavailable
             }
@@ -173,7 +134,6 @@
         func sendPinned(_ message: MIDIMessage, inputID: Int32, outputID: Int32, generation: UInt64) throws {
             let valid = connected && inputID == actualInputID && outputID == actualOutputID && generation == self.generation
             records.append((message, valid && !reject))
-            observeAttempt?(message, valid && !reject)
             guard valid else { throw CompactMIDIError.routeChanged }
             guard !reject else { throw CompactMIDIError.outputUnavailable }
             device.receive(message)
@@ -205,13 +165,7 @@
         var plugin: CompactPluginHost
         var monitor: [MonitorEvent] = []
         var mutations: [ConsoleMutationFact] = []
-        var neutralInputs: [DeviceInputEvent] = []
-        var attemptFacts: [[String: Any]] = []
-        var capturedAttempts: [H10CapturedAttempt] = []
-        var completedPlanIdentities: [String] = []
-        var planScope: [String: Any]?
         var origin = "interface"
-        var planSequence = 0
         var nativePlan: [MIDIMessage] = []
         var preparedMotorPlans = 0
         var revokedMotorPlans = 0
@@ -249,11 +203,6 @@
             self.identities = H10IdentitySequence(scope: id)
             let identities = identities
             wire.receiptClock = { [clock] in clock.monotonic }
-            wire.observeAttempt = { [weak self] message, accepted in
-                guard let self else { return }
-                do { try attemptFacts.append(attemptFact(message, accepted: accepted)) }
-                catch { raw.append(["kind": "missing-actual-transport-fact", "error": String(describing: error)]) }
-            }
             let config = try configuration(page: "page1")
             if source == "hardware" {
                 wire.connection(true, generation: 1)
@@ -264,10 +213,10 @@
                     model = ConsoleModel(startsMIDI: false, midi: wire, now: { [clock] in clock.date }, isolated: true,
                                          eventMonotonicClock: { [clock] in clock.monotonic }, recordIDFactory: { identities.nextRecord() },
                                          operationIDFactory: { identities.nextOperation() }, pluginRegistryEpoch: "fixture.model.epoch." + id,
-                                         plannedIntentIDFactory: { identities.nextOperation().uuidString }, projectionInstanceID: id, contextReferences: legacyReferences(), connectionReference: LegacyConnectionReference(), feedbackAudit: feedbackAudit,
+                                         plannedIntentIDFactory: { identities.nextOperation().uuidString }, projectionInstanceID: id,
                                          feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: id, source: source == "hardware" ? .hardware : .simulation, recorder: feedbackAudit))
                 } else {
-                    model = ConsoleModel(startsMIDI: false, midi: wire, now: { [clock] in clock.date }, isolated: true, contextReferences: legacyReferences(), connectionReference: LegacyConnectionReference(), feedbackAudit: feedbackAudit,
+                    model = ConsoleModel(startsMIDI: false, midi: wire, now: { [clock] in clock.date }, isolated: true,
                                          feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: id, source: source == "hardware" ? .hardware : .simulation, recorder: feedbackAudit))
                 }
                 model!.observeMonitorEvent = { [weak self] in self?.monitor.append($0) }
@@ -285,22 +234,20 @@
                     model!.setListenOnly(true)
                 }
             } else if source == "simulation" {
-                simulator = try CompactSurfaceSimulator(instanceID: id, epoch: "h10.simulation.1", configuration: config, eventCapacity: setup["journal_capacity"] as? Int ?? 16, contextReferences: legacyReferences(),
-                                                        feedbackAudit: feedbackAudit, feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: id, source: .simulation, recorder: feedbackAudit))
+                simulator = try CompactSurfaceSimulator(instanceID: id, epoch: "h10.simulation.1", configuration: config, eventCapacity: setup["journal_capacity"] as? Int ?? 16,
+                                                        feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: id, source: .simulation, recorder: feedbackAudit))
             } else if ["T12", "T23"].contains(scenario) {
                 try makeHardware()
             } else if scenario == "T14" {
                 styleState = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
-                styleState?.contextReference = LegacyResources()
                 _ = try styleState!.receive(h10EncoderMessage(16, value: 0))
             } else if scenario != "T26" {
-                session = try makeLegacySession(feedbackRecorder: feedbackAudit, feedbackOwner: id, feedbackSource: source == "hardware" ? .hardware : .simulation)
+                session = try makeSchedulerSession(feedbackRecorder: feedbackAudit, feedbackOwner: id, feedbackSource: source == "hardware" ? .hardware : .simulation)
                 try wire.device.receive(session!.loadConfiguration(config, resetValues: true))
                 _ = try session!.connect(assertLayer: false)
                 try wire.device.receive(session!.receive([h10EncoderMessage(16, value: 0)]).feedback)
             }
             if styleState != nil {
-                styleState!.feedbackAudit = feedbackAudit
                 styleState!.feedbackSchedulerReference = TestFeedbackSchedulerReference(owner: id, source: source == "hardware" ? .hardware : .simulation, recorder: feedbackAudit)
             }
             if scenario == "T25" {
@@ -320,7 +267,6 @@
 
         func makeHardware() throws {
             hardware = try CompactHardwareSurface(instanceID: id, epoch: "h10.hardware.1", configuration: .init(receiveChannel: 0, lightProtocol: .manual), hardwareWriterID: "h10.physical", remoteWriterID: "h10.display", eventCapacity: setup["journal_capacity"] as? Int ?? 16)
-            hardware!.feedbackAudit = feedbackAudit
             try hardware!.transition(epoch: "h10.hardware.connected.1", connected: true, at: time)
             _ = try hardware!.receive(h10EncoderMessage(16, value: 0), at: time)
         }
@@ -421,7 +367,6 @@
                 let endpoint = try ConsoleNeutralProjection.endpoint(.init(endpoint: wire.inputDescriptor, generation: wire.generation))
                 let receipt = try CompactReceiptContext(instanceID: id, endpoint: endpoint, source: source == "simulation" ? .simulation : .hardware, at: time)
                 let update = try session!.receive(messages, receipt: receipt)
-                neutralInputs += update.neutralInputs
                 releases += update.inputs.filter { $0.isPressed == false }.count
                 for action in update.actionIntents {
                     _ = try plugin.handle(.invoke(action, origin: .hardware), pluginID: action.pluginID, at: time)
@@ -432,8 +377,7 @@
                 try send(update.feedback)
             } else if hardware != nil {
                 for message in messages {
-                    if let event = try hardware!.receive(message, at: time), let decoded = try FactoryStandardMap().decode(message) {
-                        try neutralInputs.append(CompactNeutralProjection.input(decoded, context: nativeContext(), endpoint: nativeEndpoint(), source: .hardware, at: time))
+                    if let event = try hardware!.receive(message, at: time) {
                         raw.append(["kind": "actual-hardware-input-event", "event_sequence": event.sequence, "writer_id": h10Any(event.writer_id), "epoch": hardware!.controls.expected.epoch])
                     }
                 }
@@ -561,8 +505,9 @@
     }
 
     @MainActor private extension H10Instance {
-        func execute(_ action: [String: Any], repo: URL) async throws -> String? {
-            let operation = try h10String(action, "operation"), arguments = try h10Object(action["arguments"])
+        func execute(_ action: ScenarioAction, repo: URL) async throws -> String? {
+            let operation = action.operation
+            let arguments = try h10Object(JSONSerialization.jsonObject(with: JSONEncoder().encode(action.arguments)))
             if operation != "advance_time" {
                 time += 0.1
             }
@@ -615,16 +560,11 @@
                     let request = ControlFeedback(expected: hardware.controls.expected, controlID: "a.encoder.1", kind: "value", value: .number(CompactSession.ringSegment(for: semantic)))
                     let prepared = try hardware.displayPlan(request, allowed: true, at: time)
                     feedbackPlan = request
-                    planSequence += 1; planScope = try nativeScope(origin: "remote")
-                    planScope?["plan_id"] = "\(id).plan.\(planSequence)"
-                    planScope?["native_request"] = try h10Canonical(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)))
                     try raw.append(["kind": "validated-current-display-plan", "semantic_value": Int(semantic), "expected_epoch": request.expected.epoch,
                                     "mapped_wire_value": CompactSession.ringSegment(for: semantic), "messages": prepared.map { try String(format: "%08X", $0.word(configuration: hardware.configuration)) }])
                 }
             case "prepare_motor":
                 guard session != nil else { throw H10Error.missingOwner(operation) }
-                planSequence += 1; planScope = try nativeScope(origin: "interface")
-                planScope?["plan_id"] = "\(id).plan.\(planSequence)"
                 let provenance = try makePlannedScope(.interface)
                 nativePlan = try session!.withPlannedProvenance(provenance) { try $0.setFader(arguments["element_id"] as? String == "fader2" ? 2 : 1, value: UInt8(h10Number(arguments, "value"))) }
                 let preparedMotors = nativePlan.filter { endpoint($0).1.contains("motor") }
@@ -667,7 +607,6 @@
                         do {
                             try send(native, reject: reject)
                             let completed = try hardware!.recordFeedback(request, at: time)
-                            completedPlanIdentities += try pendingIdentity()
                             try raw.append(["kind": "actual-hardware-feedback-event", "event": JSONSerialization.jsonObject(with: JSONEncoder().encode(completed))])
                         } catch {
                             raw.append(["kind": "transport-rejection", "error": String(describing: error)])
@@ -683,7 +622,7 @@
                             return "Unexpected old-pin rejection: " + error.code
                         }
                     }
-                    feedbackPlan = nil; planScope = nil
+                    feedbackPlan = nil
                 } else if session != nil {
                     let original = nativePlan
                     let filtered = session!.filterFeedbackForDelivery(original)
@@ -702,7 +641,6 @@
                                 "revoked_native_motor_multiset": revoked.map(\.description), "driver_retained_native_plan_count": nativePlan.count,
                                 "real_deferred_desired_pending_count": (1 ... 9).filter { session!.state.isMotorPending($0) }.count])
                     try send(filtered, reject: reject)
-                    planScope = nil
                 } else if model != nil {
                     collectWire() // Model writes traverse its real synchronous boundary already.
                 } else {
@@ -919,10 +857,6 @@
             return nil
         }
 
-        func execute(_ action: ScenarioAction, repo: URL) async throws -> String? {
-            try await execute(h10Object(JSONSerialization.jsonObject(with: JSONEncoder().encode(action))), repo: repo)
-        }
-
         func lostActionResponse(repo: URL) async throws {
             guard let model, !model.hardwareMode else { throw H10Error.malformed("lost response must use isolated GUI Mock") }
             let token = UUID().uuidString.replacingOccurrences(of: "-", with: "") + UUID().uuidString.replacingOccurrences(of: "-", with: "")
@@ -974,43 +908,8 @@
         }
 
         func captureHardwareInput(_ message: MIDIMessage) throws {
-            guard let event = try hardware?.receive(message, at: time), let decoded = try FactoryStandardMap().decode(message), let hardware else { return }
-            let expected = hardware.controls.expected
-            let context = try DeviceContext(id: id + "|hardware-port|input-facet=" + decoded.layer.rawValue,
-                                            generation: expected.epoch, mappingRevision: expected.mapping_revision)
-            // This direct native API has no transport receipt identity. Do not backfill from the GUI's different route.
-            let unknown = try EndpointProvenance(endpointID: nil, deviceID: nil, connectionGeneration: 0, transportOrigin: .unknown)
-            try neutralInputs.append(CompactNeutralProjection.input(decoded, context: context, endpoint: unknown, source: .hardware, at: time))
+            guard let event = try hardware?.receive(message, at: time) else { return }
             try raw.append(["kind": "actual-hardware-input-event", "event": JSONSerialization.jsonObject(with: JSONEncoder().encode(event))])
-        }
-
-        func nativeStateRecord() throws -> String {
-            var state: [String: Any] = ["metrics": observations()]
-            if let live = liveSession {
-                state["parameters"] = live.parameters.values
-                state["configuration"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(live.parameters.configuration))
-                state["layers"] = Dictionary(uniqueKeysWithValues: CompactLayer.allCases.map { layer in
-                    let bank = live.bank(layer)
-                    return (layer.rawValue, ["faders": bank.faders, "encoders": bank.encoders, "buttons": bank.buttons] as [String: Any])
-                })
-                state["touches"] = (1 ... 9).filter { live.state.isTouched($0) }
-                state["observations"] = (1 ... 9).map { h10Any(live.state.observedFader($0).map(Int.init)) }
-                state["known_hardware_layer"] = h10Any(live.state.observedLayer?.rawValue)
-                state["route_generation"] = live.writeAuthorization.routeGeneration
-                state["binding_generation"] = live.writeAuthorization.bindingGeneration
-            }
-            if let hardware {
-                state["hardware_contract"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(hardware.controls.snapshot(at: time))); state["hardware_expected"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(hardware.controls.expected))
-            }
-            if let simulator {
-                state["simulation_contract"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(simulator.controls.snapshot(at: time))); state["simulation_expected"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(simulator.controls.expected))
-            }
-            let actualPlugin = model?.plugins ?? plugin
-            state["plugin_journal"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(actualPlugin.remoteEventSnapshot()))
-            if let binding = actualPlugin.binding(AgentRemoteBinding.defaultInstanceID, as: AgentRemoteBinding.self) {
-                state["agent_slots"] = binding.plugin.slots.map { ["id": $0.id, "phase": $0.state.rawValue, "progress": $0.progress, "status_key": $0.statusKey, "last_updated": $0.lastUpdated] as [String: Any] }
-            }
-            return try h10Canonical(state)
         }
 
         func makePlannedScope(_ origin: ParameterWriter) throws -> CompactPlannedProvenance? {
@@ -1018,11 +917,6 @@
             return try CompactPlannedProvenance(id: identities.nextOperation().uuidString,
                                                 source: source == "simulation" ? .simulation : .hardware, endpoint: nativeEndpoint(),
                                                 context: nativeContext(), origin: origin, at: time)
-        }
-
-        func pendingMotorIdentity(_ fact: CompactPendingMotorFact) throws -> String {
-            try h10Canonical(["physical_role": CompactNeutralProjection.elementID(.fader(fact.index)),
-                              "desired": h10Any(fact.target.map { Int($0) }), "provenance": fact.provenance.map { String(reflecting: $0) } ?? "unknown"])
         }
 
         func nativeEndpoint() throws -> EndpointProvenance {
@@ -1045,68 +939,6 @@
             }
             return try .init(id: id + "|budget-owner", generation: String(wire.generation), mappingRevision: nil)
         }
-
-        func nativeScope(origin: String) throws -> [String: Any] {
-            try ["instance": id, "source": model.map { $0.hardwareMode ? "hardware" : "simulation" } ?? source,
-                 "origin": origin, "context": String(reflecting: nativeContext()),
-                 "endpoint": String(reflecting: nativeEndpoint()), "at": time]
-        }
-
-        func attemptFact(_ message: MIDIMessage, accepted: Bool) throws -> [String: Any] {
-            var fact = try nativeScope(origin: (planScope?["origin"] as? String) ?? origin)
-            fact["bytes"] = message.midi1Bytes; fact["accepted"] = accepted
-            fact["at"] = clock.monotonic
-            let layer: CompactLayer
-            if let live = liveSession {
-                layer = live.state.layer
-            } else if let styleState {
-                layer = styleState.layer
-            } else if let actual = hardware?.observedLayer {
-                layer = actual
-            } else {
-                throw H10Error.malformed("transport has no captured actual output facet")
-            }
-            try capturedAttempts.append(.init(message: message, accepted: accepted,
-                                              context: nativeContext(), endpoint: nativeEndpoint(), source: fact["source"] as? String == "simulation" ? .simulation : .hardware,
-                                              hostLayer: layer, at: clock.monotonic))
-            if let planScope, ["instance", "source", "origin", "context", "endpoint"].allSatisfy({ h10Same(fact[$0]!, planScope[$0]!) }) {
-                var identity = planScope; identity["bytes"] = message.midi1Bytes
-                fact["queue_identity"] = try h10Canonical(identity)
-            }
-            if case let .controlChange(_, number, value) = message, (1 ... 9).contains(number),
-               let provenance = liveSession?.state.producedMotorProvenance(Int(number))
-            {
-                fact["planned_provenance"] = String(reflecting: provenance)
-                let pending = CompactPendingMotorFact(index: Int(number), target: value, observed: nil, touched: false, provenance: provenance)
-                fact["deferred_identity"] = try pendingMotorIdentity(pending)
-            }
-            return fact
-        }
-
-        func pendingIdentity() throws -> [String] {
-            var result: [String] = []
-            if !nativePlan.isEmpty || feedbackPlan != nil {
-                guard let captured = planScope else { throw H10Error.malformed("native plan lost captured scope") }
-                if let feedbackPlan {
-                    var identity = captured
-                    identity["request"] = try h10Canonical(JSONSerialization.jsonObject(with: JSONEncoder().encode(feedbackPlan)))
-                    try result.append(h10Canonical(identity))
-                } else {
-                    for message in nativePlan {
-                        var identity = captured; identity["bytes"] = message.midi1Bytes
-                        try result.append(h10Canonical(identity))
-                    }
-                }
-            }
-            for fact in liveSession?.state.pendingMotorFacts ?? [] {
-                try result.append(pendingMotorIdentity(fact))
-            }
-            return result
-        }
-    }
-
-    private func h10Canonical(_ value: Any) throws -> String {
-        try String(decoding: JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]), as: UTF8.self)
     }
 
     private func h10TraceScalar(_ value: Any) throws -> TraceValue {
@@ -1126,99 +958,8 @@
         throw H10Error.malformed("non scalar observation")
     }
 
-    @MainActor private struct H10ShadowMark {
-        var monitor: Int, mutations: Int, input: Int, raw: Int, attempts: Int, completedPlans: Int
-        var pending: [String]
-        init(_ owner: H10Instance) throws {
-            monitor = owner.monitor.count; mutations = owner.mutations.count; input = owner.neutralInputs.count
-            raw = owner.raw.count; attempts = owner.attemptFacts.count; completedPlans = owner.completedPlanIdentities.count; pending = try owner.pendingIdentity()
-        }
-    }
-
-    @MainActor private extension H10Instance {
-        func shadowSample(_ action: ScenarioAction, step: Int, mark: H10ShadowMark, failure: String?) throws -> ShadowSample {
-            let events = Array(monitor.dropFirst(mark.monitor))
-            var inputs = Array(neutralInputs.dropFirst(mark.input))
-            for event in events {
-                if let input = try ConsoleNeutralProjection.input(event, instanceID: id) {
-                    inputs.append(input)
-                }
-            }
-            var feedback: [EffectDescriptor] = [], transmissions: [TransmissionEvidence] = []
-            for event in events {
-                if let effect = try ConsoleNeutralProjection.feedback(event, instanceID: id) {
-                    feedback.append(effect)
-                    if let sent = try ConsoleNeutralProjection.transmission(event, effect: effect) {
-                        transmissions.append(sent)
-                    }
-                }
-            }
-            let attempts = Array(attemptFacts.dropFirst(mark.attempts))
-            if model == nil {
-                for (index, attempt) in capturedAttempts.dropFirst(mark.attempts).enumerated() {
-                    let effect = try CompactNeutralProjection.feedback(attempt.message, map: FactoryStandardMap(), hostLayer: attempt.hostLayer,
-                                                                       effectID: "\(id).actual-attempt.\(mark.attempts + index)", context: attempt.context, endpoint: attempt.endpoint,
-                                                                       source: attempt.source, at: attempt.at)
-                    feedback.append(effect)
-                    try transmissions.append(.init(effectID: effect.id, targetID: effect.targetID, context: effect.context, endpoint: effect.endpoint,
-                                                   source: effect.source, at: effect.at, outcome: attempt.accepted ? .accepted : .rejected(reason: "native_transport_rejected")))
-                }
-            }
-            let pending = try pendingIdentity()
-            // Full queue identities match actual dispatch scope/payload and preserve multiplicity.
-            // A different context with identical bytes cannot consume this pending item.
-            var delivered = attempts.compactMap { $0["queue_identity"] as? String }
-                + attempts.compactMap { $0["deferred_identity"] as? String }
-                + Array(completedPlanIdentities.dropFirst(mark.completedPlans))
-            var revoked: [String] = []
-            for identity in mark.pending where !pending.contains(identity) {
-                if let index = delivered.firstIndex(of: identity) {
-                    delivered.remove(at: index)
-                } else {
-                    revoked.append(identity)
-                }
-            }
-            let decision: ShadowDecision = if action.instanceID != id {
-                .ignored(reason: "not_target_instance")
-            } else if let failure {
-                .rejected(reason: failure)
-            } else if action.operation == "write_parameter", model != nil,
-                      !mutations.dropFirst(mark.mutations).contains(where: \.accepted)
-            {
-                .rejected(reason: "no_actual_parameter_commit")
-            } else if attempts.contains(where: { $0["accepted"] as? Bool == false }) {
-                .rejected(reason: "native_transport_rejected")
-            } else {
-                .accepted
-            }
-            let nativeEvents = try events.map { event in
-                try h10Canonical(["id": event.id.uuidString, "wall_at": event.timestamp.timeIntervalSinceReferenceDate,
-                                  "at": h10Any(event.monotonicTime), "transport_at": h10Any(event.transportMonotonicTime), "actor": event.source.rawValue, "device_source": h10Any(event.deviceSource?.rawValue),
-                                  "direction": h10Any(event.direction?.rawValue), "bytes": h10Any(event.message?.midi1Bytes),
-                                  "control": h10Any(event.control?.description), "host_layer": event.hostLayer.rawValue,
-                                  "device_layer": h10Any(event.deviceLayer?.rawValue), "ignored": event.ignored,
-                                  "delivery": h10Any(event.delivery?.rawValue), "endpoint": String(reflecting: event.endpointOrigin),
-                                  "binding": h10Any(event.capturedBindingGeneration), "known_layer": h10Any(event.capturedHardwareLayer?.rawValue),
-                                  "text": event.text.key, "text_arguments": event.text.arguments,
-                                  "planned_provenance": event.plannedProvenance.map { String(reflecting: $0) } ?? "unknown",
-                                  "dispatch": event.dispatchContext.map { ["tx": Int($0.transmitChannel), "rx": Int($0.receiveChannel), "led": $0.lightProtocol.rawValue, "listen_only": $0.listenOnly] as [String: Any] } ?? h10Null,
-                                  "non_motor_audit": event.nonMotorTest?.json ?? h10Null] as [String: Any])
-            }
-            let facts = try mutations.dropFirst(mark.mutations).map { try h10Canonical(["id": $0.id.uuidString, "operation": $0.operation,
-                                                                                        "targets": $0.targets, "accepted": $0.accepted, "reason": h10Any($0.reason), "route": $0.routeGeneration,
-                                                                                        "binding": $0.bindingGeneration, "at": $0.at, "values": $0.values] as [String: Any]) }
-            let transport = try nativeEvents + facts + ["native-raw:" + h10Canonical(Array(raw.dropFirst(mark.raw))),
-                                                        "actual-attempts:" + h10Canonical(attempts), "native-state:" + nativeStateRecord(),
-                                                        "capabilities:" + String(reflecting: CompactNeutralProjection.capabilities(hardwareService: hardware != nil))]
-            return try .init(stepIndex: step, operationID: action.operation, decision: decision,
-                             context: nativeContext(), endpoint: nativeEndpoint(), pendingQueueItems: pending, revokedQueueItems: revoked,
-                             observations: inputs.map(CompactNeutralProjection.observation), feedback: feedback,
-                             transmissions: transmissions, transportSequence: transport)
-        }
-    }
-
     /// These two acceptance harnesses own main-queue listeners and subprocesses.
-    /// Serialize the harnesses, not the independent reference/candidate business owners.
+    /// Serialize the product and independent scheduler harnesses.
     @Suite(.serialized) private struct ControllerRegressionAcceptance {
         @Test @MainActor func controllerRegressionExecutorProducesThirtyValidatedResultsWithoutChangingProductPolicy() async throws {
             let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -1235,10 +976,13 @@
             let scenes = catalog.scenarios
             #expect(scenes.count == 30)
             var results: [[String: Any]] = [], traces: [[String: Any]] = []
+            var verifiedStepCount = 0, verifiedAssertionCount = 0
+            var notApplicable: [String] = []
             for scene in scenes {
                 let scenarioID = scene.id
                 let missing = Set(scene.requiresFeatures).subtracting(h10Features)
                 if !missing.isEmpty {
+                    notApplicable.append(scenarioID)
                     results.append(["id": scenarioID, "status": "not_applicable", "reason": "Factory Standard supported protocol lacks: " + missing.sorted().joined(separator: ","), "steps": []])
                     continue
                 }
@@ -1253,6 +997,7 @@
                 for (index, action) in scene.steps.enumerated() {
                     let operation = action.operation, instanceID = action.instanceID
                     let missing = Set(action.requiresFeatures).subtracting(h10Features)
+                    #expect(missing.isEmpty, "Applicable scenario has unsupported step \(scenarioID)/\(index)")
                     if !missing.isEmpty {
                         records.append(["index": index, "operation": operation, "status": "not_applicable", "reason": "Unsupported physical/protocol feature: " + missing.sorted().joined(separator: ","), "before": [:], "after": [:], "effects": []])
                         continue
@@ -1271,6 +1016,9 @@
                     if !unmet.isEmpty {
                         failure = (failure.map { $0 + "; " } ?? "") + "Real observations do not meet: " + unmet.map(\.metric).joined(separator: ",")
                     }
+                    verifiedStepCount += 1
+                    verifiedAssertionCount += action.expect.count
+                    #expect(failure == nil, "\(scenarioID)/\(index): \(failure ?? "unexpected failure")")
                     let reason: Any = failure.map { String($0.prefix(512)) } ?? h10Null
                     records.append(["index": index, "operation": operation, "status": failure == nil ? "pass" : "fail", "reason": reason, "before": before, "after": after, "effects": effects])
                     try stepTraces.append(["index": index, "operation": operation, "instance_id": instanceID, "arguments": JSONSerialization.jsonObject(with: JSONEncoder().encode(action.arguments)),
@@ -1281,6 +1029,9 @@
                 traces.append(["id": scenarioID, "setup_evidence": setupEvidence, "steps": stepTraces, "owners": instances.mapValues { value in ["gui": value.model != nil, "core": value.session != nil, "hardware_contract": value.hardware != nil, "simulation_contract": value.simulator != nil, "device_style": value.styleState != nil] }])
                 #expect(instances.values.allSatisfy { $0.wire.starts == 0 })
             }
+            #expect(results.filter { $0["status"] as? String == "pass" }.count == 27)
+            #expect(notApplicable == ["T05", "T19", "T20"])
+            #expect(verifiedStepCount == 70 && verifiedAssertionCount == 78)
             let (gitStatus, gitOutput, _) = try await h10Process(["git", "-C", repo.path, "rev-parse", "HEAD"])
             guard gitStatus == 0 else { throw H10Error.malformed("revision") }
             let report: [String: Any] = ["schema_version": 1, "artifact": "neutral-controller-regression-results", "fixture_sha256": digest,
@@ -1294,125 +1045,38 @@
             #expect(status == 0, "Report validity is distinct from scenario conformance: \(String(decoding: errors, as: UTF8.self))")
         }
 
-        @Test @MainActor func independentNativeAndTypedOwnersMatchEveryApplicableControllerStep() async throws {
+        @Test @MainActor func independentSchedulerReplaysEveryApplicableControllerStep() async throws {
             let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            let kernel = repo.appendingPathComponent("build/dependencies/ControlSurfaceKit")
-            let bytes = try Data(contentsOf: kernel.appendingPathComponent("fixtures/controller-regression-v1.json"))
+            let fixture = repo.appendingPathComponent("build/dependencies/ControlSurfaceKit/fixtures/controller-regression-v1.json")
+            let bytes = try Data(contentsOf: fixture)
             #expect(SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() == h10FixtureSHA)
             let catalog = try ScenarioCatalog.decode(data: bytes)
-            let original = try h10Rows(h10Object(JSONSerialization.jsonObject(with: bytes))["scenarios"])
-            var samples = 0, operations = 0, observationCount = 0, feedbackCount = 0, transmissionCount = 0
-            var differences: [[String: Any]] = [], rawSamples: [[String: Any]] = [], sceneResults: [[String: Any]] = []
-            var contextLeafRows: [[String: Any]] = []
-            var presentationMetrics: [[String: Any]] = []
-            for (scene, nativeScene) in zip(catalog.scenarios, original) {
-                let missing = Set(scene.requiresFeatures).subtracting(h10Features)
-                if !missing.isEmpty {
-                    sceneResults.append(["id": scene.id, "status": "not_applicable", "features": missing.sorted()]); continue
-                }
-                let setup = try h10Object(nativeScene["setup"])
-                var reference: [String: H10Instance] = [:], candidate: [String: H10Instance] = [:]
+            let destination = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J4_SHADOW_REPORT_ROOT"] ?? repo.appendingPathComponent("build/o/scheduler-proof").path)
+            var operations = 0, owners = 0, schedulerRows = 0
+            for scene in catalog.scenarios where Set(scene.requiresFeatures).isSubset(of: h10Features) {
+                let setup = try h10Object(JSONSerialization.jsonObject(with: JSONEncoder().encode(scene.setup)))
+                var instances: [String: H10Instance] = [:]
                 for row in try h10Rows(setup["instances"]) {
                     let id = try h10String(row, "id"), source = try h10String(row, "source")
-                    reference[id] = try H10Instance(id: id, source: source, scenario: scene.id, setup: setup, deterministic: true)
-                    candidate[id] = try H10Instance(id: id, source: source, scenario: scene.id, setup: setup, deterministic: true)
-                    let leftOwner = try #require(reference[id]), rightOwner = try #require(candidate[id])
-                    #expect(leftOwner !== rightOwner); #expect(leftOwner.wire !== rightOwner.wire)
+                    instances[id] = try H10Instance(id: id, source: source, scenario: scene.id, setup: setup, deterministic: true)
                 }
-                var scenePass = true
-                for (index, pair) in try zip(scene.steps, h10Rows(nativeScene["steps"])).enumerated() {
-                    let (action, nativeAction) = pair
-                    let missingStep = Set(action.requiresFeatures).subtracting(h10Features)
-                    #expect(missingStep.isEmpty)
-                    if !missingStep.isEmpty {
-                        continue
-                    }
+                for action in scene.steps {
+                    #expect(Set(action.requiresFeatures).isSubset(of: h10Features))
+                    let owner = try #require(instances[action.instanceID])
+                    let failure = try await owner.execute(action, repo: repo)
+                    #expect(failure == nil)
                     operations += 1
-                    let beforeReference = reference.mapValues { $0.observations() }, beforeCandidate = candidate.mapValues { $0.observations() }
-                    let leftMarks = try reference.mapValues(H10ShadowMark.init), rightMarks = try candidate.mapValues(H10ShadowMark.init)
-                    var leftFailure: String?, rightFailure: String?
-                    let leftOwner = try #require(reference[action.instanceID]), rightOwner = try #require(candidate[action.instanceID])
-                    do { leftFailure = try await leftOwner.execute(nativeAction, repo: repo) } catch { leftFailure = String(describing: error) }
-                    do { rightFailure = try await rightOwner.execute(action, repo: repo) } catch { rightFailure = String(describing: error) }
-                    #expect(leftFailure == rightFailure)
-                    #expect(leftFailure == nil && rightFailure == nil)
-                    scenePass = scenePass && leftFailure == nil && rightFailure == nil
-                    let afterReference = reference.mapValues { $0.observations() }, afterCandidate = candidate.mapValues { $0.observations() }
-                    for (assertion, legacy) in try zip(action.expect, h10Rows(nativeAction["expect"])) {
-                        let native = h10Assertion(legacy, instance: action.instanceID, before: beforeReference, after: afterReference)
-                        let typed = try AssertionEvaluator.evaluate(assertion, instanceID: action.instanceID,
-                                                                    before: beforeCandidate.mapValues { try $0.mapValues(h10TraceScalar) },
-                                                                    after: afterCandidate.mapValues { try $0.mapValues(h10TraceScalar) })
-                        #expect(native == typed); #expect(native)
-                        scenePass = scenePass && native && typed
-                    }
-                    for id in reference.keys.sorted() {
-                        let leftOwner = try #require(reference[id]), rightOwner = try #require(candidate[id])
-                        let leftMark = try #require(leftMarks[id]), rightMark = try #require(rightMarks[id])
-                        let left = try leftOwner.shadowSample(action, step: index, mark: leftMark, failure: id == action.instanceID ? leftFailure : nil)
-                        let right = try rightOwner.shadowSample(action, step: index, mark: rightMark, failure: id == action.instanceID ? rightFailure : nil)
-                        let delta = ShadowComparator.compare(reference: [left], candidate: [right])
-                        for diff in delta {
-                            differences.append(["scene": scene.id, "step": index, "owner": id, "field": diff.field, "reference": diff.reference, "candidate": diff.candidate])
-                        }
-                        observationCount += right.observations.count; feedbackCount += right.feedback.count; transmissionCount += right.transmissions.count
-                        rawSamples.append(["scene": scene.id, "step": index, "owner": id, "reference": String(reflecting: left), "candidate": String(reflecting: right)])
-                        samples += 1
-                    }
                 }
-                for (side, owners) in [("nativeAction", reference), ("typedAction", candidate)] {
-                    for id in owners.keys.sorted() {
-                        let owner = try #require(owners[id])
-                        let j4Root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J4_SHADOW_REPORT_ROOT"] ?? repo.appendingPathComponent("build/j/j4-shadow").path)
-                        try owner.feedbackAudit.export(to: j4Root.appendingPathComponent(scene.id + "-" + side + "-" + id + ".jsonl"))
-                        var audits: [(String, any CompactContextAuditReader)] = []
-                        if let model = owner.model {
-                            try audits += [("state", #require(model.session.state.contextAudit)), ("bindings", #require(model.session.parameters.contextAudit)), ("connection", #require(model.connectionContextAudit))]
-                        }
-                        if let session = owner.session {
-                            try audits += [("state", #require(session.state.contextAudit)), ("bindings", #require(session.parameters.contextAudit))]
-                        }
-                        if let simulator = owner.simulator {
-                            try audits += [("state", #require(simulator.session.state.contextAudit)), ("bindings", #require(simulator.session.parameters.contextAudit))]
-                        }
-                        if let state = owner.styleState {
-                            try audits.append(("state", #require(state.contextAudit)))
-                        }
-                        for (leaf, audit) in audits {
-                            if let actual = audit as? CompactContextAudit {
-                                presentationMetrics.append(["scene": scene.id, "owner": id, "driver": side, "leaf": leaf, "metrics": actual.presentationMetrics])
-                            }
-                            for row in audit.recordedComparisons {
-                                #expect(row.matches, "J3 true independent leaf mismatch: \(row)")
-                                contextLeafRows.append(["scene": scene.id, "owner": id, "driver": side, "leaf": leaf,
-                                                        "operation": row.operation, "input": row.input, "native": row.native, "candidate": row.candidate, "matches": row.matches])
-                            }
-                        }
-                    }
+                for id in instances.keys.sorted() {
+                    let owner = try #require(instances[id])
+                    #expect(owner.wire.starts == 0)
+                    try owner.feedbackAudit.export(to: destination.appendingPathComponent(scene.id + "-" + id + ".jsonl"))
+                    schedulerRows += owner.feedbackAudit.counts["scheduler", default: 0]
+                    owners += 1
                 }
-                sceneResults.append(["id": scene.id, "status": scenePass ? "pass" : "fail"])
             }
-            let destination = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J2_SHADOW_REPORT_ROOT"] ?? repo.appendingPathComponent("build/j/j2-shadow").path)
-            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-            try JSONSerialization.data(withJSONObject: ["rows": contextLeafRows, "comparisons": contextLeafRows.count,
-                                                        "differences": contextLeafRows.filter { !($0["matches"] as? Bool ?? false) }.count], options: [.prettyPrinted, .sortedKeys])
-                .write(to: destination.appendingPathComponent("j3-context-leaf-shadow.json"))
-            try JSONSerialization.data(withJSONObject: presentationMetrics, options: [.prettyPrinted, .sortedKeys])
-                .write(to: destination.appendingPathComponent("presentation-format-counts.json"))
-            let requests = presentationMetrics.reduce(0) { $0 + (($1["metrics"] as? [String: Int])?["requests"] ?? 0) }
-            let formats = presentationMetrics.reduce(0) { $0 + (($1["metrics"] as? [String: Int])?["formats"] ?? 0) }
-            print("J3_PRESENTATION_FORMAT requests=\(requests) actual_reflection_calls=\(formats)")
-            print("J3_H10_SHADOW comparisons=\(contextLeafRows.count) differences=\(contextLeafRows.filter { !($0["matches"] as? Bool ?? false) }.count)")
-            let actualLock = try h10Object(JSONSerialization.jsonObject(with: Data(contentsOf: repo.appendingPathComponent("configs/control_surface_kit.lock.json"))))
-            let report: [String: Any] = try ["kernel_revision": h10String(actualLock, "revision"), "product_behavior": "Kit binding/context/connection runtime; independent tests-only native leaf references",
-                                             "fixture_sha256": h10FixtureSHA, "applicable_operations": operations, "step_instance_samples": samples,
-                                             "observations": observationCount, "feedback": feedbackCount, "transmissions": transmissionCount,
-                                             "differences": differences, "scenarios": sceneResults, "samples": rawSamples]
-            try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: destination.appendingPathComponent("independent-shadow.json"))
-            print("J2_SHADOW operations=\(operations) ownerSamples=\(samples) observations=\(observationCount) feedback=\(feedbackCount) transmissions=\(transmissionCount) differences=\(differences.count)")
-            #expect(operations == 70 && samples == 78)
-            #expect(observationCount > 0 && feedbackCount > 0 && transmissionCount > 0)
-            #expect(differences.isEmpty)
+            #expect(operations == 70 && owners == 30 && schedulerRows == 8965)
+            print("O2_SCHEDULER operations=\(operations) owners=\(owners) live_and_cold_rows=\(schedulerRows)")
         }
     }
 #endif

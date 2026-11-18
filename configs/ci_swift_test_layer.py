@@ -17,8 +17,10 @@ import sys
 from pathlib import Path
 
 BASE_ARGV = ["swift", "test", "--build-path", "build/swiftpm", "--skip-build", "--manifest-cache", "local"]
-PROOF_TEST = "XTouchCompactAppTests.ControllerRegressionAcceptance/independentNativeAndTypedOwnersMatchEveryApplicableControllerStep()"
-PROOF_PATTERN = r"independentNativeAndTypedOwnersMatchEveryApplicableControllerStep"
+PROOF_TEST = (
+    "XTouchCompactAppTests.ControllerRegressionAcceptance/independentSchedulerReplaysEveryApplicableControllerStep()"
+)
+PROOF_PATTERN = r"independentSchedulerReplaysEveryApplicableControllerStep"
 
 
 def effective_argv(script: str, layer: str) -> list[str]:

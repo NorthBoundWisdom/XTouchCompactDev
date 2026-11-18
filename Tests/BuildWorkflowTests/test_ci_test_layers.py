@@ -37,7 +37,7 @@ class CITestLayerTests(unittest.TestCase):
         tests = [
             "OtherModule.ControllerRegressionAcceptance/differentProofName()",
             layer.PROOF_TEST,
-            "XTouchCompactAppTests.ControllerRegressionAcceptance/independentNativeAndTypedOwnersMatchEveryOtherStep()",
+            "XTouchCompactAppTests.ControllerRegressionAcceptance/independentSchedulerReplaysEveryOtherStep()",
         ]
         self.assertEqual(
             layer.verify_partition(tests),

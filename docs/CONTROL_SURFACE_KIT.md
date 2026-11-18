@@ -82,9 +82,8 @@ remain typed display-only. Core evaluates the existing pin inside each sender.
 Ordinary CoreMIDI refreshes the endpoints before pinning and validates the word
 next. Owned virtual MIDI validates ownership and the word before pinning, and
 retains its final ownership check before committing. The managed manifest
-records feedback adoption. Temporary Debug
-comparisons remain through the same-SHA O-1 acceptance and are retired in O-2;
-the scheduling candidate is retained separately for O-4.
+records feedback adoption. The accepted migration comparisons are retired.
+Product regressions and the independent scheduling candidate remain.
 
 The shared scheduler candidate is test support only. Its mutable state is a value
 that follows session copies; shared classes only collect diagnostic records.
@@ -96,7 +95,6 @@ Test trace schema 2 uses lossless exact-content catalog nodes. Every persisted
 export is read through the repository's strict reader and cold-replayed by its
 actual node/parent lineage. Header coverage, raw duplicate keys, closed fields,
 canonical references, actual input bytes and nested DTO layouts are checked.
-The test-only legacy resource/binding/connection references remain independent.
-Reference and scheduler collectors are opt-in Debug test hooks. Virtual tests
+The scheduler collector is an opt-in Debug test hook. Virtual tests
 and transport acceptance provide software evidence. Physical qualification
 requires separate attended checks.

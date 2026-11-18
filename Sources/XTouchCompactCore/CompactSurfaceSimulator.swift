@@ -21,12 +21,6 @@ public struct CompactSurfaceSimulator: Sendable {
     /// supersedes it until a new feedback request for the same control re-arms it.
     private var releasedMotorOverlays: Set<String> = []
 
-    #if DEBUG
-        package mutating func installFeedbackShadow(_ audit: (any CompactFeedbackAudit)?, scheduler: (any CompactFeedbackSchedulerReference)?) {
-            session.installFeedbackAudit(audit, scheduler: scheduler)
-        }
-    #endif
-
     public static let profileID = "xtouch.compact.standard.simulation"
     public static let profileVersion = "1.3"
     /// Physical A/B layer keys. They are layer-independent public buttons.
@@ -59,11 +53,11 @@ public struct CompactSurfaceSimulator: Sendable {
                 remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil) throws
     {
         try self.init(instanceID: instanceID, epoch: epoch, configuration: configuration, eventCapacity: eventCapacity,
-                      remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity, contextReferences: nil)
+                      remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity, feedbackSchedulerReference: nil)
     }
 
     package init(instanceID: String, epoch: String, configuration: SurfaceConfiguration = Self.demonstrationConfiguration, eventCapacity: Int = 1024,
-                 remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil, contextReferences: CompactContextReferences?, feedbackAudit: (any CompactFeedbackAudit)? = nil, feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)? = nil) throws
+                 remoteWriterID: String = "simulation.remote", systemWriterID: String = "simulation.system", writeLimits: ControlWriteLimits? = nil, inputEventCapacity: Int? = nil, feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)? = nil) throws
     {
         self.configuration = configuration
         self.remoteWriterID = remoteWriterID
@@ -71,14 +65,9 @@ public struct CompactSurfaceSimulator: Sendable {
         self.writeLimits = writeLimits
         let map = try FactoryStandardMap()
         #if DEBUG
-            session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:], feedbackAudit: feedbackAudit, feedbackSchedulerReference: feedbackSchedulerReference)
+            session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:], feedbackSchedulerReference: feedbackSchedulerReference)
         #else
             session = CompactSession(map: map, lightProtocol: .manual, indicatorBindings: [:])
-        #endif
-        #if DEBUG
-            if let contextReferences {
-                session.installContextReferences(contextReferences)
-            }
         #endif
         mock = MockXTouchCompact(map: map, lightProtocol: .manual)
         _ = try session.loadConfiguration(configuration, resetValues: true)
@@ -98,12 +87,6 @@ public struct CompactSurfaceSimulator: Sendable {
         }
         let initialPermitted = Self.permittedMockFeedback(initialFeedback, plans: initialPlans, scope: initialScope, state: session.state)
         mock.receive(initialPermitted.map(\.payload))
-        #if DEBUG
-            for plan in initialPlans {
-                let accepted = initialPermitted.contains(plan)
-                CompactFeedbackShadow.receipt(plan: plan, result: accepted ? .accepted : .notAttempted(reason: "preflight_rejected"), currentScope: initialScope, nativeCurrent: true, attempted: true, accepted: true, audit: session.state.feedbackAudit)
-            }
-        #endif
         try controls.validateWriterID(remoteWriterID)
         try controls.validateWriterID(systemWriterID)
         guard remoteWriterID != systemWriterID else { throw ControlContractError("invalid_argument") }
@@ -377,7 +360,6 @@ public struct CompactSurfaceSimulator: Sendable {
             for plan in plans {
                 let accepted = permitted.contains(plan)
                 let result: FeedbackAttemptResult = accepted ? .accepted : .notAttempted(reason: "preflight_rejected")
-                CompactFeedbackShadow.receipt(plan: plan, result: result, currentScope: scope, nativeCurrent: true, attempted: true, accepted: true, audit: session.state.feedbackAudit)
                 session.feedbackShadowReceipt(plan, result: result, currentScope: scope, currentSource: .simulation, currentEndpoint: endpoint)
             }
         #endif
@@ -391,9 +373,6 @@ public struct CompactSurfaceSimulator: Sendable {
             // Existing simulation operations have already produced this isolated Mock output.
             let proof = CompactFeedbackPlanning.nativeOutputProof(plan: plan, message: message, receiveChannel: state.map.globalReceiveChannel,
                                                                   permittedDirections: [.display, .mechanism, .management], nativeSnapshot: facts, safety: .passed)
-            #if DEBUG
-                CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: scope, currentNative: facts, native: .permitted, audit: state.feedbackAudit)
-            #endif
             return FeedbackPreflight.evaluate(plan: plan, proof: proof, currentScope: scope, currentNativeSnapshot: facts) == .permitted ? plan : nil
         }
     }
@@ -403,21 +382,9 @@ public struct CompactSurfaceSimulator: Sendable {
     public mutating func reset(expected: ControlExpected, expectedSequence: String, epoch: String, at time: Double) throws {
         var nextControls = controls
         try nextControls.reset(expected: expected, expectedSequence: expectedSequence, epoch: epoch, at: time)
-        #if DEBUG
-            var references: CompactContextReferences?
-            if var resources = session.state.contextReference, var bindings = session.parameters.bindingReference {
-                // A restart is a new value owner. Reset copied test references from constructor input,
-                // never seed them from the new Kit result or share their mutable state.
-                resources.reset()
-                bindings.replace(configuration: .neutral)
-                references = .init(resources: resources, bindings: bindings)
-            }
-        #else
-            let references: CompactContextReferences? = nil
-        #endif
         var next = try Self(instanceID: expected.instance_id, epoch: epoch,
                             configuration: configuration, eventCapacity: controls.eventCapacity,
-                            remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, inputEventCapacity: controls.inputEventCapacity, contextReferences: references)
+                            remoteWriterID: remoteWriterID, systemWriterID: systemWriterID, writeLimits: writeLimits, inputEventCapacity: controls.inputEventCapacity, feedbackSchedulerReference: nil)
         try nextControls.seedInputs(next.mockInputs(), at: time)
         next.controls = nextControls
         self = next

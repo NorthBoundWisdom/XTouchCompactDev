@@ -3,18 +3,6 @@ import SurfaceBindingContext
 import SurfacePluginContracts
 
 public struct ParameterEngine: Sendable {
-    #if DEBUG
-        package var bindingReference: (any CompactBindingReference)?
-        package var contextAudit: (any CompactContextAuditReader)? {
-            bindingReference?.audit
-        }
-
-        func reconfiguredReference(_ configuration: SurfaceConfiguration) -> (any CompactBindingReference)? {
-            var copy = bindingReference
-            copy?.replace(configuration: configuration)
-            return copy
-        }
-    #endif
     private var bindingContext: BindingContextState
     public private(set) var configuration: SurfaceConfiguration
     public private(set) var values: [String: Double]
@@ -30,10 +18,7 @@ public struct ParameterEngine: Sendable {
 
     public mutating func configureWriteAuthorization(_ context: ParameterWriteAuthorization) {
         writeAuthorization = context
-        let transition = bindingContext.apply(CompactBindingKey.context(configuration, generation: context.bindingGeneration))
-        #if DEBUG
-            bindingReference?.configure(generation: context.bindingGeneration, changed: transition.contextChanged)
-        #endif
+        _ = bindingContext.apply(CompactBindingKey.context(configuration, generation: context.bindingGeneration))
     }
 
     public func validateWrite(_ id: String, writer: ParameterWriter) throws {
@@ -92,11 +77,7 @@ public struct ParameterEngine: Sendable {
     public func assignment(_ control: CompactControl, layer: CompactLayer) -> ParameterAction? {
         let target = bindingContext.current.target(elementID: control.neutralElementID, facetID: layer.rawValue,
                                                    inputKind: CompactBindingKey.kinds(control)[0])
-        let action = target.flatMap(Int.init).flatMap { configuration.assignments.indices.contains($0) ? configuration.assignments[$0].action : nil }
-        #if DEBUG
-            bindingReference?.lookup(control, layer: layer, target: target, action: action)
-        #endif
-        return action
+        return target.flatMap(Int.init).flatMap { configuration.assignments.indices.contains($0) ? configuration.assignments[$0].action : nil }
     }
 
     @discardableResult public mutating func set(_ id: String, value: Double, fromAgent: Bool = false, writer: ParameterWriter? = nil) throws -> Double {

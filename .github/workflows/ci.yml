@@ -203,7 +203,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 configs/ci_validation_gate.py --producer preflight-macos
-      # Only the unchanged all-scenario twin-owner migration proof moves to full-proof.yml.
+      # Complete scheduler proof remains separate until scheduler cutover.
       # All product regressions, applicable scenarios and fixed native goldens remain here.
       - name: Verify the complete test inventory is partitioned without loss
         run: |

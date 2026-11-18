@@ -47,7 +47,7 @@
         }
     }
 
-    @Test @MainActor func feedbackShadowRecordsPinRejectionAsAttemptAndKeepsOldScopeOnAcceptedReentry() throws {
+    @Test @MainActor func pinRejectionAndAcceptedReentryReportTheActualOutputScope() throws {
         for reject in [false, true] {
             let wire = FakeMIDIService()
             var operation = 0
@@ -55,8 +55,6 @@
                 operation += 1
                 return "fixture.pin.\(reject).operation.\(operation)"
             })
-            let audit = FeedbackAuditRecorder()
-            model.installFeedbackShadow(audit, scheduler: TestFeedbackSchedulerReference(owner: "pin", source: .hardware, recorder: audit))
             wire.connect(); model.setConsoleMode(.hardwareSend)
             wire.onMessages?([.controlChange(channel: 0, number: 25, value: 0)])
             if reject {
@@ -70,18 +68,21 @@
                     wire.onConnection?(.init(generation: 8, connectedInput: endpoint, connectedOutput: endpoint))
                 }
             }
+            let capturedGeneration = model.connection.generation
+            let earlierEvents = Set(model.events.map(\.id))
             let attempts = wire.sendAttempts
             model.apply { session in session.invalidateNonMotorFeedback(); return try session.setDisplayButton(1, light: .on) }
             #expect(wire.sendAttempts > attempts)
-            #expect((audit.counts["receipt"] ?? 0) > 0)
-            #expect((audit.counts["preflight"] ?? 0) > 0)
+            let recorded = try #require(model.events.first {
+                !earlierEvents.contains($0.id) && $0.direction == .output && $0.message == .noteOn(channel: 0, number: 0, velocity: 1)
+            })
+            #expect(recorded.endpointOrigin?.generation == capturedGeneration)
+            #expect(recorded.delivery == (reject ? .failed : .sent))
             if reject {
                 #expect(model.error != nil)
             } else {
                 #expect(model.connection.generation == 8)
             }
-            let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J4_SHADOW_REPORT_ROOT"] ?? "build/j/j4-shadow")
-            try audit.export(to: root.appendingPathComponent(reject ? "pin-rejected.jsonl" : "pin-accepted-old-scope.jsonl"))
         }
     }
 
@@ -96,9 +97,9 @@
             let beforeInstall = feedbackOwnerRevision(model)
             if installed {
                 let recorder = FeedbackAuditRecorder()
-                model.installFeedbackShadow(recorder, scheduler: TestFeedbackSchedulerReference(owner: "metadata", source: .simulation, recorder: recorder))
+                model.installFeedbackSchedulerReference(TestFeedbackSchedulerReference(owner: "metadata", source: .simulation, recorder: recorder))
             } else {
-                model.installFeedbackShadow(nil, scheduler: nil)
+                model.installFeedbackSchedulerReference(nil)
             }
             #expect(feedbackOwnerRevision(model) == beforeInstall)
             let beforeQuery = feedbackOwnerRevision(model)
@@ -123,7 +124,7 @@
         model.parameterAuthority = { request in
             called = true
             let before = feedbackOwnerRevision(model)
-            model.installFeedbackShadow(recorder, scheduler: TestFeedbackSchedulerReference(owner: "authority-metadata", source: .simulation, recorder: recorder))
+            model.installFeedbackSchedulerReference(TestFeedbackSchedulerReference(owner: "authority-metadata", source: .simulation, recorder: recorder))
             #expect(feedbackOwnerRevision(model) == before)
             return .init(accepted: true, actualValue: request.proposedValue, routeGeneration: request.routeGeneration, bindingGeneration: request.bindingGeneration)
         }
@@ -136,7 +137,7 @@
     @Test @MainActor func feedbackBackingKeepsActualCommitsAndBindingRevocationAtOneNativeRevision() throws {
         let model = ConsoleModel(startsMIDI: false, midi: FakeMIDIService(), isolated: true)
         let recorder = FeedbackAuditRecorder()
-        model.installFeedbackShadow(recorder, scheduler: TestFeedbackSchedulerReference(owner: "real-owner", source: .simulation, recorder: recorder))
+        model.installFeedbackSchedulerReference(TestFeedbackSchedulerReference(owner: "real-owner", source: .simulation, recorder: recorder))
         let beforeWrite = feedbackOwnerRevision(model)
         model.apply { session in _ = try session.setParameter("a.Fader.1", value: 57); return [] }
         #expect(feedbackOwnerRevision(model) == beforeWrite + 1)

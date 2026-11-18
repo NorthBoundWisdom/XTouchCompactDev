@@ -91,65 +91,6 @@ package struct CompactFeedbackCapturedEvidence: Equatable, Sendable {
 package typealias CompactFeedbackPlan = FeedbackPlan<MIDIMessage, CompactFeedbackBytes, CompactFeedbackScope, CompactFeedbackBytes, CompactFeedbackCapturedEvidence>
 package typealias CompactFeedbackProof = FeedbackProof<CompactFeedbackPlan, CompactFeedbackBytes>
 
-/// Complete fields are retained, not just hashes or pass/fail counts. The sink is
-/// diagnostic-only and optional; it cannot decide delivery or own a scheduler.
-package struct CompactFeedbackComparison: Sendable {
-    package let phase: String
-    package let plan: CompactFeedbackPlan
-    package let proof: CompactFeedbackProof?
-    package let currentScope: CompactFeedbackScope
-    package let currentNative: CompactFeedbackBytes
-    package let native: String
-    package let candidate: String
-    package var matches: Bool {
-        native.utf8.elementsEqual(candidate.utf8)
-    }
-}
-
-package protocol CompactFeedbackAudit: Sendable {
-    func append(_ record: CompactFeedbackComparison)
-}
-
-package enum CompactFeedbackShadow {
-    package static func compare(_ record: CompactFeedbackComparison, audit: (any CompactFeedbackAudit)?) {
-        precondition(record.matches, "J4 feedback shadow mismatch: " + record.phase)
-        audit?.append(record)
-    }
-
-    package static func stage(plan: CompactFeedbackPlan, requirements: Set<EffectDirection>, allowed: Bool,
-                              audit: (any CompactFeedbackAudit)?)
-    {
-        let authorization: PlanAuthorization = allowed ? .granted(directions: requirements) : .denied(reason: "native_authorization")
-        let candidate = FeedbackAuthorizationCheck.evaluate(requirements: requirements, authorization: authorization)
-        let native: FeedbackAuthorizationCheck = allowed ? .sufficient : .rejected(.authorizationDenied(reason: "native_authorization"))
-        var facts = CompactFeedbackBytes(); facts.add(allowed)
-        compare(.init(phase: "stage", plan: plan, proof: nil, currentScope: plan.scope, currentNative: facts,
-                      native: String(reflecting: native), candidate: String(reflecting: candidate)), audit: audit)
-    }
-
-    package static func preflight(plan: CompactFeedbackPlan, proof: CompactFeedbackProof,
-                                  currentScope: CompactFeedbackScope, currentNative: CompactFeedbackBytes,
-                                  native: FeedbackPreflight, audit: (any CompactFeedbackAudit)?)
-    {
-        let candidate = FeedbackPreflight.evaluate(plan: plan, proof: proof, currentScope: currentScope, currentNativeSnapshot: currentNative)
-        compare(.init(phase: "preflight", plan: plan, proof: proof, currentScope: currentScope, currentNative: currentNative,
-                      native: String(reflecting: native), candidate: String(reflecting: candidate)), audit: audit)
-    }
-
-    package static func receipt(plan: CompactFeedbackPlan, result: FeedbackAttemptResult,
-                                currentScope: CompactFeedbackScope, nativeCurrent: Bool,
-                                attempted: Bool, accepted: Bool, audit: (any CompactFeedbackAudit)?)
-    {
-        let fact = FeedbackReceiptFact(plan: plan, result: result)
-        var native = CompactFeedbackBytes(); native.add(attempted); native.add(accepted); native.add(nativeCurrent); native.add(accepted && nativeCurrent)
-        var candidate = CompactFeedbackBytes(); candidate.add(fact.hasTransportAttempt); candidate.add(fact.successfulSend)
-        candidate.add(FeedbackReceiptEligibility.matchesCurrentScope(fact, currentScope: currentScope))
-        candidate.add(FeedbackReceiptEligibility.acceptedInCurrentScope(fact, currentScope: currentScope))
-        compare(.init(phase: "receipt", plan: plan, proof: nil, currentScope: currentScope, currentNative: native,
-                      native: native.data.base64EncodedString(), candidate: candidate.data.base64EncodedString()), audit: audit)
-    }
-}
-
 /// Caller operations before generation dedup. The test-owned scheduler reference
 /// is a mutating value existential so candidate/session copies do not share state.
 package enum CompactFeedbackIntent: Sendable {

@@ -29,16 +29,6 @@
         @Published private(set) var layer: CompactLayer = .a
         @Published private(set) var connection = CompactMIDIConnection()
         private var neutralConnectionState = ConnectionState(snapshot: CompactMIDIConnection().neutralRoute, connectionGeneration: 0)
-        #if DEBUG
-            private var connectionReference: (any CompactConnectionReference)?
-            var connectionContextAudit: (any CompactContextAuditReader)? {
-                connectionReference?.audit
-            }
-
-            var referencedPublishedConnection: CompactMIDIConnection? {
-                connectionReference?.published
-            }
-        #endif
         // Latest trusted transport receipt is the IO authority; the Published value is a UI projection.
         private var currentHardwareConnection = CompactMIDIConnection()
         private var connectionNotificationRevision: UInt64 = 0
@@ -259,8 +249,7 @@
              eventMonotonicClock: (() -> Double)? = nil, recordIDFactory: @escaping () -> UUID = UUID.init,
              operationIDFactory: @escaping () -> UUID = UUID.init, pluginRegistryEpoch: String? = nil,
              plannedIntentIDFactory: @escaping () -> String = { UUID().uuidString }, projectionInstanceID: String = "xtouch.console",
-             contextReferences: CompactContextReferences? = nil, connectionReference: (any CompactConnectionReference)? = nil,
-             feedbackAudit: (any CompactFeedbackAudit)? = nil, feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)? = nil)
+             feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)? = nil)
         {
             self.virtualSurfaceOnly = virtualSurfaceOnly
             self.plannedIntentIDFactory = plannedIntentIDFactory
@@ -286,12 +275,7 @@
             panelStore = storageRoot.map(WorkspacePanelStore.init(directory:))
             let map = try! FactoryStandardMap() // Constant channels are valid by construction.
             #if DEBUG
-                sessionStorage = CompactSession(map: map, lightProtocol: .manual, feedbackAudit: feedbackAudit, feedbackSchedulerReference: feedbackSchedulerReference)
-                if let contextReferences {
-                    sessionStorage.installContextReferences(contextReferences)
-                }
-                self.connectionReference = connectionReference
-                self.feedbackAudit = feedbackAudit
+                sessionStorage = CompactSession(map: map, lightProtocol: .manual, feedbackSchedulerReference: feedbackSchedulerReference)
             #else
                 session = CompactSession(map: map, lightProtocol: .manual)
             #endif
@@ -471,9 +455,6 @@
             var publication = neutralConnectionState
             let transition = publication.apply(snapshot.neutralRoute)
             let routeChanged = transition.invalidatesScope
-            #if DEBUG
-                connectionReference?.willPublish(snapshot, current: connection, changed: routeChanged, generation: transition.currentGeneration)
-            #endif
             if routeChanged {
                 if hasAttachedHardwareRoute {
                     hardwareMotorActionCurrent = false
@@ -497,9 +478,6 @@
             }
             connection = snapshot
             neutralConnectionState = publication
-            #if DEBUG
-                connectionReference?.didPublish(snapshot, actual: connection, semantic: neutralConnectionState.snapshot, generation: neutralConnectionState.connectionGeneration)
-            #endif
             guard revision == connectionNotificationRevision else { return }
             if routeChanged {
                 var authorization = session.writeAuthorization
@@ -1578,9 +1556,8 @@
         }
 
         #if DEBUG
-            var feedbackAudit: (any CompactFeedbackAudit)?
-            func installFeedbackShadow(_ audit: (any CompactFeedbackAudit)?, scheduler: (any CompactFeedbackSchedulerReference)?) {
-                feedbackAudit = audit; sessionStorage.installFeedbackAudit(audit, scheduler: scheduler)
+            func installFeedbackSchedulerReference(_ scheduler: (any CompactFeedbackSchedulerReference)?) {
+                sessionStorage.installFeedbackSchedulerReference(scheduler)
             }
         #endif
 
@@ -1649,46 +1626,21 @@
                 session.invalidateTransportFeedback()
                 return .suppressed
             }
-            #if DEBUG
-                func nativeScopeIsCurrent() -> Bool {
-                    let currentRoute = dispatchHardwareMode ? currentHardwareConnection : connection
-                    let current = currentRoute.neutralRoute == route.neutralRoute
-                    #if DEBUG
-                        connectionReference?.admission(captured: route, current: currentRoute, actual: current)
-                    #endif
-                    return (!dispatchHardwareMode || !hardwareHandoverActive) && current
-                        && session.writeAuthorization == authorization
-                        && session.state.layer == dispatchHostLayer
-                        && hardwareMode == dispatchHardwareMode
-                        && listenOnly == dispatchListenOnly
-                        && isObservingHardware == dispatchObservationMode
-                        && (source != .agent || mcpMotorWritesAllowed == dispatchAgentMotorPermission)
-                        && session.state.map.transmitChannel == dispatchMap.transmitChannel
-                        && session.state.map.globalReceiveChannel == dispatchMap.globalReceiveChannel
-                        && session.state.lightProtocol == dispatchLightProtocol
-                }
-            #endif
             func receiptScopeIsCurrent(_ plan: CompactFeedbackPlan, result: FeedbackAttemptResult) -> Bool {
                 let fact = FeedbackReceiptFact(plan: plan, result: result)
-                let current = FeedbackReceiptEligibility.matchesCurrentScope(fact, currentScope: feedbackScope(current: true))
-                #if DEBUG
-                    precondition(current == nativeScopeIsCurrent(), "J4 feedback receipt scope cut mismatch")
-                #endif
-                return current
+                return FeedbackReceiptEligibility.matchesCurrentScope(fact, currentScope: feedbackScope(current: true))
             }
             #if DEBUG
                 var feedbackFinished: Set<Int> = []
-                func feedbackReceipt(_ index: Int, _ result: FeedbackAttemptResult, attempted: Bool, accepted: Bool, nativeCurrent: Bool? = nil) {
+                func feedbackReceipt(_ index: Int, _ result: FeedbackAttemptResult) {
                     guard feedbackFinished.insert(index).inserted else { preconditionFailure("J4 duplicate receipt") }
-                    CompactFeedbackShadow.receipt(plan: feedbackPlans[index], result: result, currentScope: feedbackScope(current: true),
-                                                  nativeCurrent: nativeCurrent ?? nativeScopeIsCurrent(), attempted: attempted, accepted: accepted, audit: feedbackAudit)
                     let currentOutput = hardwareMode ? CompactEndpointStamp(endpoint: currentHardwareConnection.connectedOutput, generation: currentHardwareConnection.generation) : .simulation
                     sessionStorage.feedbackShadowReceipt(feedbackPlans[index], result: result, currentScope: feedbackScope(current: true),
                                                          currentSource: hardwareMode ? .hardware : .simulation, currentEndpoint: try! ConsoleNeutralProjection.endpoint(currentOutput))
                 }
                 defer {
                     for index in feedbackPlans.indices where !feedbackFinished.contains(index) {
-                        feedbackReceipt(index, .notAttempted(reason: "native_early_return"), attempted: false, accepted: false)
+                        feedbackReceipt(index, .notAttempted(reason: "native_early_return"))
                     }
                 }
             #endif
@@ -1768,9 +1720,6 @@
                 let stageRequirements: Set<EffectDirection> = [outputKind.stageDirection]
                 let permitsStage = authorization == session.writeAuthorization
                     && (outputKind.stageDirection == .mechanism ? authorization.allowsMechanisms : authorization.allowsDisplay)
-                #if DEBUG
-                    CompactFeedbackShadow.stage(plan: feedbackPlans[messageIndex], requirements: stageRequirements, allowed: permitsStage, audit: feedbackAudit)
-                #endif
                 let stageAuthorization: PlanAuthorization = permitsStage ? .granted(directions: stageRequirements) : .denied(reason: "native_authorization")
                 let stage = FeedbackAuthorizationCheck.evaluate(requirements: stageRequirements, authorization: stageAuthorization)
                 guard stage == .sufficient else {
@@ -1808,25 +1757,7 @@
                 if outputKind == .layer, source != .agent {
                     permittedDirections.insert(.management)
                 }
-                #if DEBUG
-                    // The isolated native copy evaluates this exact proposal. Only the next
-                    // original call below mutates the canonical session.
-                    var nativeGateCopy = session
-                    nativeGateCopy.installFeedbackAudit(nil, scheduler: nil)
-                    var gateFacts = session.state.feedbackNativeSnapshot
-                    gateFacts.add(feedbackScope(current: true))
-                    let copyPermitted = !nativeGateCopy.filterFeedbackForDelivery([message]).isEmpty
-                #endif
                 let nativePermitted = !session.filterFeedbackForDelivery([message]).isEmpty
-                #if DEBUG
-                    let nativeSafety: NativeSafetyResult = copyPermitted ? .passed : .rejected(reason: "native_device_filter")
-                    let plan = feedbackPlans[messageIndex]
-                    let proof = CompactFeedbackPlanning.nativeOutputProof(plan: plan, message: message, nativeDirections: outputKind.requiredDirections,
-                                                                          permittedDirections: permittedDirections, nativeSnapshot: gateFacts, safety: nativeSafety)
-                    let nativeVerdict: FeedbackPreflight = nativePermitted ? .permitted : .rejected(.nativeRejected(reason: "native_device_filter"))
-                    CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: feedbackScope(current: true),
-                                                    currentNative: gateFacts, native: nativeVerdict, audit: feedbackAudit)
-                #endif
                 // Device policy executes once on the canonical owner. Core owns only
                 // plan identity, lifecycle, authorization and the explicit safety result.
                 let preflightPlan = feedbackPlans[messageIndex]
@@ -1847,7 +1778,7 @@
                     mockMIDIInAt = now()
                     record(message, direction: .output, source: source, delivery: .sent, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: eventMonotonicClock())
                     #if DEBUG
-                        feedbackReceipt(messageIndex, .accepted, attempted: true, accepted: true)
+                        feedbackReceipt(messageIndex, .accepted)
                     #endif
                     continue
                 }
@@ -1873,7 +1804,7 @@
                     record(message, direction: .output, source: source, delivery: .sent,
                            nonMotorTest: testAudit?.withDelivery(.sent), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: eventMonotonicClock())
                     #if DEBUG
-                        feedbackReceipt(messageIndex, .accepted, attempted: true, accepted: true)
+                        feedbackReceipt(messageIndex, .accepted)
                     #endif
                     // Acceptance belongs to the pinned old scope. A synchronous callback may
                     // already own a different route/binding/mode; old completion cannot edit it.
@@ -1886,8 +1817,7 @@
                     }
                 } catch {
                     #if DEBUG
-                        feedbackReceipt(messageIndex, transportAttempted ? .rejected(reason: "native_transport_rejected") : .notAttempted(reason: "native_pre_dispatch_rejected"),
-                                        attempted: transportAttempted, accepted: false)
+                        feedbackReceipt(messageIndex, transportAttempted ? .rejected(reason: "native_transport_rejected") : .notAttempted(reason: "native_pre_dispatch_rejected"))
                     #endif
                     guard receiptScopeIsCurrent(feedbackPlans[messageIndex], result: transportAttempted ? .rejected(reason: "native_transport_rejected") : .notAttempted(reason: "native_pre_dispatch_rejected")) else {
                         record(message, direction: .output, source: source, ignored: true, delivery: .failed,

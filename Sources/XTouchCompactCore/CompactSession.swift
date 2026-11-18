@@ -84,12 +84,12 @@ public struct CompactSession: Sendable {
     }
 
     #if DEBUG
-        package mutating func installFeedbackAudit(_ audit: (any CompactFeedbackAudit)?, scheduler: (any CompactFeedbackSchedulerReference)?) {
-            state.feedbackAudit = audit; state.feedbackSchedulerReference = scheduler
+        package mutating func installFeedbackSchedulerReference(_ scheduler: (any CompactFeedbackSchedulerReference)?) {
+            state.feedbackSchedulerReference = scheduler
         }
 
         package mutating func feedbackShadowDispatch(_ facts: CompactFeedbackDispatchFacts) {
-            var snapshot = state; snapshot.feedbackSchedulerReference = nil; snapshot.feedbackAudit = nil; snapshot.contextReference = nil
+            var snapshot = state; snapshot.feedbackSchedulerReference = nil
             state.feedbackSchedulerReference?.dispatch(facts, native: snapshot)
         }
 
@@ -98,25 +98,21 @@ public struct CompactSession: Sendable {
             state.feedbackSchedulerReference?.receipt(plan, result: result, currentScope: currentScope, stateScope: scope, currentSource: currentSource, currentEndpoint: currentEndpoint)
         }
 
-        package mutating func installContextReferences(_ references: CompactContextReferences) {
-            state.contextReference = references.resources
-            parameters.bindingReference = references.bindings
-        }
     #endif
 
     public static let undoLimit = 50
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol, indicatorBindings: [Int: IndicatorID] = PluginConfigurationAdapter.agentIndicators) {
-        self.init(map: map, lightProtocol: lightProtocol, indicatorBindings: indicatorBindings, feedbackAudit: nil, feedbackSchedulerReference: nil)
+        self.init(map: map, lightProtocol: lightProtocol, indicatorBindings: indicatorBindings, feedbackSchedulerReference: nil)
     }
 
     package init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol, indicatorBindings: [Int: IndicatorID] = PluginConfigurationAdapter.agentIndicators,
-                 feedbackAudit: (any CompactFeedbackAudit)?, feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)?)
+                 feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)?)
     {
         self.indicatorBindings = indicatorBindings
         state = CompactState(map: map, lightProtocol: lightProtocol)
         #if DEBUG
-            state.feedbackAudit = feedbackAudit; state.feedbackSchedulerReference = feedbackSchedulerReference
+            state.feedbackSchedulerReference = feedbackSchedulerReference
         #endif
         // Establish software-owned display intent even while disconnected. These fixed
         // indices and ring positions are valid by construction; no transport is involved.
@@ -338,9 +334,6 @@ public struct CompactSession: Sendable {
     /// Metadata edits (names, colors, links, scenes) without touching values or motors.
     public mutating func replaceConfigurationKeepingValues(_ configuration: SurfaceConfiguration) throws {
         var next = try ParameterEngine(configuration: configuration)
-        #if DEBUG
-            next.bindingReference = parameters.reconfiguredReference(configuration)
-        #endif
         for (id, value) in parameters.values where next.definition(id) != nil {
             try next.set(id, value: value)
         }
@@ -380,9 +373,6 @@ public struct CompactSession: Sendable {
 
     public mutating func loadConfiguration(_ configuration: SurfaceConfiguration, resetValues: Bool = false) throws -> [MIDIMessage] {
         var next = try ParameterEngine(configuration: configuration)
-        #if DEBUG
-            next.bindingReference = parameters.reconfiguredReference(configuration)
-        #endif
         if !resetValues {
             for (id, value) in parameters.values where next.definition(id) != nil {
                 try next.set(id, value: value)

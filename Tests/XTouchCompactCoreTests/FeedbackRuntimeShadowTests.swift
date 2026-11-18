@@ -78,7 +78,10 @@ private func feedbackPlan(scope: CompactFeedbackScope = .init(), evidence: Compa
 @Test func feedbackReceiptDistinguishesAdmissionAttemptFromPhysicalUnknown() throws {
     let plan = try feedbackPlan()
     for (result, attempted, accepted) in [(FeedbackAttemptResult.accepted, true, true), (.rejected(reason: "pin"), true, false), (.notAttempted(reason: "empty"), false, false)] {
-        CompactFeedbackShadow.receipt(plan: plan, result: result, currentScope: plan.scope, nativeCurrent: true, attempted: attempted, accepted: accepted, audit: nil)
+        let receipt = FeedbackReceiptFact(plan: plan, result: result)
+        #expect(receipt.hasTransportAttempt == attempted)
+        #expect(receipt.successfulSend == accepted)
+        #expect(FeedbackReceiptEligibility.acceptedInCurrentScope(receipt, currentScope: plan.scope) == accepted)
     }
     #expect(!FeedbackReceiptSummary([]).allAccepted)
     let accepted = FeedbackReceiptFact(plan: plan, result: .accepted)
@@ -89,7 +92,7 @@ private func feedbackPlan(scope: CompactFeedbackScope = .init(), evidence: Compa
 
 @Test func feedbackSchedulerReferencesAreIndependentAcrossCopyCandidateAndDiscard() throws {
     var original = try CompactState(map: FactoryStandardMap(), lightProtocol: .manual)
-    #expect(original.feedbackSchedulerReference == nil && original.feedbackAudit == nil)
+    #expect(original.feedbackSchedulerReference == nil)
     let recorder = FeedbackAuditRecorder()
     original.feedbackSchedulerReference = TestFeedbackSchedulerReference(owner: "copy", source: .simulation, recorder: recorder)
     _ = try original.setButton(1, light: .on)
@@ -250,7 +253,7 @@ private func feedbackTestProvenance(_ id: String) throws -> CompactPlannedProven
 
 @Test func feedbackCandidateRechecksTheExactOriginalDiagnosticCommandOnAValueGate() throws {
     let recorder = FeedbackAuditRecorder()
-    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual, feedbackAudit: recorder,
+    var session = try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual,
                                      feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: "diagnostic", source: .hardware, recorder: recorder))
     let endpoint = try EndpointProvenance(endpointID: "2", deviceID: nil, connectionGeneration: 5, transportOrigin: .localVirtual)
     let planned = try CompactPlannedProvenance(id: "diagnostic-operation", source: .hardware, endpoint: endpoint,

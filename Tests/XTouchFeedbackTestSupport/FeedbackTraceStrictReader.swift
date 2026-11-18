@@ -85,15 +85,6 @@ struct FeedbackCatalogDocument {
                 guard input <= nodeCount, step <= nodeCount else { throw FeedbackStrictJSON.Failure.reference }
                 let record = FeedbackSchedulerRecord(node: node, predecessor: parent, input: input, step: step)
                 records.append(record); events.append(.scheduler(record))
-            case "strict-plan":
-                var fields: Set = ["kind", "phase", "plan", "current_scope", "current_native", "native", "candidate", "matches", "proof_plan"]
-                if value["proof_plan"] != .scalar(.null) {
-                    fields.formUnion(["proof_native", "proof_authorization", "proof_safety"])
-                }
-                try FeedbackStrictJSON.fields(value, fields)
-                let native = try FeedbackStrictJSON.text(value["native"]), candidate = try FeedbackStrictJSON.text(value["candidate"])
-                guard native.utf8.elementsEqual(candidate.utf8), value["matches"] == .scalar(.flag(true)), try ["stage", "preflight", "receipt"].contains(FeedbackStrictJSON.text(value["phase"])) else { throw FeedbackStrictJSON.Failure.type }
-                events.append(.raw(line))
             case "native-generated":
                 try FeedbackStrictJSON.fields(value, ["kind", "owner", "scope", "messages", "cause_ordinal", "provenance", "generation_scopes"]); events.append(.raw(line))
             case "matched-native-receipt":

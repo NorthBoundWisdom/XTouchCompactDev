@@ -1,4 +1,4 @@
-name: Complete controller migration proof
+name: Independent feedback scheduler proof
 on:
   workflow_dispatch:
   schedule:
@@ -50,6 +50,6 @@ jobs:
           mkdir -p build/ci-verification/tests
           swift test --build-path build/swiftpm --skip-build --manifest-cache local list > build/ci-verification/tests/swift-test-list.txt
           python3 configs/ci_swift_test_layer.py --verify-list build/ci-verification/tests/swift-test-list.txt
-      - name: Run the unchanged complete independent-owner proof
-        # Original J2/J3/J4 methods, inputs, current/cold replay and assertions are unchanged.
-        run: swift test --build-path build/swiftpm --skip-build --manifest-cache local --filter 'independentNativeAndTypedOwnersMatchEveryApplicableControllerStep'
+      - name: Run the independent scheduler replay proof
+        # One typed product driver, independent scheduler candidate and persisted cold replay.
+        run: swift test --build-path build/swiftpm --skip-build --manifest-cache local --filter 'independentSchedulerReplaysEveryApplicableControllerStep'

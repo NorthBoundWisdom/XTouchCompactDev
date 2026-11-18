@@ -5,6 +5,15 @@
     import SurfaceFeedbackPlanning
     import XTouchCompactCore
 
+    func makeSchedulerSession(feedbackRecorder: FeedbackAuditRecorder? = nil, feedbackOwner: String = "core", feedbackSource: SurfaceDeviceContracts.DeviceSource = .simulation) throws -> CompactSession {
+        if let feedbackRecorder {
+            try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual,
+                               feedbackSchedulerReference: TestFeedbackSchedulerReference(owner: feedbackOwner, source: feedbackSource, recorder: feedbackRecorder))
+        } else {
+            try CompactSession(map: FactoryStandardMap(), lightProtocol: .manual)
+        }
+    }
+
     private func feedbackBytes(_ value: CompactFeedbackBytes) -> ScenarioPayload {
         .scalar(.text(value.data.base64EncodedString()))
     }
@@ -60,7 +69,7 @@
 
     /// The sole shared class is append-only diagnostics. All candidate state is below
     /// in a struct, and never obtained from native generated output or receipts.
-    final class FeedbackAuditRecorder: CompactFeedbackAudit, @unchecked Sendable {
+    final class FeedbackAuditRecorder: @unchecked Sendable {
         private let lock = NSLock()
         private enum Record {
             case raw(Data)
@@ -75,21 +84,6 @@
         private let encoder: JSONEncoder = {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; return encoder
         }()
-
-        func append(_ row: CompactFeedbackComparison) {
-            var fields: [String: ScenarioPayload] = ["kind": .scalar(.text("strict-plan")), "phase": .scalar(.text(row.phase)),
-                                                     "plan": feedbackPlanPayload(row.plan), "current_scope": feedbackScopePayload(row.currentScope),
-                                                     "current_native": feedbackBytes(row.currentNative),
-                                                     "native": .scalar(.text(row.native)), "candidate": .scalar(.text(row.candidate)), "matches": .scalar(.flag(row.matches))]
-            if let proof = row.proof {
-                fields["proof_plan"] = feedbackPlanPayload(proof.plan); fields["proof_native"] = feedbackBytes(proof.nativeSnapshot)
-                fields["proof_authorization"] = .scalar(.text(String(reflecting: proof.authorization)))
-                fields["proof_safety"] = .scalar(.text(String(reflecting: proof.safety)))
-            } else {
-                fields["proof_plan"] = .scalar(.null)
-            }
-            store(.object(fields), kind: row.phase)
-        }
 
         func store(_ value: ScenarioPayload, kind: String) {
             lock.lock(); defer { lock.unlock() }
@@ -293,7 +287,7 @@
                         rejection = "missing_local_management_intent"
                     }
                 }
-                var copy = native; copy.feedbackSchedulerReference = nil; copy.feedbackAudit = nil; copy.contextReference = nil
+                var copy = native; copy.feedbackSchedulerReference = nil
                 if copy.filterFeedbackForDelivery([payload]).isEmpty {
                     rejection = "native_device_filter"
                 }

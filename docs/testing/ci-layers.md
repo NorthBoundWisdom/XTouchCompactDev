@@ -1,4 +1,9 @@
-# CI layers — J-FINISH classification (approved classification)
+# CI layers
+
+
+The current push workflow runs the original product regressions with the
+independent scheduler-only proof in `full-proof.yml`. The historical J-FINISH
+baseline below records the earlier migration configuration.
 
 Baseline: `f8dc367675829f093f6ae92766b86e7dd7cc8acf`, [run 44121318088](https://github.com/NorthBoundWisdom/XTouchCompactDev/actions/runs/44121318088), 2026-11-17 UTC. The complete run took **662 seconds** (created 16:03:12 → updated 16:14:14). Only the app budget step failed. Durations below come from the Actions run and its original log, not estimates.
 
@@ -167,3 +172,57 @@ Normal run `44219638795` at `e1c76f7c07b23e1d5f30ad2e44f2f5aeb5df076d` failed it
 First-attempt normal run `44221249767` at `b68514fb1fd21c5dc93bc199c8a0b7f7c39d195e` failed after 358 seconds (02:10:09Z to 02:16:07Z). All functional checks succeeded; only the app budget failed. The app queue fell to four seconds, while its native regressions took 170 seconds, compile 50 seconds, validation wait 18 seconds, inventory 19 seconds, bundle 17 seconds, and startup five seconds. Same-SHA complete proof `44221249745` succeeded in 331 seconds. Neither run was cancelled or rerun.
 
 O-0's second and final structural attempt places native push regressions on macOS 26 arm64 and the independent full proof on macOS 26 Intel. Workflow-unit stays on arm64 and preflight stays on Intel, so a simultaneous push plus proof requests two macOS jobs per architecture instead of three in one pool. All four lanes retain Xcode 26.6, all original commands, product and safety assertions, and their original 300-second or 30-minute deadlines. Native cache keys already distinguish architecture; no Intel build is reused as arm64. The configuration test requires the exact assigned runner for every normal job and the independent proof. The first attempt's final result and the new exact-SHA acceptance are recorded in the O-round workspace report.
+
+## O-2 retirement and retained coverage
+
+The retired comparisons were signed off through `c01e61f` with normal CI in
+238 seconds and the complete proof in 452 seconds. The product workflow keeps
+all applicable platforms and the existing 300-second budget. It continues to
+run all 30 scenario declarations, 70 applicable operations and 78 fixture
+assertions, all eight frozen X-Touch golden traces, and the direct ordinary and
+owned hardware pin, order, no-early-commit and reentrant completion regressions.
+The three explicitly inapplicable scenarios remain T05, T19 and T20. The full
+scheduler proof uses the typed driver, 30 owners and original 8,965 scheduling
+rows. It applies a separate value candidate to real input, then cold-replays
+persisted inputs with the existing strict reader and lineage checks. The byte
+comparison against the signed typed-owner artifacts retained every scheduler
+record, catalog node, generation, and causal receipt, with 4,179 old
+feedback-plan comparison rows removed from those 30 artifacts.
+
+The exact Swift inventory changes from 532 to 524 methods. It retains the
+scheduler proof and 523 product regressions. Eight methods served only the
+retired J2/J3/J4 comparisons. The Python workflow inventory changes from 245 to
+239 methods after removing six old Debug comparison probes.
+
+| Path | Lines removed | Change and retained coverage |
+| --- | ---: | --- |
+| `.github/workflows/ci.yml` | 1 | Describe the scheduler-only split. Product runner assignments and budget remain. |
+| `.github/workflows/full-proof.yml` | 4 | Run the independent scheduler proof over the full typed scenario set. Keep the dedicated runner, triggers and timeout. |
+| `Sources/XTouchCompactApp/ConnectionContextReference.swift` | 8 | Delete old route-reference interface. The live neutral route identity remains. |
+| `Sources/XTouchCompactApp/ConsoleModel.swift` | 80 | Remove old connection, copied-filter and receipt comparison hooks. Actual send ordering and scheduler ingress remain. |
+| `Sources/XTouchCompactCore/CompactContextRuntime.swift` | 56 | Remove comparison rows and legacy resource/binding interfaces. The live scoped resource and binding key definitions remain. |
+| `Sources/XTouchCompactCore/CompactFeedbackRuntime.swift` | 59 | Remove temporary stage/preflight/receipt comparison machinery. Live feedback proofs and scheduling inputs remain. |
+| `Sources/XTouchCompactCore/CompactHardwareSurface.swift` | 30 | Remove Debug decode/re-encode comparison. Typed display plans and sender safety regressions remain. |
+| `Sources/XTouchCompactCore/CompactSession.swift` | 16 | Remove retired reference storage and propagation. Keep scheduler dispatch, receipt and generation inputs. |
+| `Sources/XTouchCompactCore/CompactState.swift` | 133 | Remove old shadow resource samples. Live resources, authorization and touch/layer safety remain. |
+| `Sources/XTouchCompactCore/CompactSurfaceSimulator.swift` | 37 | Remove old comparison emissions and test-only context reference propagation. Keep ordered mock feedback and scheduler ingress. |
+| `Sources/XTouchCompactCore/ParameterEngine.swift` | 21 | Remove lookup/generation comparison. Production binding resolution and direct generation/metadata tests remain. |
+| `Tests/BuildWorkflowTests/test_ci_test_layers.py` | 1 | Update the near-matching test name with the new exact selector. The four partition/configuration checks remain. |
+| `Tests/BuildWorkflowTests/test_context_shadow_gate.py` | 121 | Delete four tests of retired resource/route comparison and cached Debug mismatch trap. |
+| `Tests/BuildWorkflowTests/test_feedback_shadow_gate.py` | 104 | Delete two tests of the retired feedback-plan comparison and its Debug mismatch trap. |
+| `Tests/XTouchCompactAppTests/ContextReducerShadowTests.swift` | 74 | Remove old reference fixtures and recordings. Retain direct binding/resource/route/touch/reentrant publication and stale-authority checks. |
+| `Tests/XTouchCompactAppTests/ControllerRegressionExecutorTests.swift` | 380 | Retire twin-owner replay and native assertion parser. Assert all 70 operations, 78 fixture expectations, 27 pass and exact 3 N/A directly in the retained product test. Retain one deterministic driver for complete independent scheduling replay. |
+| `Tests/XTouchCompactAppTests/FeedbackRuntimeShadowTests.swift` | 11 | Remove retired trace-only assertions. Direct proof, receipt, causal, direction and pin/reentry checks remain. |
+| `Tests/XTouchCompactAppTests/LegacyConnectionReference.swift` | 34 | Delete retired old route oracle and its history. |
+| `Tests/XTouchCompactAppTests/LegacyContextReference.swift` | 252 | Delete retired old scoped resource and binding oracles and their history. |
+| `Tests/XTouchCompactCoreTests/BehaviorTraceTests.swift` | 149 | Delete duplicate golden migration comparison and old snapshots. Keep all eight actual golden byte/typed-value comparisons and real scheduler ingress. |
+| `Tests/XTouchCompactCoreTests/ContextReducerShadowTests.swift` | 46 | Remove old reference fixtures and recordings. Retain direct binding/resource/route/touch/reentrant publication and stale-authority checks. |
+| `Tests/XTouchCompactCoreTests/FeedbackFirstStructureTests.swift` | 96 | Delete retired whole-artifact and older AST migration. Keep strict scalar/codec fixtures, bounded caches and scheduler trap. |
+| `Tests/XTouchCompactCoreTests/FeedbackRuntimeShadowTests.swift` | 3 | Remove retired trace-only assertions. Direct proof, receipt, causal, direction and pin/reentry checks remain. |
+| `Tests/XTouchCompactCoreTests/FeedbackTraceCatalogTests.swift` | 70 | Delete optional legacy persisted-artifact only comparison. Keep strict persisted input, duplicate, order, lineage and replay tests. |
+| `Tests/XTouchCompactCoreTests/LegacyContextReference.swift` | 252 | Delete retired old scoped resource and binding oracles and their history. |
+| `Tests/XTouchCompactCoreTests/LegacyPresentationTests.swift` | 105 | Delete four tests of retired old shadow renderer order, key fields, cached comparison, and bounds. Live exact payload tests remain. |
+| `Tests/XTouchFeedbackTestSupport/FeedbackShadowReference.swift` | 17 | Remove retired strict-plan collector. Keep all scheduling input/receipt provenance, live computation and actual persisted cold replay. |
+| `Tests/XTouchFeedbackTestSupport/FeedbackTraceStrictReader.swift` | 9 | Remove retired strict-plan record case. Keep definition, scheduler and actual native/candidate receipt rows. |
+| `configs/ci_swift_test_layer.py` | 2 | Select the independent scheduler proof as the only excluded method, with exact inventory partition validation. |
+| `docs/CONTROL_SURFACE_KIT.md` | 5 | Document actual retained scope and adopted feedback. |

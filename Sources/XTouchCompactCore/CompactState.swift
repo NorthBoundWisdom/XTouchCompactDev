@@ -5,14 +5,9 @@ import SurfaceBindingContext
 /// the caller routes them through its CoreMIDI transport. No physical motor is used by tests.
 public struct CompactState: Sendable {
     #if DEBUG
-        package var feedbackAudit: (any CompactFeedbackAudit)?
         package var feedbackSchedulerReference: (any CompactFeedbackSchedulerReference)?
         private var feedbackDerivedDepth = 0
         private var feedbackCallerProvenance: CompactPlannedProvenance?
-        package var contextReference: (any CompactResourceReference)?
-        package var contextAudit: (any CompactContextAuditReader)? {
-            contextReference?.audit
-        }
     #endif
     private var resourceScope = CompactResourceScope()
     private var pendingIndex = ContextResourceIndex<Int, CompactResourceScope>()
@@ -81,8 +76,7 @@ public struct CompactState: Sendable {
         private mutating func feedbackIntent(_ intent: CompactFeedbackIntent) {
             guard feedbackDerivedDepth == 0, feedbackSchedulerReference != nil else { return }
             // Copy first; a mutating value existential must not observe itself via an inout alias.
-            var snapshot = self; snapshot.feedbackSchedulerReference = nil; snapshot.feedbackAudit = nil
-            snapshot.contextReference = nil
+            var snapshot = self; snapshot.feedbackSchedulerReference = nil
             let scope = feedbackScope
             feedbackSchedulerReference?.receive(intent, scope: scope, native: snapshot)
         }
@@ -119,26 +113,12 @@ public struct CompactState: Sendable {
         resourceScope.authorizationRouteGeneration = authorization.routeGeneration
     }
 
-    #if DEBUG
-        private func resourceSnapshot(_ index: ContextResourceIndex<Int, CompactResourceScope>) -> CompactResourceSnapshot {
-            .init(ids: index.orderedIDs, scopes: Dictionary(uniqueKeysWithValues: index.orderedIDs.map { ($0, index.scope(for: $0)!) }))
-        }
-    #endif
-
     private func pendingContains(_ index: Int) -> Bool {
-        let result = pendingIndex.contains(index)
-        #if DEBUG
-            contextReference?.read("pending", id: index, actual: String(result))
-        #endif
-        return result
+        pendingIndex.contains(index)
     }
 
     private func sortedPending() -> [Int] {
-        let result = pendingIndex.orderedIDs.sorted()
-        #if DEBUG
-            contextReference?.read("pending", id: nil, actual: String(reflecting: result))
-        #endif
-        return result
+        pendingIndex.orderedIDs.sorted()
     }
 
     private mutating func insertPending(_ index: Int, provenance: CompactPlannedProvenance? = nil) {
@@ -146,74 +126,27 @@ public struct CompactState: Sendable {
         if let provenance {
             scope.source = provenance.source; scope.endpoint = provenance.endpoint
         }
-        #if DEBUG
-            let before = contextReference == nil ? nil : resourceSnapshot(pendingIndex)
-        #endif
         pendingIndex.upsert(index, scope: scope)
-        #if DEBUG
-            if let before {
-                let event: CompactResourceMutation = .upsert(id: index, scope: scope, value: nil)
-                let after = resourceSnapshot(pendingIndex)
-                contextReference?.apply("pending", event: event, before: before, after: after, removed: [])
-            }
-        #endif
     }
 
     private mutating func removePending(_ index: Int) {
-        #if DEBUG
-            let before = contextReference == nil ? nil : resourceSnapshot(pendingIndex)
-        #endif
-        let removed = pendingIndex.remove(index)
-        #if DEBUG
-            if let before {
-                let event: CompactResourceMutation = .remove(id: index)
-                let after = resourceSnapshot(pendingIndex)
-                contextReference?.apply("pending", event: event, before: before, after: after, removed: removed ? [index] : [])
-            }
-        #endif
+        _ = pendingIndex.remove(index)
     }
 
     private mutating func clearPending() {
-        #if DEBUG
-            let before = contextReference == nil ? nil : resourceSnapshot(pendingIndex)
-        #endif
-        let removed = pendingIndex.removeAll()
-        #if DEBUG
-            if let before {
-                let event: CompactResourceMutation = .removeAll
-                let after = resourceSnapshot(pendingIndex)
-                contextReference?.apply("pending", event: event, before: before, after: after, removed: removed)
-            }
-        #endif
+        _ = pendingIndex.removeAll()
     }
 
     private func cachedButton(_ index: Int) -> ButtonLight? {
-        let result = buttonCacheIndex.contains(index) ? lastSentButtons[index] : nil
-        #if DEBUG
-            contextReference?.read("button", id: index, actual: String(reflecting: result))
-        #endif
-        return result
+        buttonCacheIndex.contains(index) ? lastSentButtons[index] : nil
     }
 
     private mutating func storeButton(_ index: Int, _ value: ButtonLight) {
-        #if DEBUG
-            let before = contextReference == nil ? nil : resourceSnapshot(buttonCacheIndex)
-        #endif
         lastSentButtons[index] = value
         buttonCacheIndex.upsert(index, scope: resourceScope)
-        #if DEBUG
-            if let before {
-                let event: CompactResourceMutation = .upsert(id: index, scope: resourceScope, value: String(reflecting: Optional(value)))
-                let after = resourceSnapshot(buttonCacheIndex)
-                contextReference?.apply("button", event: event, before: before, after: after, removed: [])
-            }
-        #endif
     }
 
     private mutating func clearButtonCache(_ index: Int? = nil) {
-        #if DEBUG
-            let before = contextReference == nil ? nil : resourceSnapshot(buttonCacheIndex)
-        #endif
         let removed: [Int] = if let index {
             buttonCacheIndex.remove(index) ? [index] : []
         } else {
@@ -222,42 +155,18 @@ public struct CompactState: Sendable {
         for id in removed {
             lastSentButtons.removeValue(forKey: id)
         }
-        #if DEBUG
-            if let before {
-                let event: CompactResourceMutation = index.map { .remove(id: $0) } ?? .removeAll
-                let after = resourceSnapshot(buttonCacheIndex)
-                contextReference?.apply("button", event: event, before: before, after: after, removed: removed)
-            }
-        #endif
     }
 
     private func cachedRing(_ index: Int) -> RingDisplay? {
-        let result = ringCacheIndex.contains(index) ? lastSentRings[index] : nil
-        #if DEBUG
-            contextReference?.read("ring", id: index, actual: String(reflecting: result))
-        #endif
-        return result
+        ringCacheIndex.contains(index) ? lastSentRings[index] : nil
     }
 
     private mutating func storeRing(_ index: Int, _ value: RingDisplay) {
-        #if DEBUG
-            let before = contextReference == nil ? nil : resourceSnapshot(ringCacheIndex)
-        #endif
         lastSentRings[index] = value
         ringCacheIndex.upsert(index, scope: resourceScope)
-        #if DEBUG
-            if let before {
-                let event: CompactResourceMutation = .upsert(id: index, scope: resourceScope, value: String(reflecting: Optional(value)))
-                let after = resourceSnapshot(ringCacheIndex)
-                contextReference?.apply("ring", event: event, before: before, after: after, removed: [])
-            }
-        #endif
     }
 
     private mutating func clearRingCache(_ index: Int? = nil) {
-        #if DEBUG
-            let before = contextReference == nil ? nil : resourceSnapshot(ringCacheIndex)
-        #endif
         let removed: [Int] = if let index {
             ringCacheIndex.remove(index) ? [index] : []
         } else {
@@ -266,42 +175,18 @@ public struct CompactState: Sendable {
         for id in removed {
             lastSentRings.removeValue(forKey: id)
         }
-        #if DEBUG
-            if let before {
-                let event: CompactResourceMutation = index.map { .remove(id: $0) } ?? .removeAll
-                let after = resourceSnapshot(ringCacheIndex)
-                contextReference?.apply("ring", event: event, before: before, after: after, removed: removed)
-            }
-        #endif
     }
 
     private func cachedStyle(_ index: Int) -> RingStyle? {
-        let result = styleCacheIndex.contains(index) ? lastSentStyles[index] : nil
-        #if DEBUG
-            contextReference?.read("style", id: index, actual: String(reflecting: result))
-        #endif
-        return result
+        styleCacheIndex.contains(index) ? lastSentStyles[index] : nil
     }
 
     private mutating func storeStyle(_ index: Int, _ value: RingStyle) {
-        #if DEBUG
-            let before = contextReference == nil ? nil : resourceSnapshot(styleCacheIndex)
-        #endif
         lastSentStyles[index] = value
         styleCacheIndex.upsert(index, scope: resourceScope)
-        #if DEBUG
-            if let before {
-                let event: CompactResourceMutation = .upsert(id: index, scope: resourceScope, value: String(reflecting: Optional(value)))
-                let after = resourceSnapshot(styleCacheIndex)
-                contextReference?.apply("style", event: event, before: before, after: after, removed: [])
-            }
-        #endif
     }
 
     private mutating func clearStyleCache(_ index: Int? = nil) {
-        #if DEBUG
-            let before = contextReference == nil ? nil : resourceSnapshot(styleCacheIndex)
-        #endif
         let removed: [Int] = if let index {
             styleCacheIndex.remove(index) ? [index] : []
         } else {
@@ -310,13 +195,6 @@ public struct CompactState: Sendable {
         for id in removed {
             lastSentStyles.removeValue(forKey: id)
         }
-        #if DEBUG
-            if let before {
-                let event: CompactResourceMutation = index.map { .remove(id: $0) } ?? .removeAll
-                let after = resourceSnapshot(styleCacheIndex)
-                contextReference?.apply("style", event: event, before: before, after: after, removed: removed)
-            }
-        #endif
     }
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) {
@@ -825,9 +703,6 @@ public extension CompactState {
             next.feedbackCallerProvenance = feedbackCallerProvenance
             next.feedbackSchedulerReference = feedbackSchedulerReference
             next.feedbackSchedulerReference?.reset()
-            next.feedbackAudit = feedbackAudit
-            next.contextReference = contextReference
-            next.contextReference?.reset()
         #endif
         next.resourceScope = resourceScope
         next.resourceScope.transmitChannel = map.transmitChannel
