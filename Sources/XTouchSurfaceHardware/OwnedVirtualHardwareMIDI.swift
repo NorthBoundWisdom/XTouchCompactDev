@@ -298,11 +298,13 @@ final class OwnedVirtualHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         }
     }
 
-    func send(_ message: HardwareDisplayMessage, expectedOrigin: HardwareEndpointOrigin) throws {
+    func send(_ admission: HardwareDisplayAdmission) throws {
         try validateOwnedEndpoints()
+        let message = admission.message
         let word = try message.word(configuration: configuration)
         lock.lock()
-        guard !cleanupStarted, connected, failure == nil, expectedOrigin == origin else { lock.unlock(); throw ControlContractError("invalid_transition") }
+        do { try admission.requirePin(current: origin, isUsable: !cleanupStarted && connected && failure == nil) }
+        catch { lock.unlock(); throw error }
         guard displayTickets.count < Self.receiptLimit else { faultLocked(.receiptOverflow); lock.unlock(); throw OwnedRehearsalFailure.receiptOverflow }
         let ticket: UInt64
         do { ticket = try nextTicketLocked() }

@@ -33,6 +33,8 @@ private final class OwnedSystemFake: OwnedVirtualMIDISystem {
     var failPublish = false
     var failDisconnect = false
     var failUID = false
+    var failDisplayAt: Int?
+    var displayAttempts = 0
     var sendHook: (() -> Void)?
     private func ref() -> UInt32 {
         nextRef += 1; return nextRef
@@ -95,6 +97,8 @@ private final class OwnedSystemFake: OwnedVirtualMIDISystem {
     func display(_ message: HardwareDisplayMessage, configuration: CompactHardwareConfiguration, output: UInt32, destination: UInt32, timestamp: UInt64) throws {
         guard ports.contains(output), endpoints.contains(destination) else { throw OwnedRehearsalFailure.endpointOwnership }
         let word = try message.word(configuration: configuration)
+        displayAttempts += 1
+        guard displayAttempts != failDisplayAt else { throw OwnedRehearsalFailure.transport }
         sent.append((destination, word)); displayStamps.append(timestamp)
         if !holdDisplays {
             destinations[destination]?(.success([.init(word: word, timestamp: timestamp)]))
@@ -119,6 +123,13 @@ private func fixture() throws -> (OwnedVirtualHardwareMIDI, OwnedSystemFake, Ste
     let configuration = try CompactHardwareConfiguration(receiveChannel: 1, lightProtocol: .observed114)
     let transport = try OwnedVirtualHardwareMIDI(system: system, configuration: configuration, audit: audit, steps: { feed.next() })
     return (transport, system, feed, audit)
+}
+
+/// Keep the existing tests on the real typed transport entry after changing the protocol.
+private extension OwnedVirtualHardwareMIDI {
+    func send(_ message: HardwareDisplayMessage, expectedOrigin: HardwareEndpointOrigin) throws {
+        try send(hardwareFeedbackTestAdmission(message, origin: expectedOrigin))
+    }
 }
 
 private func leases(_ events: [HardwareMIDIEvent]) -> [OwnedInputLease] {
@@ -460,4 +471,77 @@ private func leases(_ events: [HardwareMIDIEvent]) -> [OwnedInputLease] {
     #expect(evidence.last?.timestamp == stamp && evidence.last?.ticket != nil && evidence.last?.transportAccepted == true)
     #expect(evidence.allSatisfy { $0.origin == origin })
     #expect(transport.outstandingInputCount == 0)
+}
+
+@Test func ownedSenderValidatesEndpointsThenEncodesThenChecksPin() throws {
+    let illegal = HardwareDisplayMessage.ringDisplay(encoder: 1, value: 29)
+    let (healthy, healthyWire, _, _) = try fixture()
+    let origin = healthy.currentOrigin
+    var stale = origin; stale.connectionGeneration -= 1
+    let staleIllegal = try hardwareFeedbackTestAdmission(illegal, origin: stale)
+    let staleLegal = try hardwareFeedbackTestAdmission(.ringDisplay(encoder: 1, value: 5), origin: stale)
+    #expect(throws: ControlContractError("invalid_value")) { try healthy.send(staleIllegal) }
+    #expect(throws: ControlContractError("invalid_transition")) { try healthy.send(staleLegal) }
+    #expect(healthyWire.sent.isEmpty && healthy.outstandingDisplayCount == 0)
+    let (revoked, revokedWire, _, _) = try fixture()
+    revokedWire.failUID = true
+    #expect(throws: OwnedRehearsalFailure.endpointOwnership) { try revoked.send(staleIllegal) }
+    #expect(revokedWire.sent.isEmpty && revoked.outstandingDisplayCount == 0)
+}
+
+@Test func ownedSenderRejectsFaultThatRetainsTheEndpointToken() throws {
+    let (transport, wire, _, _) = try fixture()
+    let origin = transport.currentOrigin
+    let valid = try hardwareFeedbackTestAdmission(.ringDisplay(encoder: 1, value: 5), origin: origin)
+    wire.removed?(wire.connectedSource)
+    #expect(transport.currentOrigin == origin)
+    #expect(!transport.isConnected)
+    #expect(throws: OwnedRehearsalFailure.endpointOwnership) { try transport.send(valid) }
+    #expect(wire.sent.isEmpty && transport.outstandingDisplayCount == 0)
+}
+
+@Test func ownedFeedbackTransactionDoesNotCommitAfterBothSendsWhenFinalUIDCheckFails() throws {
+    let configuration = try CompactHardwareConfiguration(receiveChannel: 1, lightProtocol: .observed114)
+    let (transport, wire, _, _) = try fixture()
+    let origin = transport.currentOrigin
+    var (surface, request) = try hardwareFeedbackFixture(configuration: configuration)
+    let before = try surface.controls.snapshot(at: 3)
+    var budget = SurfaceWriteBudgets(aggregateLimit: 1)
+    wire.sendHook = {
+        if wire.sent.count == 2 {
+            wire.failUID = true
+        }
+    }
+    #expect(throws: OwnedRehearsalFailure.endpointOwnership) {
+        try performHardwareFeedback(request, allowed: true, writer: "remote", at: 3, origin: origin,
+                                    surface: &surface, budget: &budget, midi: transport)
+    }
+    #expect(wire.sent.count == 2)
+    #expect(transport.currentOrigin == origin && !transport.isConnected)
+    let after = try surface.controls.snapshot(at: 3)
+    #expect(after.feedback == before.feedback)
+    #expect(after.latest_sequence == before.latest_sequence)
+    let couldWriteAgain = budget.consume(.feedback, at: 3, writerID: "remote")
+    #expect(!couldWriteAgain)
+}
+
+@Test func ownedFeedbackTransactionDoesNotCommitWhenSecondNativeDisplayThrows() throws {
+    let configuration = try CompactHardwareConfiguration(receiveChannel: 1, lightProtocol: .observed114)
+    let (transport, wire, _, _) = try fixture()
+    let origin = transport.currentOrigin
+    var (surface, request) = try hardwareFeedbackFixture(configuration: configuration)
+    let before = try surface.controls.snapshot(at: 3)
+    var budget = SurfaceWriteBudgets(aggregateLimit: 1)
+    wire.failDisplayAt = 2
+    #expect(throws: OwnedRehearsalFailure.transport) {
+        try performHardwareFeedback(request, allowed: true, writer: "remote", at: 3, origin: origin,
+                                    surface: &surface, budget: &budget, midi: transport)
+    }
+    #expect(wire.displayAttempts == 2)
+    #expect(wire.sent.map(\.1) == [0x20B1_0A00])
+    let after = try surface.controls.snapshot(at: 3)
+    #expect(after.feedback == before.feedback)
+    #expect(after.latest_sequence == before.latest_sequence)
+    let permitsAnotherWrite = budget.consume(.feedback, at: 3, writerID: "remote")
+    #expect(!permitsAnotherWrite)
 }

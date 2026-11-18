@@ -22,7 +22,7 @@ enum HardwareMIDIEvent {
 protocol HardwareMIDI: AnyObject {
     func drain() throws -> [HardwareMIDIEvent]
     var currentOrigin: HardwareEndpointOrigin { get }
-    func send(_ message: HardwareDisplayMessage, expectedOrigin: HardwareEndpointOrigin) throws
+    func send(_ admission: HardwareDisplayAdmission) throws
     /// Forget the current link so the next drain re-establishes it and reports a link event.
     func invalidate()
 }
@@ -36,6 +36,8 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
     private let configuration: CompactHardwareConfiguration
     private let deviceName: String
     private let audit: DeviceAccessAudit
+    private let discoverForTesting: (() -> (MIDIEndpointRef, MIDIEndpointRef))?
+    private let sendWordForTesting: ((MIDIEndpointRef, UInt32) throws -> Void)?
     private let lock = NSLock()
     private var pending: [HardwareMIDIEvent] = []
     private var overflow = false
@@ -57,6 +59,8 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         self.audit = audit
         self.configuration = configuration
         self.deviceName = deviceName
+        discoverForTesting = nil
+        sendWordForTesting = nil
         audit.increment("client_create_calls")
         guard MIDIClientCreateWithBlock("XTouchSurfaceHardware" as CFString, &client, { _ in }) == noErr else { throw ControlContractError("transport_error") }
         audit.increment("input_port_create_calls")
@@ -80,6 +84,22 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         }) == noErr else { throw ControlContractError("transport_error") }
         audit.increment("output_port_create_calls")
         guard MIDIOutputPortCreate(client, "Display only" as CFString, &output) == noErr else { throw ControlContractError("transport_error") }
+    }
+
+    /// Private to this executable module. Tests inject system calls, then use the real send path.
+    init(configuration: CompactHardwareConfiguration, audit: DeviceAccessAudit,
+         source: MIDIEndpointRef, destination: MIDIEndpointRef, origin: HardwareEndpointOrigin,
+         discover: @escaping () -> (MIDIEndpointRef, MIDIEndpointRef),
+         sendWord: @escaping (MIDIEndpointRef, UInt32) throws -> Void)
+    {
+        self.configuration = configuration
+        self.audit = audit
+        deviceName = ""
+        self.source = source
+        self.destination = destination
+        self.origin = origin
+        discoverForTesting = discover
+        sendWordForTesting = sendWord
     }
 
     deinit {
@@ -154,12 +174,20 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
         return result
     }
 
-    func send(_ message: HardwareDisplayMessage, expectedOrigin: HardwareEndpointOrigin) throws {
+    func send(_ admission: HardwareDisplayAdmission) throws {
         // Refresh endpoint identity immediately before sending. A transition invalidates the caller's pin.
-        let (newSource, newDestination) = endpoints()
-        lock.lock(); let current = destination; let same = source != 0 && source == newSource && destination == newDestination && origin == expectedOrigin; lock.unlock()
-        guard same, current != 0 else { throw ControlContractError("invalid_transition") }
-        var word = try message.word(configuration: configuration)
+        let (newSource, newDestination) = discoverForTesting?() ?? endpoints()
+        lock.lock()
+        let current = destination
+        let currentOrigin = origin
+        let isUsable = source != 0 && source == newSource && current != 0 && current == newDestination
+        lock.unlock()
+        try admission.requirePin(current: currentOrigin, isUsable: isUsable)
+        var word = try admission.message.word(configuration: configuration)
+        if let sendWordForTesting {
+            try sendWordForTesting(current, word)
+            return
+        }
         var list = MIDIEventList()
         let first = MIDIEventListInit(&list, ._1_0)
         _ = MIDIEventListAdd(&list, MemoryLayout<MIDIEventList>.size, first, 0, 1, &word)
@@ -231,8 +259,9 @@ final class CoreHardwareMIDI: HardwareMIDI, @unchecked Sendable {
             relink = true
         }
 
-        func send(_ message: HardwareDisplayMessage, expectedOrigin: HardwareEndpointOrigin) throws {
-            guard expectedOrigin == origin else { throw ControlContractError("invalid_transition") }
+        func send(_ admission: HardwareDisplayAdmission) throws {
+            try admission.requirePin(current: origin, isUsable: true)
+            let message = admission.message
             guard !failSend else { throw ControlContractError("transport_error") }
             try words.append(String(format: "%08X", message.word(configuration: configuration)))
             if let timing {

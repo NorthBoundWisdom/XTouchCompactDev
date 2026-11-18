@@ -76,9 +76,13 @@ refresh identity or replay output after a callback changes the owner.
 
 Permanent Mock keeps its virtual-layer behavior and now dispatches the immutable
 plans permitted by Core. Hardware-mode Console retains its explicit local
-motor/layer policy. Ordinary and owned hardware services remain typed
-display-only; Core checks the captured/current origin before the unchanged final
-pinned send. The managed manifest records feedback adoption. Temporary Debug
+motor/layer policy. The GUI-only virtual service retains its separate atomic
+journal and Mock display transaction. Ordinary and owned hardware services
+remain typed display-only. Core evaluates the existing pin inside each sender.
+Ordinary CoreMIDI refreshes the endpoints before pinning and validates the word
+next. Owned virtual MIDI validates ownership and the word before pinning, and
+retains its final ownership check before committing. The managed manifest
+records feedback adoption. Temporary Debug
 comparisons remain through the same-SHA O-1 acceptance and are retired in O-2;
 the scheduling candidate is retained separately for O-4.
 

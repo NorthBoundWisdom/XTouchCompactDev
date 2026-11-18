@@ -1633,13 +1633,21 @@
                 }
                 return preparedProvenance
             }
-            func feedbackPlan(_ message: MIDIMessage, index: Int, map: FactoryStandardMap) -> CompactFeedbackPlan {
-                ConsoleFeedbackProjection.plan(message, index: index, actor: source, scope: feedbackScope(current: false),
-                                               route: route, output: outputOrigin, planned: plannedForFeedbackPlan(message),
-                                               knownLayer: dispatchKnownHardwareLayer, map: map, at: dispatchAt, authorizedTest: authorizedTest)
+            func feedbackPlan(_ message: MIDIMessage, index: Int, map: FactoryStandardMap) throws -> CompactFeedbackPlan {
+                try ConsoleFeedbackProjection.plan(message, index: index, actor: source, scope: feedbackScope(current: false),
+                                                   bindingGeneration: authorization.bindingGeneration, route: route, output: outputOrigin, planned: plannedForFeedbackPlan(message),
+                                                   knownLayer: dispatchKnownHardwareLayer, map: map, at: dispatchAt, authorizedTest: authorizedTest)
             }
-            var feedbackPlans = messages.enumerated().map { index, message in
-                feedbackPlan(message, index: index, map: dispatchMap)
+            var feedbackPlans: [CompactFeedbackPlan]
+            do {
+                feedbackPlans = try messages.enumerated().map { index, message in
+                    try feedbackPlan(message, index: index, map: dispatchMap)
+                }
+            } catch {
+                self.error = error
+                session.discardPendingMotorWrites()
+                session.invalidateTransportFeedback()
+                return .suppressed
             }
             #if DEBUG
                 func nativeScopeIsCurrent() -> Bool {
@@ -1696,24 +1704,22 @@
                 error = CompactMIDIError.routeChanged
                 return .suppressed
             }
-            var approvedTestReceiveChannel: UInt8?
+            var testAllowed = false
             if let authorizedTest {
                 do {
                     guard hardwareMode, isObservingHardware else { throw NonMotorTestError.permissionRevoked }
                     try nonMotorTests.gate.validate(authorizedTest, messages: messages, context: nonMotorContext)
                     guard let receiveChannel = authorizedTest.approval.prerequisites.receiveChannel else { throw NonMotorTestError.invalidTransmission }
-                    approvedTestReceiveChannel = receiveChannel
                     // The gate validated this exact single command against the approved RX.
                     // Project it with that RX while the scope keeps the Console's real profile.
                     if receiveChannel != dispatchMap.globalReceiveChannel {
                         var diagnosticMap = dispatchMap
                         diagnosticMap.globalReceiveChannel = receiveChannel
-                        feedbackPlans[0] = feedbackPlan(authorizedTest.message, index: 0, map: diagnosticMap)
+                        feedbackPlans[0] = try feedbackPlan(authorizedTest.message, index: 0, map: diagnosticMap)
                     }
+                    testAllowed = true
                 } catch { self.error = error; lockNonMotorTests() }
             }
-            let testAllowed = approvedTestReceiveChannel != nil
-            let feedbackReceiveChannel = approvedTestReceiveChannel ?? dispatchMap.globalReceiveChannel
             #if DEBUG
                 let capturedScope = feedbackScope(current: false)
                 var dispatchEvidence = ConsoleFeedbackProjection.evidence(route, output: outputOrigin, planned: nil,
@@ -1758,19 +1764,14 @@
                 session.discardPendingMotorWrites()
             }
             for (messageIndex, message) in messages.enumerated() {
-                let isMechanism = switch message {
-                case .programChange: true
-                case .controlChange(_, 1 ... 9, _): true
-                default: false
-                }
+                let outputKind = ConsoleFeedbackProjection.OutputKind(message)
+                let stageRequirements: Set<EffectDirection> = [outputKind.stageDirection]
+                let permitsStage = authorization == session.writeAuthorization
+                    && (outputKind.stageDirection == .mechanism ? authorization.allowsMechanisms : authorization.allowsDisplay)
                 #if DEBUG
-                    CompactFeedbackShadow.stage(plan: feedbackPlans[messageIndex], requirements: [isMechanism ? .mechanism : .display],
-                                                allowed: authorization == session.writeAuthorization && (isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay), audit: feedbackAudit)
+                    CompactFeedbackShadow.stage(plan: feedbackPlans[messageIndex], requirements: stageRequirements, allowed: permitsStage, audit: feedbackAudit)
                 #endif
-                let stageRequirements: Set<EffectDirection> = [isMechanism ? .mechanism : .display]
-                let stageAuthorization: PlanAuthorization = authorization == session.writeAuthorization
-                    && (isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay)
-                    ? .granted(directions: stageRequirements) : .denied(reason: "native_authorization")
+                let stageAuthorization: PlanAuthorization = permitsStage ? .granted(directions: stageRequirements) : .denied(reason: "native_authorization")
                 let stage = FeedbackAuthorizationCheck.evaluate(requirements: stageRequirements, authorization: stageAuthorization)
                 guard stage == .sufficient else {
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
@@ -1804,7 +1805,7 @@
                 }
                 // Only the existing local layer assertion admits management effects.
                 var permittedDirections = stageRequirements
-                if case .programChange = message, source != .agent {
+                if outputKind == .layer, source != .agent {
                     permittedDirections.insert(.management)
                 }
                 #if DEBUG
@@ -1820,7 +1821,7 @@
                 #if DEBUG
                     let nativeSafety: NativeSafetyResult = copyPermitted ? .passed : .rejected(reason: "native_device_filter")
                     let plan = feedbackPlans[messageIndex]
-                    let proof = CompactFeedbackPlanning.nativeOutputProof(plan: plan, message: message, receiveChannel: feedbackReceiveChannel,
+                    let proof = CompactFeedbackPlanning.nativeOutputProof(plan: plan, message: message, nativeDirections: outputKind.requiredDirections,
                                                                           permittedDirections: permittedDirections, nativeSnapshot: gateFacts, safety: nativeSafety)
                     let nativeVerdict: FeedbackPreflight = nativePermitted ? .permitted : .rejected(.nativeRejected(reason: "native_device_filter"))
                     CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: feedbackScope(current: true),
@@ -1831,7 +1832,7 @@
                 let preflightPlan = feedbackPlans[messageIndex]
                 let preflightScope = feedbackScope(current: true)
                 var currentFacts = session.state.feedbackNativeSnapshot; currentFacts.add(preflightScope)
-                let preflightProof = CompactFeedbackPlanning.nativeOutputProof(plan: preflightPlan, message: message, receiveChannel: feedbackReceiveChannel,
+                let preflightProof = CompactFeedbackPlanning.nativeOutputProof(plan: preflightPlan, message: message, nativeDirections: outputKind.requiredDirections,
                                                                                permittedDirections: permittedDirections, nativeSnapshot: currentFacts,
                                                                                safety: nativePermitted ? .passed : .rejected(reason: "native_device_filter"))
                 let preflight = FeedbackPreflight.evaluate(plan: preflightPlan, proof: preflightProof,

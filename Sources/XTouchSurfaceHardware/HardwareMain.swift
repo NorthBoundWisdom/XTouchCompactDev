@@ -2,7 +2,6 @@ import CompactSimulatorTransport
 import Foundation
 import RemoteToolContracts
 import SurfaceControlContracts
-import SurfaceFeedbackPlanning
 import SurfacePluginContracts
 import XTouchCompactCore
 #if canImport(Darwin)
@@ -45,6 +44,27 @@ private func removeOwnedReadyFile() {
     if lstat(path, &info) == 0, info.st_dev == ownedReadyDevice, info.st_ino == ownedReadyInode {
         unlink(path)
     }
+}
+
+/// The serial owner spends the budget before invoking transport and commits only after every send returns.
+func performHardwareFeedback(_ request: ControlFeedback, allowed: Bool, writer: String?, at: Double,
+                             origin: HardwareEndpointOrigin, surface: inout CompactHardwareSurface,
+                             budget: inout SurfaceWriteBudgets, midi: any HardwareMIDI) throws -> ControlEvent
+{
+    let messages = try surface.displayPlan(request, allowed: allowed, at: at, writerID: writer)
+    var candidate = surface
+    let event = try candidate.recordFeedback(request, at: at, writerID: writer)
+    guard budget.consume(.feedback, at: at, writerID: writer) else { throw ControlContractError("rate_limited") }
+    for (index, message) in messages.enumerated() {
+        try midi.send(HardwareDisplayAdmission(message, index: index, request: request, writer: writer,
+                                               fallbackWriter: surface.remoteWriterID, origin: origin, at: at))
+    }
+    if let owned = midi as? OwnedVirtualHardwareMIDI {
+        try owned.commitFeedback(expectedOrigin: origin) { surface = candidate }
+    } else {
+        surface = candidate
+    }
+    return event
 }
 
 @main struct HardwareMain {
@@ -420,34 +440,8 @@ private func removeOwnedReadyFile() {
                                 try surface.controls.validateInput(input, at: time, writerID: principals.remote_writer_id)
                                 throw ControlContractError("permission_denied")
                             case let .feedback(feedback):
-                                let plan = try surface.displayPlan(feedback, allowed: allowFeedback, at: time, writerID: client.writerID)
-                                var candidate = surface
-                                let event = try candidate.recordFeedback(feedback, at: time, writerID: client.writerID)
-                                guard budget.consume(.feedback, at: time, writerID: client.writerID) else { throw ControlContractError("rate_limited") }
-                                // Spent before any send: a partly delivered or failing request is still
-                                // rate limited. The event commits only after every message was accepted.
-                                let sendOrigin = activeEndpointOrigin
-                                for (messageIndex, message) in plan.enumerated() {
-                                    let dispatchPlan = HardwareFeedbackRuntime.plan(message, index: messageIndex, surface: surface, origin: sendOrigin,
-                                                                                    request: feedback, writer: client.writerID, at: time)
-                                    try HardwareFeedbackRuntime.preflight(dispatchPlan, current: midi.currentOrigin)
-                                    do {
-                                        try midi.send(message, expectedOrigin: sendOrigin)
-                                        #if DEBUG
-                                            HardwareFeedbackRuntime.receipt(dispatchPlan, result: .accepted, current: midi.currentOrigin, attempted: true, accepted: true)
-                                        #endif
-                                    } catch {
-                                        #if DEBUG
-                                            HardwareFeedbackRuntime.receipt(dispatchPlan, result: .rejected(reason: "native_transport_rejected"), current: midi.currentOrigin, attempted: true, accepted: false)
-                                        #endif
-                                        throw error
-                                    }
-                                }
-                                if let owned {
-                                    try owned.commitFeedback(expectedOrigin: sendOrigin) { surface = candidate }
-                                } else {
-                                    surface = candidate
-                                }
+                                let event = try performHardwareFeedback(feedback, allowed: allowFeedback, writer: client.writerID, at: time,
+                                                                        origin: activeEndpointOrigin, surface: &surface, budget: &budget, midi: midi)
                                 value = try .encoded(event)
                             case let .renew(request):
                                 try surface.controls.validateRenew(request, at: time)

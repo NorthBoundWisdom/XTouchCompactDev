@@ -101,7 +101,7 @@ public struct CompactSurfaceSimulator: Sendable {
         #if DEBUG
             for plan in initialPlans {
                 let accepted = initialPermitted.contains(plan)
-                CompactFeedbackShadow.receipt(plan: plan, result: accepted ? .accepted : .notAttempted(reason: "preflight_rejected"), currentScope: initialScope, nativeCurrent: true, attempted: accepted, accepted: accepted, audit: session.state.feedbackAudit)
+                CompactFeedbackShadow.receipt(plan: plan, result: accepted ? .accepted : .notAttempted(reason: "preflight_rejected"), currentScope: initialScope, nativeCurrent: true, attempted: true, accepted: true, audit: session.state.feedbackAudit)
             }
         #endif
         try controls.validateWriterID(remoteWriterID)
@@ -197,7 +197,7 @@ public struct CompactSurfaceSimulator: Sendable {
                 // Only parameter mappings are exposed by this software composition.
                 // New action bindings require an explicit host composition, not a bypass.
                 guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
-                next.receiveMockFeedback(update.feedback, at: time, writerID: writer, operation: "input")
+                try next.receiveMockFeedback(update.feedback, at: time, writerID: writer, operation: "input")
                 if kind == "touch" {
                     try next.applyMomentaryTouch(index: index, layer: layer, pressed: input.value == .bool(true))
                 }
@@ -222,7 +222,7 @@ public struct CompactSurfaceSimulator: Sendable {
         guard case let .parameter(id) = session.parameters.assignment(.faderTouch(index), layer: layer),
               let definition = session.parameters.definition(id) else { return }
         let feedback = try session.setParameter(id, value: pressed ? definition.maximum : definition.minimum, fromAgent: true)
-        receiveMockFeedback(feedback, operation: "momentary-touch")
+        try receiveMockFeedback(feedback, operation: "momentary-touch")
     }
 
     private func mappedValue(kind: String, index: Int, layer: CompactLayer) -> JSONValue? {
@@ -267,7 +267,7 @@ public struct CompactSurfaceSimulator: Sendable {
             let messages = try next.mock.touchFader(index, isTouched: false)
             let update = try next.session.receive(messages)
             guard update.actionIntents.isEmpty else { throw ControlContractError("unsupported_mapping") }
-            next.receiveMockFeedback(update.feedback, at: time, writerID: systemWriterID, operation: "hold-expiry")
+            try next.receiveMockFeedback(update.feedback, at: time, writerID: systemWriterID, operation: "hold-expiry")
             try next.applyMomentaryTouch(index: index, layer: layer, pressed: false)
             try events.append(next.controls.recordHoldExpiry(controlID: expiry.controlID,
                                                              mappedValue: next.mappedValue(kind: kind, index: index, layer: layer), at: time, writerID: systemWriterID))
@@ -339,21 +339,21 @@ public struct CompactSurfaceSimulator: Sendable {
             messages = try session.setDisplayButton(index, light: light)
         default: throw ControlContractError("unsupported_feedback")
         }
-        receiveMockFeedback(messages, at: at, writerID: writerID, operation: "display", request: String(reflecting: feedback))
+        try receiveMockFeedback(messages, at: at, writerID: writerID, operation: "display", request: String(reflecting: feedback))
     }
 
     /// Permanent software composition only. Virtual layer commands retain their
     /// original 1.3 behavior and do not acquire a hardware/local-attendance policy.
     private mutating func receiveMockFeedback(_ messages: [MIDIMessage], at: Double? = nil, writerID: String? = nil,
-                                              operation: String, request: String? = nil)
+                                              operation: String, request: String? = nil) throws
     {
         var scope = session.state.feedbackScope; scope.authorization = session.writeAuthorization
         var evidence = CompactFeedbackBytes(); evidence.add(String(reflecting: controls.expected)); evidence.add(operation); evidence.add(request)
         evidence.add(at != nil); if let at {
             evidence.add(at)
         }; evidence.add(writerID)
-        let endpoint = try! EndpointProvenance(endpointID: controls.expected.instance_id, deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
-        let plans = messages.enumerated().map { index, message in
+        let endpoint = try EndpointProvenance(endpointID: controls.expected.instance_id, deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
+        let plans = try messages.enumerated().map { index, message in
             var reference = CompactFeedbackBytes(); reference.add(index); reference.add(operation)
             var origin = CompactFeedbackBytes(); origin.add(writerID)
             let planned: CompactPlannedProvenance? = if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
@@ -361,8 +361,8 @@ public struct CompactSurfaceSimulator: Sendable {
             } else {
                 nil
             }
-            return try! CompactFeedbackPlanning.plan(message, map: session.state.map, scope: scope, reference: reference,
-                                                     origin: origin, source: .simulation, endpoint: endpoint, evidence: evidence, planned: planned)
+            return try CompactFeedbackPlanning.plan(message, map: session.state.map, scope: scope, reference: reference,
+                                                    origin: origin, source: .simulation, endpoint: endpoint, evidence: evidence, planned: planned)
         }
         #if DEBUG
             var dispatchActor = CompactFeedbackBytes(); dispatchActor.add(writerID)
@@ -377,7 +377,7 @@ public struct CompactSurfaceSimulator: Sendable {
             for plan in plans {
                 let accepted = permitted.contains(plan)
                 let result: FeedbackAttemptResult = accepted ? .accepted : .notAttempted(reason: "preflight_rejected")
-                CompactFeedbackShadow.receipt(plan: plan, result: result, currentScope: scope, nativeCurrent: true, attempted: accepted, accepted: accepted, audit: session.state.feedbackAudit)
+                CompactFeedbackShadow.receipt(plan: plan, result: result, currentScope: scope, nativeCurrent: true, attempted: true, accepted: true, audit: session.state.feedbackAudit)
                 session.feedbackShadowReceipt(plan, result: result, currentScope: scope, currentSource: .simulation, currentEndpoint: endpoint)
             }
         #endif

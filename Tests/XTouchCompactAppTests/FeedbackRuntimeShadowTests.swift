@@ -1,6 +1,7 @@
 @testable import XTouchFeedbackTestSupport
 #if os(macOS)
     import Foundation
+    import SurfaceDeviceContracts
     import SurfaceFeedbackPlanning
     import Testing
     @testable import XTouchCompactApp
@@ -20,6 +21,30 @@
         var origin = a; origin.connectedOutput?.provenance = .remoteVirtual
         #expect(origin.neutralRoute == a.neutralRoute)
         #expect(ConsoleFeedbackProjection.evidence(origin, output: .init(endpoint: origin.connectedOutput, generation: 3), planned: nil, knownLayer: nil, at: -0.0, authorizedTest: nil) != p)
+    }
+
+    @Test @MainActor func consoleFeedbackPlanKeepsNativeDirectionsOnAnyChannel() throws {
+        let map = try FactoryStandardMap(globalReceiveChannel: 0)
+        var scope = CompactFeedbackScope()
+        scope.authorization = .init()
+        let cases: [(MIDIMessage, ConsoleFeedbackProjection.OutputKind, Set<EffectDirection>)] = [
+            (.controlChange(channel: 15, number: 1, value: 12), .fader, [.mechanism]),
+            (.controlChange(channel: 7, number: 9, value: 12), .fader, [.mechanism]),
+            (.controlChange(channel: 15, number: 10, value: 1), .display, [.display]),
+            (.programChange(channel: 15, number: 1), .layer, [.management, .mechanism]),
+        ]
+        for (message, expectedKind, required) in cases {
+            let kind = ConsoleFeedbackProjection.OutputKind(message)
+            let plan = try ConsoleFeedbackProjection.plan(message, index: 0, actor: .mock, scope: scope, bindingGeneration: 0, route: .init(),
+                                                          output: .simulation, planned: nil, knownLayer: nil, map: map, at: 1, authorizedTest: nil)
+            #expect(kind == expectedKind)
+            #expect(kind.stageDirection == (required == [.display] ? .display : .mechanism))
+            #expect(plan.requiredDirections == required)
+            let facts = CompactFeedbackBytes()
+            let proof = CompactFeedbackPlanning.nativeOutputProof(plan: plan, message: message, nativeDirections: kind.requiredDirections,
+                                                                  permittedDirections: required, nativeSnapshot: facts, safety: .passed)
+            #expect(FeedbackPreflight.evaluate(plan: plan, proof: proof, currentScope: scope, currentNativeSnapshot: facts) == .permitted)
+        }
     }
 
     @Test @MainActor func feedbackShadowRecordsPinRejectionAsAttemptAndKeepsOldScopeOnAcceptedReentry() throws {
