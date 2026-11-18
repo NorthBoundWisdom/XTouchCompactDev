@@ -191,8 +191,8 @@ class ValidationGateTests(unittest.TestCase):
         unit = text.split("  workflow-unit-macos:", 1)[1].split("  app-macos:", 1)[0]
         app = text.split("  app-macos:", 1)[1]
         self.assertNotIn("needs:", app)
-        for block in [preflight, unit, app]:
-            self.assertIn("runs-on: macos-26-intel\n", block)
+        for block, runner in [(preflight, "macos-26-intel"), (unit, "macos-26"), (app, "macos-26-intel")]:
+            self.assertIn(f"runs-on: {runner}\n", block)
             self.assertIn("DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer", block)
             self.assertIn("ref: ${{ github.sha }}", block)
             self.assertIn("dependencies-${{ runner.os }}-${{ runner.arch }}-", block)
