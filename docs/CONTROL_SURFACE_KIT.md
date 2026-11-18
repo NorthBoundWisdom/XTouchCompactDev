@@ -85,11 +85,16 @@ retains its final ownership check before committing. The managed manifest
 records feedback adoption. The accepted migration comparisons are retired.
 Product regressions and the independent scheduling candidate remain.
 
-The shared scheduler candidate is test support only. Its mutable state is a value
-that follows session copies; shared classes only collect diagnostic records.
-Unmatched or ambiguous receipts remain unproven and do not update an accepted
-cache. Generation-cache and style/projection policy differences are recorded;
-no scheduler algorithm is adopted here.
+Compact uses `FeedbackRequestState` with `.suppressAfterProposal` for button lights,
+encoder ring values and ring styles. The host still owns redraw order, desired
+values, indexed scope, and the decision to invalidate. A generated value carries
+no transport or physical-acknowledgement meaning. The independent comparison for
+these three caches was retired after the exact cut passed.
+
+The historical scheduler candidate remains test support for fader, held-intent
+and receipt causality. Its value state follows session copies. Unmatched or
+ambiguous receipts remain unknown and do not update an accepted cache. This
+historical lane is separate from the three production display stores.
 
 Test trace schema 2 uses lossless exact-content catalog nodes. Every persisted
 export is read through the repository's strict reader and cold-replayed by its

@@ -103,72 +103,13 @@ package enum CompactFeedbackIntent: Sendable {
     case refresh(order: [String])
 }
 
-#if DEBUG
-    package enum CompactGeneratedDisplayFamily: String, Sendable {
-        case button, ring, style
-    }
-
-    package enum CompactGeneratedDisplayValue: Equatable, Sendable {
-        case button(ButtonLight), ring(RingDisplay), style(RingStyle)
-
-        package var family: CompactGeneratedDisplayFamily {
-            switch self {
-            case .button: .button
-            case .ring: .ring
-            case .style: .style
-            }
-        }
-    }
-
-    package enum CompactGeneratedDisplayInput: Sendable {
-        case request(index: Int, value: CompactGeneratedDisplayValue, scope: CompactResourceScope,
-                     map: FactoryStandardMap, lightProtocol: ButtonLightProtocol)
-        case invalidate(family: CompactGeneratedDisplayFamily, index: Int?)
-
-        package var family: CompactGeneratedDisplayFamily {
-            switch self {
-            case let .request(_, value, _, _, _): value.family
-            case let .invalidate(family, _): family
-            }
-        }
-    }
-
-    package struct CompactGeneratedDisplaySnapshot: Equatable, Sendable {
-        package let orderedIndices: [Int]
-        package let values: [Int: CompactGeneratedDisplayValue]
-        package let scopes: [Int: CompactResourceScope]
-
-        package init(orderedIndices: [Int], values: [Int: CompactGeneratedDisplayValue], scopes: [Int: CompactResourceScope]) {
-            self.orderedIndices = orderedIndices
-            self.values = values
-            self.scopes = scopes
-        }
-    }
-#endif
-
 package protocol CompactFeedbackSchedulerReference: Sendable {
     mutating func receive(_ intent: CompactFeedbackIntent, scope: CompactFeedbackScope, native: CompactState)
     mutating func generated(_ messages: [MIDIMessage], scope: CompactFeedbackScope, provenance: [CompactPlannedProvenance?])
     mutating func dispatch(_ facts: CompactFeedbackDispatchFacts, native: CompactState)
     mutating func receipt(_ plan: CompactFeedbackPlan, result: FeedbackAttemptResult, currentScope: CompactFeedbackScope, stateScope: CompactFeedbackScope, currentSource: DeviceSource, currentEndpoint: EndpointProvenance)
     mutating func reset()
-    #if DEBUG
-        var comparesGeneratedDisplay: Bool {
-            get
-        }
-        mutating func compareGeneratedDisplay(_ input: CompactGeneratedDisplayInput, actualProposal: MIDIMessage?, actualState: CompactGeneratedDisplaySnapshot)
-    #endif
 }
-
-#if DEBUG
-    package extension CompactFeedbackSchedulerReference {
-        var comparesGeneratedDisplay: Bool {
-            false
-        }
-
-        mutating func compareGeneratedDisplay(_: CompactGeneratedDisplayInput, actualProposal _: MIDIMessage?, actualState _: CompactGeneratedDisplaySnapshot) {}
-    }
-#endif
 
 package enum CompactFeedbackPlanning {
     /// The trusted command and the adapter's existing gates determine the grant.

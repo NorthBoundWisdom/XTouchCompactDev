@@ -165,7 +165,7 @@
         var feedbackPlan: ControlFeedback?
         var guiDisplayValue: UInt8?
         var effects: [[String: Any]] = []
-        let feedbackAudit: FeedbackAuditRecorder
+        let feedbackAudit = FeedbackAuditRecorder()
         var raw: [[String: Any]] = []
         var actionDispatches: [Int] = []
         var releases = 0
@@ -193,7 +193,6 @@
             self.id = id; self.source = source; self.scenario = scenario; self.setup = setup
             plugin = try CompactPluginHost.agent(registryEpoch: deterministic ? "fixture.plugin.epoch." + id : nil)
             self.deterministic = deterministic
-            feedbackAudit = .init(comparesGeneratedDisplay: deterministic)
             self.identities = H10IdentitySequence(scope: id)
             let identities = identities
             wire.receiptClock = { [clock] in clock.monotonic }
@@ -1046,7 +1045,6 @@
             let catalog = try ScenarioCatalog.decode(data: bytes)
             let destination = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J4_SHADOW_REPORT_ROOT"] ?? repo.appendingPathComponent("build/o/scheduler-proof").path)
             var operations = 0, owners = 0, schedulerRows = 0
-            var generatedDisplayCounts: [String: Int] = [:]
             for scene in catalog.scenarios where Set(scene.requiresFeatures).isSubset(of: h10Features) {
                 let setup = try h10Object(JSONSerialization.jsonObject(with: JSONEncoder().encode(scene.setup)))
                 var instances: [String: H10Instance] = [:]
@@ -1066,19 +1064,10 @@
                     #expect(owner.wire.starts == 0)
                     try owner.feedbackAudit.export(to: destination.appendingPathComponent(scene.id + "-" + id + ".jsonl"))
                     schedulerRows += owner.feedbackAudit.counts["scheduler", default: 0]
-                    for (kind, count) in owner.feedbackAudit.displayCounts {
-                        generatedDisplayCounts[kind, default: 0] += count
-                    }
                     owners += 1
                 }
             }
             #expect(operations == 70 && owners == 30 && schedulerRows == 8965)
-            #expect(generatedDisplayCounts["button.proposed", default: 0] > 0)
-            #expect(generatedDisplayCounts["ring.suppressed", default: 0] > 0)
-            #expect(generatedDisplayCounts["style.proposed", default: 0] > 0)
-            #expect(generatedDisplayCounts["ring.invalidate", default: 0] > 0)
-            let displayEvidence = try JSONSerialization.data(withJSONObject: generatedDisplayCounts, options: [.sortedKeys])
-            print("W2_GENERATED_DISPLAY " + String(decoding: displayEvidence, as: UTF8.self))
             print("O2_SCHEDULER operations=\(operations) owners=\(owners) live_and_cold_rows=\(schedulerRows)")
         }
     }
