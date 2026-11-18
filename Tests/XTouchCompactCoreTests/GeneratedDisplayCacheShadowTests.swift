@@ -72,8 +72,8 @@ private func displayShadowFixture() throws -> (CompactState, FeedbackAuditRecord
 @Test func generatedDisplayShadowDetectsReceiptBasedEqualityInPlaceOfProposalEquality() throws {
     let map = try FactoryStandardMap()
     let input = CompactGeneratedDisplayInput.request(index: 1, value: .ring(.position(7)), scope: .init(), map: map, lightProtocol: .manual)
-    var proposalCache = GeneratedDisplayCacheReference()
-    var receiptCache = GeneratedDisplayCacheReference(policy: .suppressAfterAcceptedReceipt)
+    var proposalCache = GeneratedDisplayCacheReference(strategy: .kit(.suppressAfterProposal))
+    var receiptCache = GeneratedDisplayCacheReference(strategy: .kit(.suppressAfterAcceptedReceipt))
     #expect(try proposalCache.apply(input).0 == receiptCache.apply(input).0)
     #expect(try proposalCache.apply(input).0 == nil)
     #expect(try receiptCache.apply(input).0 != nil)

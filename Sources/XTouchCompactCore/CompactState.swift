@@ -1,5 +1,6 @@
 import Foundation
 import SurfaceBindingContext
+import SurfaceFeedbackPlanning
 
 /// Host-owned state and feedback policy. Hardware commands are returned as messages;
 /// the caller routes them through its CoreMIDI transport. No physical motor is used by tests.
@@ -37,11 +38,17 @@ public struct CompactState: Sendable {
     private var pendingProvenance: [Int: CompactPlannedProvenance] = [:]
     private var producedProvenance: [Int: CompactPlannedProvenance] = [:]
     private var desiredButtons: [Int: ButtonLight] = [:]
-    private var lastSentButtons: [Int: ButtonLight] = [:]
+    private var buttonRequests = FeedbackRequestState<Int, ButtonLight>(
+        repeatedRequestPolicy: .suppressAfterProposal, withdrawnIntentPolicy: .discard
+    )
     private var desiredRings: [Int: RingDisplay] = [:]
-    private var lastSentRings: [Int: RingDisplay] = [:]
+    private var ringRequests = FeedbackRequestState<Int, RingDisplay>(
+        repeatedRequestPolicy: .suppressAfterProposal, withdrawnIntentPolicy: .discard
+    )
     private var desiredStyles: [Int: RingStyle] = [:]
-    private var lastSentStyles: [Int: RingStyle] = [:]
+    private var styleRequests = FeedbackRequestState<Int, RingStyle>(
+        repeatedRequestPolicy: .suppressAfterProposal, withdrawnIntentPolicy: .discard
+    )
     private var pressedButtons: Set<Int> = []
     private var pushedEncoders: Set<Int> = []
 
@@ -140,22 +147,22 @@ public struct CompactState: Sendable {
     #if DEBUG
         /// Read the actual generated value for product regression checks.
         package func generatedRingProposal(_ index: Int) -> RingDisplay? {
-            cachedRing(index)
+            ringCacheIndex.contains(index) ? ringRequests.proposed[index] : nil
         }
 
-        private mutating func compareGeneratedDisplay(_ input: CompactGeneratedDisplayInput, nativeProposal: MIDIMessage? = nil) {
+        private mutating func compareGeneratedDisplay(_ input: CompactGeneratedDisplayInput, actualProposal: MIDIMessage? = nil) {
             guard feedbackSchedulerReference?.comparesGeneratedDisplay == true else { return }
             let index: ContextResourceIndex<Int, CompactResourceScope>
             let values: [Int: CompactGeneratedDisplayValue]
             switch input.family {
-            case .button: index = buttonCacheIndex; values = lastSentButtons.mapValues(CompactGeneratedDisplayValue.button)
-            case .ring: index = ringCacheIndex; values = lastSentRings.mapValues(CompactGeneratedDisplayValue.ring)
-            case .style: index = styleCacheIndex; values = lastSentStyles.mapValues(CompactGeneratedDisplayValue.style)
+            case .button: index = buttonCacheIndex; values = buttonRequests.proposed.mapValues(CompactGeneratedDisplayValue.button)
+            case .ring: index = ringCacheIndex; values = ringRequests.proposed.mapValues(CompactGeneratedDisplayValue.ring)
+            case .style: index = styleCacheIndex; values = styleRequests.proposed.mapValues(CompactGeneratedDisplayValue.style)
             }
             let ids = index.orderedIDs
             let scopes = Dictionary(uniqueKeysWithValues: ids.compactMap { id in index.scope(for: id).map { (id, $0) } })
-            feedbackSchedulerReference?.compareGeneratedDisplay(input, nativeProposal: nativeProposal,
-                                                                nativeState: .init(orderedIndices: ids, values: values, scopes: scopes))
+            feedbackSchedulerReference?.compareGeneratedDisplay(input, actualProposal: actualProposal,
+                                                                actualState: .init(orderedIndices: ids, values: values, scopes: scopes))
         }
 
         private func generatedDisplayRequest(_ index: Int, _ value: CompactGeneratedDisplayValue) -> CompactGeneratedDisplayInput {
@@ -163,36 +170,16 @@ public struct CompactState: Sendable {
         }
     #endif
 
-    private func cachedButton(_ index: Int) -> ButtonLight? {
-        buttonCacheIndex.contains(index) ? lastSentButtons[index] : nil
-    }
-
-    private mutating func storeButton(_ index: Int, _ value: ButtonLight) {
-        lastSentButtons[index] = value
-        buttonCacheIndex.upsert(index, scope: resourceScope)
-    }
-
     private mutating func clearButtonCache(_ index: Int? = nil) {
         let removed: [Int] = if let index {
             buttonCacheIndex.remove(index) ? [index] : []
         } else {
             buttonCacheIndex.removeAll()
         }
-        for id in removed {
-            lastSentButtons.removeValue(forKey: id)
-        }
+        buttonRequests.invalidate(removed)
         #if DEBUG
             compareGeneratedDisplay(.invalidate(family: .button, index: index))
         #endif
-    }
-
-    private func cachedRing(_ index: Int) -> RingDisplay? {
-        ringCacheIndex.contains(index) ? lastSentRings[index] : nil
-    }
-
-    private mutating func storeRing(_ index: Int, _ value: RingDisplay) {
-        lastSentRings[index] = value
-        ringCacheIndex.upsert(index, scope: resourceScope)
     }
 
     private mutating func clearRingCache(_ index: Int? = nil) {
@@ -201,21 +188,10 @@ public struct CompactState: Sendable {
         } else {
             ringCacheIndex.removeAll()
         }
-        for id in removed {
-            lastSentRings.removeValue(forKey: id)
-        }
+        ringRequests.invalidate(removed)
         #if DEBUG
             compareGeneratedDisplay(.invalidate(family: .ring, index: index))
         #endif
-    }
-
-    private func cachedStyle(_ index: Int) -> RingStyle? {
-        styleCacheIndex.contains(index) ? lastSentStyles[index] : nil
-    }
-
-    private mutating func storeStyle(_ index: Int, _ value: RingStyle) {
-        lastSentStyles[index] = value
-        styleCacheIndex.upsert(index, scope: resourceScope)
     }
 
     private mutating func clearStyleCache(_ index: Int? = nil) {
@@ -224,9 +200,7 @@ public struct CompactState: Sendable {
         } else {
             styleCacheIndex.removeAll()
         }
-        for id in removed {
-            lastSentStyles.removeValue(forKey: id)
-        }
+        styleRequests.invalidate(removed)
         #if DEBUG
             compareGeneratedDisplay(.invalidate(family: .style, index: index))
         #endif
@@ -612,16 +586,16 @@ public struct CompactState: Sendable {
             let request = generatedDisplayRequest(index, .button(light))
         #endif
         desiredButtons[index] = light
-        guard cachedButton(index) != light else {
+        guard buttonRequests.request(light, for: index) != nil else {
             #if DEBUG
                 compareGeneratedDisplay(request)
             #endif
             return []
         }
-        storeButton(index, light)
+        buttonCacheIndex.upsert(index, scope: resourceScope)
         let proposal = try map.buttonLight(button: index, light: light, style: lightProtocol)
         #if DEBUG
-            compareGeneratedDisplay(request, nativeProposal: proposal)
+            compareGeneratedDisplay(request, actualProposal: proposal)
         #endif
         return [proposal]
     }
@@ -647,15 +621,15 @@ public struct CompactState: Sendable {
             let request = generatedDisplayRequest(index, .ring(display))
         #endif
         desiredRings[index] = display
-        guard cachedRing(index) != display else {
+        guard ringRequests.request(display, for: index) != nil else {
             #if DEBUG
                 compareGeneratedDisplay(request)
             #endif
             return []
         }
-        storeRing(index, display)
+        ringCacheIndex.upsert(index, scope: resourceScope)
         #if DEBUG
-            compareGeneratedDisplay(request, nativeProposal: midi)
+            compareGeneratedDisplay(request, actualProposal: midi)
         #endif
         return [midi]
     }
@@ -690,16 +664,16 @@ public struct CompactState: Sendable {
             let request = generatedDisplayRequest(index, .style(style))
         #endif
         desiredStyles[index] = style
-        guard cachedStyle(index) != style else {
+        guard styleRequests.request(style, for: index) != nil else {
             #if DEBUG
                 compareGeneratedDisplay(request)
             #endif
             return []
         }
-        storeStyle(index, style)
+        styleCacheIndex.upsert(index, scope: resourceScope)
         let proposal = try map.encoderRingStyle(encoder: index, style: style)
         #if DEBUG
-            compareGeneratedDisplay(request, nativeProposal: proposal)
+            compareGeneratedDisplay(request, actualProposal: proposal)
         #endif
         var result = [proposal]
         // Changing ring style locally redraws the ring: replay the host-owned position.

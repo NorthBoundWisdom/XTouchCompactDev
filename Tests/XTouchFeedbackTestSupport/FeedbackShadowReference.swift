@@ -191,14 +191,14 @@
             recorder.comparesGeneratedDisplay
         }
 
-        mutating func compareGeneratedDisplay(_ input: CompactGeneratedDisplayInput, nativeProposal: MIDIMessage?, nativeState: CompactGeneratedDisplaySnapshot) {
+        mutating func compareGeneratedDisplay(_ input: CompactGeneratedDisplayInput, actualProposal: MIDIMessage?, actualState: CompactGeneratedDisplaySnapshot) {
             let predicted: (MIDIMessage?, CompactGeneratedDisplaySnapshot)
             do { predicted = try generatedDisplay.apply(input) }
             catch { preconditionFailure("Unable to predict a validated display input for \(owner): \(error)") }
-            precondition(predicted.0 == nativeProposal && predicted.0?.midi1Bytes == nativeProposal?.midi1Bytes && predicted.1 == nativeState,
-                         "Generated display shadow differs for \(owner): \(input), native \(String(reflecting: nativeProposal))/\(nativeState), Kit \(String(reflecting: predicted))")
+            precondition(predicted.0 == actualProposal && predicted.0?.midi1Bytes == actualProposal?.midi1Bytes && predicted.1 == actualState,
+                         "Generated display shadow differs for \(owner): \(input), Kit \(String(reflecting: actualProposal))/\(actualState), native dictionaries \(String(reflecting: predicted))")
             let outcome: String = switch input {
-            case .request: nativeProposal == nil ? "suppressed" : "proposed"
+            case .request: actualProposal == nil ? "suppressed" : "proposed"
             case let .invalidate(_, index): index == nil ? "clear" : "invalidate"
             }
             recorder.recordGeneratedDisplay(input.family.rawValue + "." + outcome)

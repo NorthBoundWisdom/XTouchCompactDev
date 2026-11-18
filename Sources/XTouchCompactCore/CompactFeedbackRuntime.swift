@@ -156,7 +156,7 @@ package protocol CompactFeedbackSchedulerReference: Sendable {
         var comparesGeneratedDisplay: Bool {
             get
         }
-        mutating func compareGeneratedDisplay(_ input: CompactGeneratedDisplayInput, nativeProposal: MIDIMessage?, nativeState: CompactGeneratedDisplaySnapshot)
+        mutating func compareGeneratedDisplay(_ input: CompactGeneratedDisplayInput, actualProposal: MIDIMessage?, actualState: CompactGeneratedDisplaySnapshot)
     #endif
 }
 
@@ -166,7 +166,7 @@ package protocol CompactFeedbackSchedulerReference: Sendable {
             false
         }
 
-        mutating func compareGeneratedDisplay(_: CompactGeneratedDisplayInput, nativeProposal _: MIDIMessage?, nativeState _: CompactGeneratedDisplaySnapshot) {}
+        mutating func compareGeneratedDisplay(_: CompactGeneratedDisplayInput, actualProposal _: MIDIMessage?, actualState _: CompactGeneratedDisplaySnapshot) {}
     }
 #endif
 
