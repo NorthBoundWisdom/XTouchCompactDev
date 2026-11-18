@@ -122,7 +122,7 @@ class CIJobBudgetTests(unittest.TestCase):
             self.assertIn(target["name"], text)
             self.assertNotIn(env["GH_TOKEN"], text)
 
-    def test_workflows_report_always_and_save_after_compile_before_tests(self):
+    def test_workflows_report_always_and_keep_native_cache_transfer_after_startup(self):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
         package = (ROOT / ".github/workflows/package.yml").read_text()
         self.assertEqual(ci.count("name: Report whole-run wall time and enforce 300s budget"), 4)
@@ -135,7 +135,9 @@ class CIJobBudgetTests(unittest.TestCase):
             self.assertIn("cold_build:", text)
             self.assertNotIn("if: success() && github.event_name", text)
         self.assertLess(ci.index("Save compiled portable cache"), ci.index("swift test --skip-build"))
-        self.assertLess(
-            ci.index("Save compiled native cache"), ci.index("swift test --build-path build/swiftpm --skip-build")
-        )
+        self.assertLess(ci.index("name: Isolated native startup"), ci.index("Save compiled native cache"))
+        native_cache = ci.split("Save compiled native cache", 1)[1].split("uses:", 1)[0]
+        self.assertIn("always()", native_cache)
+        self.assertIn("steps.compile.outcome == 'success'", native_cache)
+        self.assertIn("steps.link.outcome == 'success'", native_cache)
         self.assertIn("CI_JOB_NAME: package-smoke (${{ matrix.os }})", package)

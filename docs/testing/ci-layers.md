@@ -149,3 +149,9 @@ The effective selection uses the unique complete-proof method name rather than a
 - The isolated formatting correction is `05dbee1`. Its normal run `44137169205` failed in **503 seconds**, including queue time. Preflight/workflow-unit budget gates failed; the native app validation gate refused subsequent native execution. This is not evidence that every native regression ran successfully.
 - At the same `05dbee1`, automatic complete proof `44137169185` succeeded in 613 seconds; the required manual complete proof `44139723434` succeeded in 785 seconds. Both are inside the separate 30-minute limit.
 - F-1 therefore remains blocked on the every-push 300-second requirement. No additional performance optimization cycle, retry of an old failed run, feedback cutover or delivery follows from these results. Final GUI-commit run evidence is recorded in the append-only workspace handoff, rather than creating a documentation-only CI loop.
+
+## Native push critical path
+
+Run `44145566868` spent 76.11 of 78 seconds in the app lane's extra `swift package dump-package`. The preflight lane continues to run full setup, manifest validation, lint, and the production layer check. The app lane verifies local inputs, evaluates the manifest through its own native build, and still requires the exact preflight run and attempt before executing tests or launching the app. Input preparation emits phase diagnostics and leaves the full setup marker absent.
+
+The native smoke step signs and verifies the usual app bundle using the Debug executable linked in that same job. Cache upload follows native execution, so network transfer no longer delays reaching the validation gate. Cache upload still counts toward the whole-run budget. Linux, workflow-unit, the full proof, and release packaging keep their existing entry points.

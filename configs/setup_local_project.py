@@ -45,7 +45,9 @@ def write_phase_report(destination: Path, report: dict) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def main(*, phase_report: str | None = None, scratch_path: str | None = None) -> int:
+def main(*, phase_report: str | None = None, scratch_path: str | None = None, prepare_native_ci: bool = False) -> int:
+    if prepare_native_ci and (phase_report is None or scratch_path is not None):
+        raise ValueError("Native CI input preparation requires its own phase report and has no Swift scratch argument")
     # A failed reconfiguration must not leave a successful setup marker behind.
     marker = build_path(REPO_ROOT, "configured.json")
     marker.unlink(missing_ok=True)
@@ -56,7 +58,7 @@ def main(*, phase_report: str | None = None, scratch_path: str | None = None) ->
         destination = build_path(REPO_ROOT, str(Path(phase_report).relative_to("build")))
         if destination.exists() or destination.is_symlink():
             raise ValueError("Phase report already exists")
-    command = ["swift", "package", "dump-package"]
+    command = None if prepare_native_ci else ["swift", "package", "dump-package"]
     if scratch_path is not None:
         if not scratch_path.startswith("build/"):
             raise ValueError("Explicit scratch must be under build/")
@@ -128,9 +130,13 @@ def main(*, phase_report: str | None = None, scratch_path: str | None = None) ->
                 return 1
             phase("surface_plugins_ensure", lambda: ensure_dependency(REPO_ROOT))
             phase("control_surface_kit_ensure", lambda: ensure_control_surface_kit(REPO_ROOT))
-            phase("dump_package", lambda: subprocess.run(command, cwd=REPO_ROOT, check=True, stdout=subprocess.DEVNULL))
-            marker.parent.mkdir(parents=True, exist_ok=True)
-            marker.write_text(json.dumps({"schema_version": 1, "app_build": settings}, indent=2) + "\n")
+            if command is not None:
+                phase(
+                    "dump_package",
+                    lambda: subprocess.run(command, cwd=REPO_ROOT, check=True, stdout=subprocess.DEVNULL),
+                )
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(json.dumps({"schema_version": 1, "app_build": settings}, indent=2) + "\n")
         if destination is not None:
             report["identity_after"] = phase("diagnostic_identity_after", identity)
         result = 0
@@ -144,7 +150,10 @@ def main(*, phase_report: str | None = None, scratch_path: str | None = None) ->
             except Exception:
                 marker.unlink(missing_ok=True)
                 raise
-    print("XTouchCompactDev local configuration is ready.")
+    if prepare_native_ci:
+        print("Native CI inputs are ready. The preflight job validates the Swift package.")
+    else:
+        print("XTouchCompactDev local configuration is ready.")
     return 0
 
 
@@ -153,8 +162,13 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--phase-report")
         parser.add_argument("--scratch-path")
+        parser.add_argument("--prepare-native-ci", action="store_true")
         args = parser.parse_args()
-        raise SystemExit(main(phase_report=args.phase_report, scratch_path=args.scratch_path))
+        raise SystemExit(
+            main(
+                phase_report=args.phase_report, scratch_path=args.scratch_path, prepare_native_ci=args.prepare_native_ci
+            )
+        )
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1)

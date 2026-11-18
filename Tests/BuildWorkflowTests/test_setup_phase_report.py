@@ -66,6 +66,18 @@ class SetupPhaseReportTests(unittest.TestCase):
             git.assert_not_called()
             self.assertFalse((root / "build/ci-verification").exists())
 
+    def test_native_ci_prepares_validated_inputs_without_marking_full_setup_complete(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.prepare(directory)
+            stack, calls, command, _ = self.mocks(root)
+            report = "build/ci-verification/setup/native.json"
+            with stack:
+                self.assertEqual(setup.main(phase_report=report, prepare_native_ci=True), 0)
+            self.assertEqual(calls, ["environment", "validate", "surface", "kit"])
+            command.assert_not_called()
+            self.assertFalse((root / "build/configured.json").exists())
+            self.assertIsNone(json.loads((root / report).read_text())["manifest_argv"])
+
     def test_explicit_paths_reach_the_actual_shared_scratch_and_artifact_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.prepare(directory)
@@ -315,9 +327,9 @@ class NativeManifestPolicyTests(unittest.TestCase):
                 "swift test --build-path build/swiftpm --skip-build --manifest-cache local",
             ],
         )
-        self.assertIn("python3 configs/macos_workflow.py build --manifest-cache local", app)
+        self.assertIn("python3 configs/macos_workflow.py build --precompiled-native-debug", app)
         self.assertIn(
-            "python3 configs/setup_local_project.py --scratch-path build/swiftpm --phase-report build/ci-verification/setup/phase.json",
+            "python3 configs/setup_local_project.py --prepare-native-ci --phase-report build/ci-verification/setup/phase.json",
             app,
         )
         self.assertIn("python3 configs/check_host_layers.py --scratch-path build/swiftpm", yaml)

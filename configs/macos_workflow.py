@@ -198,15 +198,26 @@ def build(
     prebuilt_slices: Path | None = None,
     *,
     manifest_cache: str | None = None,
+    precompiled_native_debug: bool = False,
 ) -> Path:
     settings = load_app_build_settings(REPO_ROOT)
     for relative in ("swiftpm", f"app/{configuration}/{PRODUCT}.app", "icons/AppIcon.iconset", "icons/AppIcon.png"):
         build_path(REPO_ROOT, relative)
-    executable = (
-        swift_executable(configuration, architecture, prebuilt_slices)
-        if manifest_cache is None
-        else swift_executable(configuration, architecture, prebuilt_slices, manifest_cache=manifest_cache)
-    )
+    if precompiled_native_debug:
+        if (
+            configuration != "debug"
+            or architecture != "native"
+            or prebuilt_slices is not None
+            or manifest_cache is not None
+        ):
+            raise ValueError("The precompiled app must come from the native Debug build in the default CI scratch")
+        executable = (SWIFTPM_ROOT / "debug" / PRODUCT).resolve(strict=True)
+        if not executable.is_relative_to(SWIFTPM_ROOT.resolve()) or not executable.is_file():
+            raise ValueError("Expected the precompiled native Debug executable in the CI scratch")
+    elif manifest_cache is None:
+        executable = swift_executable(configuration, architecture, prebuilt_slices)
+    else:
+        executable = swift_executable(configuration, architecture, prebuilt_slices, manifest_cache=manifest_cache)
     if configuration == "release":
         verify_release_test_hooks(executable)
     bundle = BUILD_ROOT / "app" / configuration / f"{PRODUCT}.app"
@@ -546,7 +557,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--manifest-cache", choices=("local",))
+    parser.add_argument("--precompiled-native-debug", action="store_true")
     args = parser.parse_args(argv)
+    if args.precompiled_native_debug and (
+        args.action != "build"
+        or args.configuration != "debug"
+        or args.architecture != "native"
+        or args.manifest_cache is not None
+    ):
+        parser.error("--precompiled-native-debug requires the native Debug build action")
     if args.manifest_cache is not None and (
         args.action != "build" or args.configuration != "debug" or args.architecture != "native"
     ):
@@ -582,11 +601,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.action == "package":
             package(args.architecture, args.prebuilt_slices)
         else:
-            bundle = (
-                build(args.configuration, args.architecture)
-                if args.manifest_cache is None
-                else build(args.configuration, args.architecture, manifest_cache=args.manifest_cache)
-            )
+            if args.precompiled_native_debug:
+                bundle = build(args.configuration, args.architecture, precompiled_native_debug=True)
+            elif args.manifest_cache is None:
+                bundle = build(args.configuration, args.architecture)
+            else:
+                bundle = build(args.configuration, args.architecture, manifest_cache=args.manifest_cache)
             if args.action == "run":
                 # Replace Python so terminal signals and exit status belong to the app.
                 executable = bundle / "Contents/MacOS" / PRODUCT

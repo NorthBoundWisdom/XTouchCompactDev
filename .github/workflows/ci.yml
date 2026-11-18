@@ -187,19 +187,15 @@ jobs:
           path: build/swiftpm
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-${{ github.sha }}
           restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-
-      - run: python3 configs/setup_local_project.py --scratch-path build/swiftpm --phase-report build/ci-verification/setup/phase.json
+      # The exact-run preflight validates the manifest. This job prepares and compiles its own inputs.
+      - run: python3 configs/setup_local_project.py --prepare-native-ci --phase-report build/ci-verification/setup/phase.json
       # One build path for tests, executables and the app, so nothing is compiled twice.
       - name: Compile native targets and tests
         id: compile
         run: swift build --build-path build/swiftpm --build-tests --manifest-cache local
       - name: Link every executable in the test build path
+        id: link
         run: swift build --build-path build/swiftpm --manifest-cache local
-      - name: Save compiled native cache even if later tests fail
-        if: always() && steps.compile.outcome == 'success' && github.event_name == 'push'
-        uses: actions/cache/save@v6.1.0
-        with:
-          path: build/swiftpm
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-${{ github.sha }}
       - name: Require exact validation success before native execution
         env:
           GH_TOKEN: ${{ github.token }}
@@ -229,7 +225,7 @@ jobs:
           XTOUCH_HARDWARE_BINARY: build/swiftpm/debug/XTouchSurfaceHardware
           XTOUCH_OWNED_REPORT_ROOT: build/ci-verification/owned-rehearsal
         run: python3 -B configs/run_python_workflow_tests.py --suite simulator --pattern test_owned_virtual_rehearsal.py
-      - run: python3 configs/macos_workflow.py build --manifest-cache local
+      - run: python3 configs/macos_workflow.py build --precompiled-native-debug
       - name: Isolated native startup
         run: |
           python3 - <<'PY'
@@ -240,6 +236,12 @@ jobs:
           print(output)
           PY
       # Release ZIP/DMG packaging runs in package.yml (version tags and manual runs), not on every push.
+      - name: Save compiled native cache even if regression checks failed
+        if: always() && steps.compile.outcome == 'success' && steps.link.outcome == 'success' && github.event_name == 'push'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: build/swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ env.SWIFT_ID }}-${{ github.sha }}
       - name: Capture previews (manual desktop diagnostic)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.capture_previews }}
         run: python3 tools/capture_readme_screenshots.py
