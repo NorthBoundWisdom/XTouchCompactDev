@@ -45,13 +45,6 @@
         return .controlChange(channel: address.channel, number: address.number, value: value)
     }
 
-    private func h10SentRingCache(_ state: CompactState, index: Int) throws -> RingDisplay? {
-        guard let value = Mirror(reflecting: state).children.first(where: { $0.label == "lastSentRings" })?.value as? [Int: RingDisplay] else {
-            throw H10Error.malformed("Actual CompactState.lastSentRings cache is not observable")
-        }
-        return value[index]
-    }
-
     private func h10RingWireValue(_ display: RingDisplay) -> Int {
         switch display { case .off: 0; case let .position(value): value; case let .blinkingPosition(value): value + 13; case .allOn: 27; case .allBlinking: 28 }
     }
@@ -172,7 +165,7 @@
         var feedbackPlan: ControlFeedback?
         var guiDisplayValue: UInt8?
         var effects: [[String: Any]] = []
-        let feedbackAudit = FeedbackAuditRecorder()
+        let feedbackAudit: FeedbackAuditRecorder
         var raw: [[String: Any]] = []
         var actionDispatches: [Int] = []
         var releases = 0
@@ -200,6 +193,7 @@
             self.id = id; self.source = source; self.scenario = scenario; self.setup = setup
             plugin = try CompactPluginHost.agent(registryEpoch: deterministic ? "fixture.plugin.epoch." + id : nil)
             self.deterministic = deterministic
+            feedbackAudit = .init(comparesGeneratedDisplay: deterministic)
             self.identities = H10IdentitySequence(scope: id)
             let identities = identities
             wire.receiptClock = { [clock] in clock.monotonic }
@@ -435,8 +429,7 @@
                 }
             }
             if scenario == "T15", let model {
-                do { result["sent_value"] = try h10Any(h10SentRingCache(model.session.state, index: 1).map(h10RingWireValue)) }
-                catch { result["sent_value"] = "actual cache unavailable" }
+                result["sent_value"] = h10Any(model.session.state.generatedRingProposal(1).map(h10RingWireValue))
             } else if let hardware, let snapshot = try? hardware.controls.snapshot(at: time) {
                 result["sent_value"] = h10Any(snapshot.feedback["a.encoder.1"]?["value"].flatMap(\.exactIntValue))
             } else {
@@ -546,13 +539,13 @@
             case "prepare_display":
                 let semantic = try UInt8(h10Number(arguments, "value"))
                 if let model {
-                    let actualBefore = try h10SentRingCache(model.session.state, index: 1)
+                    let actualBefore = model.session.state.generatedRingProposal(1)
                     var preview = model.session
                     let plan = try preview.setDisplayRing(1, value: semantic)
                     let target = RingDisplay.position(CompactSession.ringSegment(for: semantic))
                     guard actualBefore != target, plan.contains(where: { endpoint($0).0 == "axis.display" }) else { return "T15 precondition must have a nonmatching real sent cache and nonempty actual numeric plan" }
                     guiDisplayValue = semantic
-                    raw.append(["kind": "real-GUI-display-plan-preparation-not-IO", "semantic_value": Int(semantic), "actual_cache_field": "CompactState.lastSentRings",
+                    raw.append(["kind": "real-GUI-display-plan-preparation-not-IO", "semantic_value": Int(semantic), "actual_cache_field": "CompactState.generatedRingProposal",
                                 "actual_cache_before": h10Any(actualBefore.map { String(describing: $0) }), "native_preview": plan.map(\.description),
                                 "actual_desired_before": h10Any(model.session.state.desiredRing(1).map { String(describing: $0) })])
                 } else {
@@ -573,17 +566,17 @@
             case "flush":
                 let reject = arguments["transport_result"] as? String == "rejected"
                 if let value = guiDisplayValue, let model {
-                    let before = try h10SentRingCache(model.session.state, index: 1)
+                    let before = model.session.state.generatedRingProposal(1)
                     let oldEvents = Set(model.events.map(\.id))
                     let effectOffset = effects.count
                     wire.reject = reject
                     model.apply { try $0.setDisplayRing(1, value: value) }
                     wire.reject = false
                     collectWire()
-                    let after = try h10SentRingCache(model.session.state, index: 1)
+                    let after = model.session.state.generatedRingProposal(1)
                     let failures = model.events.filter { !oldEvents.contains($0.id) && $0.direction == .output && $0.delivery == .failed }
                     let actualAttempts = Array(effects.dropFirst(effectOffset))
-                    raw.append(["kind": "actual-Model-apply-send-failure-and-cache-invalidation", "actual_cache_field": "CompactState.lastSentRings",
+                    raw.append(["kind": "actual-Model-apply-send-failure-and-cache-invalidation", "actual_cache_field": "CompactState.generatedRingProposal",
                                 "actual_cache_before": h10Any(before.map { String(describing: $0) }), "actual_cache_after": h10Any(after.map { String(describing: $0) }),
                                 "actual_desired_after": h10Any(model.session.state.desiredRing(1).map { String(describing: $0) }),
                                 "product_error": model.error.map { String(describing: $0) } ?? "none", "actual_transport_attempts": actualAttempts,
@@ -1053,6 +1046,7 @@
             let catalog = try ScenarioCatalog.decode(data: bytes)
             let destination = URL(fileURLWithPath: ProcessInfo.processInfo.environment["XTOUCH_J4_SHADOW_REPORT_ROOT"] ?? repo.appendingPathComponent("build/o/scheduler-proof").path)
             var operations = 0, owners = 0, schedulerRows = 0
+            var generatedDisplayCounts: [String: Int] = [:]
             for scene in catalog.scenarios where Set(scene.requiresFeatures).isSubset(of: h10Features) {
                 let setup = try h10Object(JSONSerialization.jsonObject(with: JSONEncoder().encode(scene.setup)))
                 var instances: [String: H10Instance] = [:]
@@ -1072,10 +1066,19 @@
                     #expect(owner.wire.starts == 0)
                     try owner.feedbackAudit.export(to: destination.appendingPathComponent(scene.id + "-" + id + ".jsonl"))
                     schedulerRows += owner.feedbackAudit.counts["scheduler", default: 0]
+                    for (kind, count) in owner.feedbackAudit.displayCounts {
+                        generatedDisplayCounts[kind, default: 0] += count
+                    }
                     owners += 1
                 }
             }
             #expect(operations == 70 && owners == 30 && schedulerRows == 8965)
+            #expect(generatedDisplayCounts["button.proposed", default: 0] > 0)
+            #expect(generatedDisplayCounts["ring.suppressed", default: 0] > 0)
+            #expect(generatedDisplayCounts["style.proposed", default: 0] > 0)
+            #expect(generatedDisplayCounts["ring.invalidate", default: 0] > 0)
+            let displayEvidence = try JSONSerialization.data(withJSONObject: generatedDisplayCounts, options: [.sortedKeys])
+            print("W2_GENERATED_DISPLAY " + String(decoding: displayEvidence, as: UTF8.self))
             print("O2_SCHEDULER operations=\(operations) owners=\(owners) live_and_cold_rows=\(schedulerRows)")
         }
     }

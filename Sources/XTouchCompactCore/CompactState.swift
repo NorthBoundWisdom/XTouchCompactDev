@@ -137,6 +137,32 @@ public struct CompactState: Sendable {
         _ = pendingIndex.removeAll()
     }
 
+    #if DEBUG
+        /// Read the actual generated value for product regression checks.
+        package func generatedRingProposal(_ index: Int) -> RingDisplay? {
+            cachedRing(index)
+        }
+
+        private mutating func compareGeneratedDisplay(_ input: CompactGeneratedDisplayInput, nativeProposal: MIDIMessage? = nil) {
+            guard feedbackSchedulerReference?.comparesGeneratedDisplay == true else { return }
+            let index: ContextResourceIndex<Int, CompactResourceScope>
+            let values: [Int: CompactGeneratedDisplayValue]
+            switch input.family {
+            case .button: index = buttonCacheIndex; values = lastSentButtons.mapValues(CompactGeneratedDisplayValue.button)
+            case .ring: index = ringCacheIndex; values = lastSentRings.mapValues(CompactGeneratedDisplayValue.ring)
+            case .style: index = styleCacheIndex; values = lastSentStyles.mapValues(CompactGeneratedDisplayValue.style)
+            }
+            let ids = index.orderedIDs
+            let scopes = Dictionary(uniqueKeysWithValues: ids.compactMap { id in index.scope(for: id).map { (id, $0) } })
+            feedbackSchedulerReference?.compareGeneratedDisplay(input, nativeProposal: nativeProposal,
+                                                                nativeState: .init(orderedIndices: ids, values: values, scopes: scopes))
+        }
+
+        private func generatedDisplayRequest(_ index: Int, _ value: CompactGeneratedDisplayValue) -> CompactGeneratedDisplayInput {
+            .request(index: index, value: value, scope: resourceScope, map: map, lightProtocol: lightProtocol)
+        }
+    #endif
+
     private func cachedButton(_ index: Int) -> ButtonLight? {
         buttonCacheIndex.contains(index) ? lastSentButtons[index] : nil
     }
@@ -155,6 +181,9 @@ public struct CompactState: Sendable {
         for id in removed {
             lastSentButtons.removeValue(forKey: id)
         }
+        #if DEBUG
+            compareGeneratedDisplay(.invalidate(family: .button, index: index))
+        #endif
     }
 
     private func cachedRing(_ index: Int) -> RingDisplay? {
@@ -175,6 +204,9 @@ public struct CompactState: Sendable {
         for id in removed {
             lastSentRings.removeValue(forKey: id)
         }
+        #if DEBUG
+            compareGeneratedDisplay(.invalidate(family: .ring, index: index))
+        #endif
     }
 
     private func cachedStyle(_ index: Int) -> RingStyle? {
@@ -195,6 +227,9 @@ public struct CompactState: Sendable {
         for id in removed {
             lastSentStyles.removeValue(forKey: id)
         }
+        #if DEBUG
+            compareGeneratedDisplay(.invalidate(family: .style, index: index))
+        #endif
     }
 
     public init(map: FactoryStandardMap, lightProtocol: ButtonLightProtocol) {
@@ -573,10 +608,22 @@ public struct CompactState: Sendable {
 
     private mutating func _setButton(_ index: Int, light: ButtonLight) throws -> [MIDIMessage] {
         guard (1 ... 39).contains(index) else { throw CompactError.invalidIndex("button", index) }
+        #if DEBUG
+            let request = generatedDisplayRequest(index, .button(light))
+        #endif
         desiredButtons[index] = light
-        guard cachedButton(index) != light else { return [] }
+        guard cachedButton(index) != light else {
+            #if DEBUG
+                compareGeneratedDisplay(request)
+            #endif
+            return []
+        }
         storeButton(index, light)
-        return try [map.buttonLight(button: index, light: light, style: lightProtocol)]
+        let proposal = try map.buttonLight(button: index, light: light, style: lightProtocol)
+        #if DEBUG
+            compareGeneratedDisplay(request, nativeProposal: proposal)
+        #endif
+        return [proposal]
     }
 
     public mutating func setRing(_ index: Int, display: RingDisplay) throws -> [MIDIMessage] {
@@ -596,9 +643,20 @@ public struct CompactState: Sendable {
     private mutating func _setRing(_ index: Int, display: RingDisplay) throws -> [MIDIMessage] {
         guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
         let midi = try map.encoderRingValue(encoder: index, display: display)
+        #if DEBUG
+            let request = generatedDisplayRequest(index, .ring(display))
+        #endif
         desiredRings[index] = display
-        guard cachedRing(index) != display else { return [] }
+        guard cachedRing(index) != display else {
+            #if DEBUG
+                compareGeneratedDisplay(request)
+            #endif
+            return []
+        }
         storeRing(index, display)
+        #if DEBUG
+            compareGeneratedDisplay(request, nativeProposal: midi)
+        #endif
         return [midi]
     }
 
@@ -628,10 +686,22 @@ public struct CompactState: Sendable {
 
     private mutating func _setRingStyle(_ index: Int, style: RingStyle) throws -> [MIDIMessage] {
         guard (1 ... 16).contains(index) else { throw CompactError.invalidIndex("encoder", index) }
+        #if DEBUG
+            let request = generatedDisplayRequest(index, .style(style))
+        #endif
         desiredStyles[index] = style
-        guard cachedStyle(index) != style else { return [] }
+        guard cachedStyle(index) != style else {
+            #if DEBUG
+                compareGeneratedDisplay(request)
+            #endif
+            return []
+        }
         storeStyle(index, style)
-        var result = try [map.encoderRingStyle(encoder: index, style: style)]
+        let proposal = try map.encoderRingStyle(encoder: index, style: style)
+        #if DEBUG
+            compareGeneratedDisplay(request, nativeProposal: proposal)
+        #endif
+        var result = [proposal]
         // Changing ring style locally redraws the ring: replay the host-owned position.
         clearRingCache(index)
         if let display = desiredRings[index] {

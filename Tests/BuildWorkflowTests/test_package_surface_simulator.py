@@ -202,7 +202,9 @@ class DeliveryContentTests(unittest.TestCase):
                 "Sources/SurfaceFeedbackPlanning/Boundary.swift",
                 "Sources/SurfaceFeedbackPlanning/FeedbackPlan.swift",
                 "Sources/SurfaceFeedbackPlanning/FeedbackPreflight.swift",
+                "Sources/SurfaceFeedbackPlanning/FeedbackQueue.swift",
                 "Sources/SurfaceFeedbackPlanning/FeedbackReceipt.swift",
+                "Sources/SurfaceFeedbackPlanning/FeedbackRequestState.swift",
             },
         )
         for path, digest in files.items():
@@ -485,7 +487,9 @@ class CurrentDeliveryContentTests(unittest.TestCase):
                 "Sources/SurfaceFeedbackPlanning/Boundary.swift",
                 "Sources/SurfaceFeedbackPlanning/FeedbackPlan.swift",
                 "Sources/SurfaceFeedbackPlanning/FeedbackPreflight.swift",
+                "Sources/SurfaceFeedbackPlanning/FeedbackQueue.swift",
                 "Sources/SurfaceFeedbackPlanning/FeedbackReceipt.swift",
+                "Sources/SurfaceFeedbackPlanning/FeedbackRequestState.swift",
             },
         )
         for path, digest in files.items():

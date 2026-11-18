@@ -70,6 +70,23 @@
     /// The sole shared class is append-only diagnostics. All candidate state is below
     /// in a struct, and never obtained from native generated output or receipts.
     final class FeedbackAuditRecorder: @unchecked Sendable {
+        let comparesGeneratedDisplay: Bool
+        private var generatedDisplayCounts: [String: Int] = [:]
+
+        init(comparesGeneratedDisplay: Bool = false) {
+            self.comparesGeneratedDisplay = comparesGeneratedDisplay
+        }
+
+        func recordGeneratedDisplay(_ label: String) {
+            lock.lock(); defer { lock.unlock() }
+            generatedDisplayCounts[label, default: 0] += 1
+        }
+
+        var displayCounts: [String: Int] {
+            lock.lock(); defer { lock.unlock() }
+            return generatedDisplayCounts
+        }
+
         private let lock = NSLock()
         private enum Record {
             case raw(Data)
@@ -169,6 +186,24 @@
     }
 
     struct TestFeedbackSchedulerReference: CompactFeedbackSchedulerReference {
+        private var generatedDisplay = GeneratedDisplayCacheReference()
+        var comparesGeneratedDisplay: Bool {
+            recorder.comparesGeneratedDisplay
+        }
+
+        mutating func compareGeneratedDisplay(_ input: CompactGeneratedDisplayInput, nativeProposal: MIDIMessage?, nativeState: CompactGeneratedDisplaySnapshot) {
+            let predicted: (MIDIMessage?, CompactGeneratedDisplaySnapshot)
+            do { predicted = try generatedDisplay.apply(input) }
+            catch { preconditionFailure("Unable to predict a validated display input for \(owner): \(error)") }
+            precondition(predicted.0 == nativeProposal && predicted.0?.midi1Bytes == nativeProposal?.midi1Bytes && predicted.1 == nativeState,
+                         "Generated display shadow differs for \(owner): \(input), native \(String(reflecting: nativeProposal))/\(nativeState), Kit \(String(reflecting: predicted))")
+            let outcome: String = switch input {
+            case .request: nativeProposal == nil ? "suppressed" : "proposed"
+            case let .invalidate(_, index): index == nil ? "clear" : "invalidate"
+            }
+            recorder.recordGeneratedDisplay(input.family.rawValue + "." + outcome)
+        }
+
         private(set) var candidate = SchedulerCandidate()
         private(set) var ordinal: UInt64 = 0
         private var previousNode: Int?
@@ -381,6 +416,7 @@
 
         mutating func reset() {
             // A real configuration reset is input, not a native-state seed.
+            generatedDisplay = GeneratedDisplayCacheReference()
             apply(.clear, context: .scalar(.text("reconfigure")))
         }
     }
