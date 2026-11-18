@@ -1610,57 +1610,70 @@
             let route = hardwareMode ? currentHardwareConnection : connection // Pin the entire batch, including synchronous service callbacks.
             let outputOrigin = hardwareMode ? CompactEndpointStamp(endpoint: route.connectedOutput, generation: route.generation) : .simulation
             let source: MonitorEvent.Source = agentOutput ? .agent : (hardwareMode ? .hardware : .mock)
-            func scopeIsCurrent() -> Bool {
-                let currentRoute = dispatchHardwareMode ? currentHardwareConnection : connection
-                let current = currentRoute.neutralRoute == route.neutralRoute
-                #if DEBUG
-                    connectionReference?.admission(captured: route, current: currentRoute, actual: current)
-                #endif
-                return (!dispatchHardwareMode || !hardwareHandoverActive) && current
-                    && session.writeAuthorization == authorization
-                    && session.state.layer == dispatchHostLayer
-                    && hardwareMode == dispatchHardwareMode
-                    && listenOnly == dispatchListenOnly
-                    && isObservingHardware == dispatchObservationMode
-                    && (source != .agent || mcpMotorWritesAllowed == dispatchAgentMotorPermission)
-                    && session.state.map.transmitChannel == dispatchMap.transmitChannel
-                    && session.state.map.globalReceiveChannel == dispatchMap.globalReceiveChannel
-                    && session.state.lightProtocol == dispatchLightProtocol
+            func feedbackScope(current: Bool) -> CompactFeedbackScope {
+                var scope = CompactFeedbackScope()
+                let selectedRoute = current ? (dispatchHardwareMode ? currentHardwareConnection : connection) : route
+                scope.inputID = selectedRoute.connectedInput?.id; scope.outputID = selectedRoute.connectedOutput?.id
+                scope.transportGeneration = selectedRoute.generation; scope.connected = selectedRoute.isConnected
+                scope.authorization = current ? session.writeAuthorization : authorization
+                scope.hostLayer = current ? session.state.layer : dispatchHostLayer
+                scope.hardwareMode = current ? hardwareMode : dispatchHardwareMode
+                scope.listenOnly = current ? listenOnly : dispatchListenOnly
+                scope.observationMode = current ? isObservingHardware : dispatchObservationMode
+                scope.agentMotorPermission = source == .agent ? (current ? mcpMotorWritesAllowed : dispatchAgentMotorPermission) : nil
+                scope.transmitChannel = current ? session.state.map.transmitChannel : dispatchMap.transmitChannel
+                scope.receiveChannel = current ? session.state.map.globalReceiveChannel : dispatchMap.globalReceiveChannel
+                scope.lightProtocol = current ? session.state.lightProtocol : dispatchLightProtocol
+                scope.handoverInactive = !dispatchHardwareMode || !current || !hardwareHandoverActive
+                return scope
+            }
+            func plannedForFeedbackPlan(_ message: MIDIMessage) -> CompactPlannedProvenance? {
+                if case .controlChange(_, 1 ... 9, _) = message {
+                    return plannedForMessage(message)
+                }
+                return preparedProvenance
+            }
+            func feedbackPlan(_ message: MIDIMessage, index: Int, map: FactoryStandardMap) -> CompactFeedbackPlan {
+                ConsoleFeedbackProjection.plan(message, index: index, actor: source, scope: feedbackScope(current: false),
+                                               route: route, output: outputOrigin, planned: plannedForFeedbackPlan(message),
+                                               knownLayer: dispatchKnownHardwareLayer, map: map, at: dispatchAt, authorizedTest: authorizedTest)
+            }
+            var feedbackPlans = messages.enumerated().map { index, message in
+                feedbackPlan(message, index: index, map: dispatchMap)
             }
             #if DEBUG
-                func feedbackScope(current: Bool) -> CompactFeedbackScope {
-                    var scope = CompactFeedbackScope()
-                    let selectedRoute = current ? (dispatchHardwareMode ? currentHardwareConnection : connection) : route
-                    scope.inputID = selectedRoute.connectedInput?.id; scope.outputID = selectedRoute.connectedOutput?.id
-                    scope.transportGeneration = selectedRoute.generation; scope.connected = selectedRoute.isConnected
-                    scope.authorization = current ? session.writeAuthorization : authorization
-                    scope.hostLayer = current ? session.state.layer : dispatchHostLayer
-                    scope.hardwareMode = current ? hardwareMode : dispatchHardwareMode
-                    scope.listenOnly = current ? listenOnly : dispatchListenOnly
-                    scope.observationMode = current ? isObservingHardware : dispatchObservationMode
-                    scope.agentMotorPermission = source == .agent ? (current ? mcpMotorWritesAllowed : dispatchAgentMotorPermission) : nil
-                    scope.transmitChannel = current ? session.state.map.transmitChannel : dispatchMap.transmitChannel
-                    scope.receiveChannel = current ? session.state.map.globalReceiveChannel : dispatchMap.globalReceiveChannel
-                    scope.lightProtocol = current ? session.state.lightProtocol : dispatchLightProtocol
-                    scope.handoverInactive = !dispatchHardwareMode || !current || !hardwareHandoverActive
-                    return scope
+                func nativeScopeIsCurrent() -> Bool {
+                    let currentRoute = dispatchHardwareMode ? currentHardwareConnection : connection
+                    let current = currentRoute.neutralRoute == route.neutralRoute
+                    #if DEBUG
+                        connectionReference?.admission(captured: route, current: currentRoute, actual: current)
+                    #endif
+                    return (!dispatchHardwareMode || !hardwareHandoverActive) && current
+                        && session.writeAuthorization == authorization
+                        && session.state.layer == dispatchHostLayer
+                        && hardwareMode == dispatchHardwareMode
+                        && listenOnly == dispatchListenOnly
+                        && isObservingHardware == dispatchObservationMode
+                        && (source != .agent || mcpMotorWritesAllowed == dispatchAgentMotorPermission)
+                        && session.state.map.transmitChannel == dispatchMap.transmitChannel
+                        && session.state.map.globalReceiveChannel == dispatchMap.globalReceiveChannel
+                        && session.state.lightProtocol == dispatchLightProtocol
                 }
-                func plannedForFeedbackPlan(_ message: MIDIMessage) -> CompactPlannedProvenance? {
-                    if case .controlChange(_, 1 ... 9, _) = message {
-                        return plannedForMessage(message)
-                    }
-                    return preparedProvenance
-                }
-                let feedbackPlans = messages.enumerated().map { index, message in
-                    ConsoleFeedbackProjection.plan(message, index: index, actor: source, scope: feedbackScope(current: false),
-                                                   route: route, output: outputOrigin, planned: plannedForFeedbackPlan(message),
-                                                   knownLayer: dispatchKnownHardwareLayer, map: dispatchMap, at: dispatchAt, authorizedTest: authorizedTest)
-                }
+            #endif
+            func receiptScopeIsCurrent(_ plan: CompactFeedbackPlan, result: FeedbackAttemptResult) -> Bool {
+                let fact = FeedbackReceiptFact(plan: plan, result: result)
+                let current = FeedbackReceiptEligibility.matchesCurrentScope(fact, currentScope: feedbackScope(current: true))
+                #if DEBUG
+                    precondition(current == nativeScopeIsCurrent(), "J4 feedback receipt scope cut mismatch")
+                #endif
+                return current
+            }
+            #if DEBUG
                 var feedbackFinished: Set<Int> = []
                 func feedbackReceipt(_ index: Int, _ result: FeedbackAttemptResult, attempted: Bool, accepted: Bool, nativeCurrent: Bool? = nil) {
                     guard feedbackFinished.insert(index).inserted else { preconditionFailure("J4 duplicate receipt") }
                     CompactFeedbackShadow.receipt(plan: feedbackPlans[index], result: result, currentScope: feedbackScope(current: true),
-                                                  nativeCurrent: nativeCurrent ?? scopeIsCurrent(), attempted: attempted, accepted: accepted, audit: feedbackAudit)
+                                                  nativeCurrent: nativeCurrent ?? nativeScopeIsCurrent(), attempted: attempted, accepted: accepted, audit: feedbackAudit)
                     let currentOutput = hardwareMode ? CompactEndpointStamp(endpoint: currentHardwareConnection.connectedOutput, generation: currentHardwareConnection.generation) : .simulation
                     sessionStorage.feedbackShadowReceipt(feedbackPlans[index], result: result, currentScope: feedbackScope(current: true),
                                                          currentSource: hardwareMode ? .hardware : .simulation, currentEndpoint: try! ConsoleNeutralProjection.endpoint(currentOutput))
@@ -1683,14 +1696,24 @@
                 error = CompactMIDIError.routeChanged
                 return .suppressed
             }
-            var testAllowed = false
+            var approvedTestReceiveChannel: UInt8?
             if let authorizedTest {
                 do {
                     guard hardwareMode, isObservingHardware else { throw NonMotorTestError.permissionRevoked }
                     try nonMotorTests.gate.validate(authorizedTest, messages: messages, context: nonMotorContext)
-                    testAllowed = true
+                    guard let receiveChannel = authorizedTest.approval.prerequisites.receiveChannel else { throw NonMotorTestError.invalidTransmission }
+                    approvedTestReceiveChannel = receiveChannel
+                    // The gate validated this exact single command against the approved RX.
+                    // Project it with that RX while the scope keeps the Console's real profile.
+                    if receiveChannel != dispatchMap.globalReceiveChannel {
+                        var diagnosticMap = dispatchMap
+                        diagnosticMap.globalReceiveChannel = receiveChannel
+                        feedbackPlans[0] = feedbackPlan(authorizedTest.message, index: 0, map: diagnosticMap)
+                    }
                 } catch { self.error = error; lockNonMotorTests() }
             }
+            let testAllowed = approvedTestReceiveChannel != nil
+            let feedbackReceiveChannel = approvedTestReceiveChannel ?? dispatchMap.globalReceiveChannel
             #if DEBUG
                 let capturedScope = feedbackScope(current: false)
                 var dispatchEvidence = ConsoleFeedbackProjection.evidence(route, output: outputOrigin, planned: nil,
@@ -1744,9 +1767,12 @@
                     CompactFeedbackShadow.stage(plan: feedbackPlans[messageIndex], requirements: [isMechanism ? .mechanism : .display],
                                                 allowed: authorization == session.writeAuthorization && (isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay), audit: feedbackAudit)
                 #endif
-                guard authorization == session.writeAuthorization,
-                      isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay
-                else {
+                let stageRequirements: Set<EffectDirection> = [isMechanism ? .mechanism : .display]
+                let stageAuthorization: PlanAuthorization = authorization == session.writeAuthorization
+                    && (isMechanism ? authorization.allowsMechanisms : authorization.allowsDisplay)
+                    ? .granted(directions: stageRequirements) : .denied(reason: "native_authorization")
+                let stage = FeedbackAuthorizationCheck.evaluate(requirements: stageRequirements, authorization: stageAuthorization)
+                guard stage == .sufficient else {
                     session.discardPendingMotorWrites(); session.invalidateTransportFeedback()
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                     if hardwareMode {
@@ -1776,6 +1802,11 @@
                            nonMotorTest: testAudit?.withDelivery(.suppressed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                     return .suppressed
                 }
+                // Only the existing local layer assertion admits management effects.
+                var permittedDirections = stageRequirements
+                if case .programChange = message, source != .agent {
+                    permittedDirections.insert(.management)
+                }
                 #if DEBUG
                     // The isolated native copy evaluates this exact proposal. Only the next
                     // original call below mutates the canonical session.
@@ -1789,13 +1820,23 @@
                 #if DEBUG
                     let nativeSafety: NativeSafetyResult = copyPermitted ? .passed : .rejected(reason: "native_device_filter")
                     let plan = feedbackPlans[messageIndex]
-                    let proof = CompactFeedbackProof(plan: plan, nativeSnapshot: gateFacts,
-                                                     authorization: .granted(directions: plan.requiredDirections), safety: nativeSafety)
+                    let proof = CompactFeedbackPlanning.nativeOutputProof(plan: plan, message: message, receiveChannel: feedbackReceiveChannel,
+                                                                          permittedDirections: permittedDirections, nativeSnapshot: gateFacts, safety: nativeSafety)
                     let nativeVerdict: FeedbackPreflight = nativePermitted ? .permitted : .rejected(.nativeRejected(reason: "native_device_filter"))
                     CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: feedbackScope(current: true),
                                                     currentNative: gateFacts, native: nativeVerdict, audit: feedbackAudit)
                 #endif
-                guard nativePermitted else {
+                // Device policy executes once on the canonical owner. Core owns only
+                // plan identity, lifecycle, authorization and the explicit safety result.
+                let preflightPlan = feedbackPlans[messageIndex]
+                let preflightScope = feedbackScope(current: true)
+                var currentFacts = session.state.feedbackNativeSnapshot; currentFacts.add(preflightScope)
+                let preflightProof = CompactFeedbackPlanning.nativeOutputProof(plan: preflightPlan, message: message, receiveChannel: feedbackReceiveChannel,
+                                                                               permittedDirections: permittedDirections, nativeSnapshot: currentFacts,
+                                                                               safety: nativePermitted ? .passed : .rejected(reason: "native_device_filter"))
+                let preflight = FeedbackPreflight.evaluate(plan: preflightPlan, proof: preflightProof,
+                                                           currentScope: preflightScope, currentNativeSnapshot: currentFacts)
+                guard preflight == .permitted else {
                     withheldMotor = true
                     record(message, direction: .output, source: source, ignored: true, delivery: .suppressed, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message))
                     continue
@@ -1835,7 +1876,7 @@
                     #endif
                     // Acceptance belongs to the pinned old scope. A synchronous callback may
                     // already own a different route/binding/mode; old completion cannot edit it.
-                    guard scopeIsCurrent() else {
+                    guard receiptScopeIsCurrent(feedbackPlans[messageIndex], result: .accepted) else {
                         return messageIndex == messages.count - 1 && !withheldMotor ? .sent : .suppressed
                     }
                     if case .programChange = message {
@@ -1847,7 +1888,7 @@
                         feedbackReceipt(messageIndex, transportAttempted ? .rejected(reason: "native_transport_rejected") : .notAttempted(reason: "native_pre_dispatch_rejected"),
                                         attempted: transportAttempted, accepted: false)
                     #endif
-                    guard scopeIsCurrent() else {
+                    guard receiptScopeIsCurrent(feedbackPlans[messageIndex], result: transportAttempted ? .rejected(reason: "native_transport_rejected") : .notAttempted(reason: "native_pre_dispatch_rejected")) else {
                         record(message, direction: .output, source: source, ignored: true, delivery: .failed,
                                nonMotorTest: testAudit?.withDelivery(.failed), controlOverride: authorizedTest?.command.control, endpointOrigin: outputOrigin, recordedHostLayer: dispatchHostLayer, outputHardwareMode: dispatchHardwareMode, recordedMap: dispatchMap, recordedLightProtocol: dispatchLightProtocol, recordedListenOnly: dispatchListenOnly, recordedAt: dispatchAt, recordedBindingGeneration: authorization.bindingGeneration, recordedHardwareLayer: dispatchKnownHardwareLayer, recordedPlannedProvenance: plannedForMessage(message), recordedTransportAt: transportAttempted ? eventMonotonicClock() : nil)
                         return .failed

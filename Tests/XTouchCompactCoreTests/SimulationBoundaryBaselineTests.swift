@@ -1,5 +1,12 @@
+import SurfaceControlContracts
 import Testing
 @testable import XTouchCompactCore
+
+@Test func simulatedEmptyInstanceIDRetainsControlContractError() {
+    #expect(throws: ControlContractError("invalid_argument")) {
+        try CompactSurfaceSimulator(instanceID: "", epoch: "initial")
+    }
+}
 
 /// Behavior that the public simulation adapter must preserve when it reuses the
 /// existing host engine. These tests do not grant physical hardware qualification.

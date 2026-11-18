@@ -428,19 +428,17 @@ private func removeOwnedReadyFile() {
                                 // rate limited. The event commits only after every message was accepted.
                                 let sendOrigin = activeEndpointOrigin
                                 for (messageIndex, message) in plan.enumerated() {
-                                    #if DEBUG
-                                        let shadow = HardwareFeedbackShadow.plan(message, index: messageIndex, surface: surface, origin: sendOrigin,
-                                                                                 request: feedback, writer: client.writerID, at: time)
-                                        HardwareFeedbackShadow.preflight(shadow, current: midi.currentOrigin)
-                                    #endif
+                                    let dispatchPlan = HardwareFeedbackRuntime.plan(message, index: messageIndex, surface: surface, origin: sendOrigin,
+                                                                                    request: feedback, writer: client.writerID, at: time)
+                                    try HardwareFeedbackRuntime.preflight(dispatchPlan, current: midi.currentOrigin)
                                     do {
                                         try midi.send(message, expectedOrigin: sendOrigin)
                                         #if DEBUG
-                                            HardwareFeedbackShadow.receipt(shadow, result: .accepted, current: midi.currentOrigin, attempted: true, accepted: true)
+                                            HardwareFeedbackRuntime.receipt(dispatchPlan, result: .accepted, current: midi.currentOrigin, attempted: true, accepted: true)
                                         #endif
                                     } catch {
                                         #if DEBUG
-                                            HardwareFeedbackShadow.receipt(shadow, result: .rejected(reason: "native_transport_rejected"), current: midi.currentOrigin, attempted: true, accepted: false)
+                                            HardwareFeedbackRuntime.receipt(dispatchPlan, result: .rejected(reason: "native_transport_rejected"), current: midi.currentOrigin, attempted: true, accepted: false)
                                         #endif
                                         throw error
                                     }

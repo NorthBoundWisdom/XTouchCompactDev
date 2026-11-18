@@ -171,6 +171,27 @@ package protocol CompactFeedbackSchedulerReference: Sendable {
 }
 
 package enum CompactFeedbackPlanning {
+    /// The trusted command and the adapter's existing gates determine the grant.
+    /// The plan declares the effects that must fit that grant.
+    package static func nativeOutputProof(plan: CompactFeedbackPlan, message: MIDIMessage, receiveChannel: UInt8,
+                                          permittedDirections: Set<EffectDirection>, nativeSnapshot: CompactFeedbackBytes,
+                                          safety: NativeSafetyResult) -> CompactFeedbackProof
+    {
+        guard plan.payload == message else {
+            return .init(plan: plan, nativeSnapshot: nativeSnapshot, authorization: .denied(reason: "native_output_payload_mismatch"), safety: safety)
+        }
+        let nativeDirections: Set<EffectDirection> = switch message {
+        case let .controlChange(channel, 1 ... 9, _) where channel == receiveChannel: [.mechanism]
+        case let .controlChange(channel, 10 ... 41, _) where channel == receiveChannel: [.display]
+        case let .noteOn(channel, 0 ... 38, _) where channel == receiveChannel: [.display]
+        case let .programChange(channel, 0 ... 1) where channel == receiveChannel: [.management, .mechanism]
+        default: []
+        }
+        let grant = nativeDirections.intersection(permittedDirections)
+        let authorization: PlanAuthorization = grant.isEmpty ? .denied(reason: "native_output_authorization") : .granted(directions: grant)
+        return .init(plan: plan, nativeSnapshot: nativeSnapshot, authorization: authorization, safety: safety)
+    }
+
     package static func plan(_ message: MIDIMessage, map: FactoryStandardMap, scope: CompactFeedbackScope,
                              reference: CompactFeedbackBytes, origin: CompactFeedbackBytes, source: DeviceSource,
                              endpoint: EndpointProvenance, evidence: CompactFeedbackBytes, planned: CompactPlannedProvenance? = nil) throws -> CompactFeedbackPlan

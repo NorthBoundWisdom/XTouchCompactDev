@@ -47,6 +47,34 @@ private func feedbackPlan(scope: CompactFeedbackScope = .init(), evidence: Compa
     #expect(FeedbackPreflight.evaluate(plan: plan, proof: full, currentScope: plan.scope, currentNativeSnapshot: newFacts) == .rejected(.staleNativeProof))
 }
 
+@Test func productionFeedbackProofRejectsDirectionsOutsideTheNativeGrant() throws {
+    let message = MIDIMessage.noteOn(channel: 0, number: 0, velocity: 127)
+    let facts = CompactFeedbackBytes()
+    let scope = CompactFeedbackScope()
+    let display = try CompactFeedbackPlanning.plan(message, map: FactoryStandardMap(), scope: scope,
+                                                   reference: facts, origin: facts, source: .simulation,
+                                                   endpoint: .init(endpointID: "test.virtual", deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual), evidence: facts)
+    let enlarged = try CompactFeedbackPlan(reference: display.reference, payload: display.payload, origin: display.origin,
+                                           scope: display.scope, source: display.source, endpointEvidence: display.endpointEvidence,
+                                           capturedEvidence: display.capturedEvidence, targetID: display.targetID, affectedElements: display.affectedElements,
+                                           classification: display.classification, sideEffects: [.mechanism], deliveryMode: display.deliveryMode)
+    // Mock can generate all three kinds of output. This wire message itself is display-only.
+    let isolatedMockDirections: Set<EffectDirection> = [.display, .mechanism, .management]
+    let normal = CompactFeedbackPlanning.nativeOutputProof(plan: display, message: message, receiveChannel: 0,
+                                                           permittedDirections: isolatedMockDirections, nativeSnapshot: facts, safety: .passed)
+    let expanded = CompactFeedbackPlanning.nativeOutputProof(plan: enlarged, message: message, receiveChannel: 0,
+                                                             permittedDirections: isolatedMockDirections, nativeSnapshot: facts, safety: .passed)
+    #expect(FeedbackPreflight.evaluate(plan: display, proof: normal, currentScope: scope, currentNativeSnapshot: facts) == .permitted)
+    #expect(expanded.authorization == .granted(directions: [.display]))
+    #expect(FeedbackPreflight.evaluate(plan: enlarged, proof: expanded, currentScope: scope, currentNativeSnapshot: facts) == .rejected(.wrongDirections(missing: [.mechanism], surplus: [])))
+    let otherChannel = CompactFeedbackPlanning.nativeOutputProof(plan: display, message: message, receiveChannel: 1,
+                                                                 permittedDirections: isolatedMockDirections, nativeSnapshot: facts, safety: .passed)
+    #expect(FeedbackPreflight.evaluate(plan: display, proof: otherChannel, currentScope: scope, currentNativeSnapshot: facts) == .rejected(.authorizationDenied(reason: "native_output_authorization")))
+    let alteredPayload = CompactFeedbackPlanning.nativeOutputProof(plan: display, message: .controlChange(channel: 0, number: 1, value: 127), receiveChannel: 0,
+                                                                   permittedDirections: isolatedMockDirections, nativeSnapshot: facts, safety: .passed)
+    #expect(FeedbackPreflight.evaluate(plan: display, proof: alteredPayload, currentScope: scope, currentNativeSnapshot: facts) == .rejected(.authorizationDenied(reason: "native_output_payload_mismatch")))
+}
+
 @Test func feedbackReceiptDistinguishesAdmissionAttemptFromPhysicalUnknown() throws {
     let plan = try feedbackPlan()
     for (result, attempted, accepted) in [(FeedbackAttemptResult.accepted, true, true), (.rejected(reason: "pin"), true, false), (.notAttempted(reason: "empty"), false, false)] {

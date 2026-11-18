@@ -183,7 +183,7 @@ class DeliveryContentTests(unittest.TestCase):
         lock = json.loads((root / "configs/control_surface_kit.lock.json").read_text())
         self.assertEqual(manifest["control_surface_kit_revision"], lock["revision"])
         self.assertEqual(
-            manifest["control_surface_kit_integration"], "contracts-conformance-binding-and-connection-feedback-shadow"
+            manifest["control_surface_kit_integration"], "contracts-conformance-binding-connection-and-feedback"
         )
         files = manifest["control_surface_kit_files_sha256"]
         self.assertEqual(
@@ -466,7 +466,7 @@ class CurrentDeliveryContentTests(unittest.TestCase):
         lock = json.loads((root / "configs/control_surface_kit.lock.json").read_text())
         self.assertEqual(manifest["control_surface_kit_revision"], lock["revision"])
         self.assertEqual(
-            manifest["control_surface_kit_integration"], "contracts-conformance-binding-and-connection-feedback-shadow"
+            manifest["control_surface_kit_integration"], "contracts-conformance-binding-connection-and-feedback"
         )
         files = manifest["control_surface_kit_files_sha256"]
         self.assertEqual(

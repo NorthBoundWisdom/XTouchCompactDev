@@ -83,32 +83,27 @@ public struct CompactSurfaceSimulator: Sendable {
         mock = MockXTouchCompact(map: map, lightProtocol: .manual)
         _ = try session.loadConfiguration(configuration, resetValues: true)
         let initialFeedback = try session.connect()
-        #if DEBUG
-            var initialScope = session.state.feedbackScope; initialScope.authorization = session.writeAuthorization
-            var constructorEvidence = CompactFeedbackBytes(); constructorEvidence.add(instanceID); constructorEvidence.add(epoch)
-            constructorEvidence.add(remoteWriterID); constructorEvidence.add(systemWriterID); constructorEvidence.add("permanent-simulation-constructor")
-            let initialEndpoint = try EndpointProvenance(endpointID: instanceID, deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
-            let initialMap = session.state.map
-            let initialPlans = try initialFeedback.enumerated().map { index, message in
-                var reference = CompactFeedbackBytes(); reference.add(index)
-                var origin = CompactFeedbackBytes(); origin.add(systemWriterID)
-                return try CompactFeedbackPlanning.plan(message, map: initialMap, scope: initialScope, reference: reference,
-                                                        origin: origin, source: .simulation, endpoint: initialEndpoint, evidence: constructorEvidence)
-            }
-            for plan in initialPlans {
-                let facts = session.state.feedbackNativeSnapshot
-                let proof = CompactFeedbackProof(plan: plan, nativeSnapshot: facts, authorization: .granted(directions: plan.requiredDirections), safety: .passed)
-                CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: initialScope, currentNative: facts, native: .permitted, audit: session.state.feedbackAudit)
-            }
-        #endif
-        mock.receive(initialFeedback)
-        #if DEBUG
-            for plan in initialPlans {
-                CompactFeedbackShadow.receipt(plan: plan, result: .accepted, currentScope: initialScope, nativeCurrent: true, attempted: true, accepted: true, audit: session.state.feedbackAudit)
-            }
-        #endif
         controls = try SurfaceControlSession(instanceID: instanceID, epoch: epoch,
                                              profile: Self.profile(configuration: configuration, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity), eventCapacity: eventCapacity, writeLimits: writeLimits, inputEventCapacity: inputEventCapacity)
+        var initialScope = session.state.feedbackScope; initialScope.authorization = session.writeAuthorization
+        var constructorEvidence = CompactFeedbackBytes(); constructorEvidence.add(instanceID); constructorEvidence.add(epoch)
+        constructorEvidence.add(remoteWriterID); constructorEvidence.add(systemWriterID); constructorEvidence.add("permanent-simulation-constructor")
+        let initialEndpoint = try EndpointProvenance(endpointID: instanceID, deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
+        let initialMap = session.state.map
+        let initialPlans = try initialFeedback.enumerated().map { index, message in
+            var reference = CompactFeedbackBytes(); reference.add(index)
+            var origin = CompactFeedbackBytes(); origin.add(systemWriterID)
+            return try CompactFeedbackPlanning.plan(message, map: initialMap, scope: initialScope, reference: reference,
+                                                    origin: origin, source: .simulation, endpoint: initialEndpoint, evidence: constructorEvidence)
+        }
+        let initialPermitted = Self.permittedMockFeedback(initialFeedback, plans: initialPlans, scope: initialScope, state: session.state)
+        mock.receive(initialPermitted.map(\.payload))
+        #if DEBUG
+            for plan in initialPlans {
+                let accepted = initialPermitted.contains(plan)
+                CompactFeedbackShadow.receipt(plan: plan, result: accepted ? .accepted : .notAttempted(reason: "preflight_rejected"), currentScope: initialScope, nativeCurrent: true, attempted: accepted, accepted: accepted, audit: session.state.feedbackAudit)
+            }
+        #endif
         try controls.validateWriterID(remoteWriterID)
         try controls.validateWriterID(systemWriterID)
         guard remoteWriterID != systemWriterID else { throw ControlContractError("invalid_argument") }
@@ -352,42 +347,55 @@ public struct CompactSurfaceSimulator: Sendable {
     private mutating func receiveMockFeedback(_ messages: [MIDIMessage], at: Double? = nil, writerID: String? = nil,
                                               operation: String, request: String? = nil)
     {
-        #if DEBUG
-            var scope = session.state.feedbackScope; scope.authorization = session.writeAuthorization
-            var evidence = CompactFeedbackBytes(); evidence.add(String(reflecting: controls.expected)); evidence.add(operation); evidence.add(request)
-            evidence.add(at != nil); if let at {
-                evidence.add(at)
-            }; evidence.add(writerID)
-            let endpoint = try! EndpointProvenance(endpointID: controls.expected.instance_id, deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
-            let plans = messages.enumerated().map { index, message in
-                var reference = CompactFeedbackBytes(); reference.add(index); reference.add(operation)
-                var origin = CompactFeedbackBytes(); origin.add(writerID)
-                let planned: CompactPlannedProvenance? = if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
-                    session.state.producedMotorProvenance(Int(number))
-                } else {
-                    nil
-                }
-                return try! CompactFeedbackPlanning.plan(message, map: session.state.map, scope: scope, reference: reference,
-                                                         origin: origin, source: .simulation, endpoint: endpoint, evidence: evidence, planned: planned)
+        var scope = session.state.feedbackScope; scope.authorization = session.writeAuthorization
+        var evidence = CompactFeedbackBytes(); evidence.add(String(reflecting: controls.expected)); evidence.add(operation); evidence.add(request)
+        evidence.add(at != nil); if let at {
+            evidence.add(at)
+        }; evidence.add(writerID)
+        let endpoint = try! EndpointProvenance(endpointID: controls.expected.instance_id, deviceID: nil, connectionGeneration: 0, transportOrigin: .localVirtual)
+        let plans = messages.enumerated().map { index, message in
+            var reference = CompactFeedbackBytes(); reference.add(index); reference.add(operation)
+            var origin = CompactFeedbackBytes(); origin.add(writerID)
+            let planned: CompactPlannedProvenance? = if case let .controlChange(_, number, _) = message, (1 ... 9).contains(number) {
+                session.state.producedMotorProvenance(Int(number))
+            } else {
+                nil
             }
+            return try! CompactFeedbackPlanning.plan(message, map: session.state.map, scope: scope, reference: reference,
+                                                     origin: origin, source: .simulation, endpoint: endpoint, evidence: evidence, planned: planned)
+        }
+        #if DEBUG
             var dispatchActor = CompactFeedbackBytes(); dispatchActor.add(writerID)
             var dispatchEvidence = evidence; dispatchEvidence.add(scope)
             session.feedbackShadowDispatch(.init(scope: scope, source: .simulation, origin: dispatchActor, endpointEvidence: endpoint,
                                                  dispatchEvidence: dispatchEvidence, currentScope: scope, nativeSnapshot: session.state.feedbackNativeSnapshot,
                                                  hardwareMotorActionCurrent: false, testAllowed: false, authorizedTestRequested: false, managementIntent: true))
-            for plan in plans {
-                let facts = session.state.feedbackNativeSnapshot
-                let proof = CompactFeedbackProof(plan: plan, nativeSnapshot: facts, authorization: .granted(directions: plan.requiredDirections), safety: .passed)
-                CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: scope, currentNative: facts, native: .permitted, audit: session.state.feedbackAudit)
-            }
         #endif
-        mock.receive(messages)
+        let permitted = Self.permittedMockFeedback(messages, plans: plans, scope: scope, state: session.state)
+        mock.receive(permitted.map(\.payload))
         #if DEBUG
             for plan in plans {
-                CompactFeedbackShadow.receipt(plan: plan, result: .accepted, currentScope: scope, nativeCurrent: true, attempted: true, accepted: true, audit: session.state.feedbackAudit)
-                session.feedbackShadowReceipt(plan, result: .accepted, currentScope: scope, currentSource: .simulation, currentEndpoint: endpoint)
+                let accepted = permitted.contains(plan)
+                let result: FeedbackAttemptResult = accepted ? .accepted : .notAttempted(reason: "preflight_rejected")
+                CompactFeedbackShadow.receipt(plan: plan, result: result, currentScope: scope, nativeCurrent: true, attempted: accepted, accepted: accepted, audit: session.state.feedbackAudit)
+                session.feedbackShadowReceipt(plan, result: result, currentScope: scope, currentSource: .simulation, currentEndpoint: endpoint)
             }
         #endif
+    }
+
+    private static func permittedMockFeedback(_ messages: [MIDIMessage], plans: [CompactFeedbackPlan],
+                                              scope: CompactFeedbackScope, state: CompactState) -> [CompactFeedbackPlan]
+    {
+        let facts = state.feedbackNativeSnapshot
+        return zip(messages, plans).compactMap { message, plan in
+            // Existing simulation operations have already produced this isolated Mock output.
+            let proof = CompactFeedbackPlanning.nativeOutputProof(plan: plan, message: message, receiveChannel: state.map.globalReceiveChannel,
+                                                                  permittedDirections: [.display, .mechanism, .management], nativeSnapshot: facts, safety: .passed)
+            #if DEBUG
+                CompactFeedbackShadow.preflight(plan: plan, proof: proof, currentScope: scope, currentNative: facts, native: .permitted, audit: state.feedbackAudit)
+            #endif
+            return FeedbackPreflight.evaluate(plan: plan, proof: proof, currentScope: scope, currentNativeSnapshot: facts) == .permitted ? plan : nil
+        }
     }
 
     /// Rotation is a host lifecycle operation. Fresh epochs must come from host

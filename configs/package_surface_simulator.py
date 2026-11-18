@@ -96,7 +96,7 @@ def kernel_provenance(root=ROOT):
     ]
     return {
         "control_surface_kit_revision": lock["revision"],
-        "control_surface_kit_integration": "contracts-conformance-binding-and-connection-feedback-shadow",
+        "control_surface_kit_integration": "contracts-conformance-binding-connection-and-feedback",
         "control_surface_kit_files_sha256": {
             source: hashlib.sha256((kernel / source).read_bytes()).hexdigest() for source in sources
         },
