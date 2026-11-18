@@ -6,6 +6,7 @@ import ast
 import hashlib
 import json
 import os
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -13,8 +14,10 @@ import zipfile
 from pathlib import Path
 
 try:
+    from .control_surface_kit_dependency import ensure_dependency as ensure_kit
     from .delivery_index import publish
 except ImportError:  # Direct CLI execution has configs/ on sys.path.
+    from control_surface_kit_dependency import ensure_dependency as ensure_kit
     from delivery_index import publish
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,12 +75,13 @@ SDK_SOURCE = "clients/python/surface_control/__init__.py"
 ARTIFACT = "surface-control-simulator"
 
 
+def load_delivery_support(root=ROOT):
+    kit = ensure_kit(root, verify_only=True)
+    return runpy.run_path(str(kit / "tools/delivery_support.py"))
+
+
 def kernel_provenance(root=ROOT):
     """Real compiled runtime provenance; conformance assets stay test-only and outside the runtime SDK."""
-    try:
-        from .control_surface_kit_dependency import ensure_dependency as ensure_kit
-    except ImportError:
-        from control_surface_kit_dependency import ensure_dependency as ensure_kit
     kernel = ensure_kit(root, verify_only=True)
     lock = json.loads((root / "configs/control_surface_kit.lock.json").read_text())
     sources = [
@@ -130,14 +134,16 @@ def test_support_sources(shared=None):
     )
 
 
-def stage_test_support(stage, shared=None):
-    shared = SHARED if shared is None else shared
-    with zipfile.ZipFile(stage / TEST_SUPPORT_ZIP, "w") as support:
-        for source in test_support_sources(shared):
-            entry = zipfile.ZipInfo(str(Path(source).relative_to("clients/python")), date_time=(1980, 1, 1, 0, 0, 0))
-            entry.compress_type = zipfile.ZIP_DEFLATED
-            entry.external_attr = 0o644 << 16
-            support.writestr(entry, (shared / source).read_bytes())
+def stage_test_support(stage, shared=None, *, support=None):
+    support = load_delivery_support() if support is None else support
+    shared = (SHARED if shared is None else shared).resolve(strict=True)
+    stage = stage.resolve(strict=True)
+    support["write_zip"](
+        shared,
+        stage,
+        TEST_SUPPORT_ZIP,
+        ((relative, Path(relative).relative_to("clients/python")) for relative in test_support_sources(shared)),
+    )
 
 
 def sdk_version(source):
@@ -176,10 +182,12 @@ def validate_sdk_archive(stage, shared=None):
             raise RuntimeError("SDK archive differs from the locked SDK source bytes")
 
 
-def stage_shared_files(stage, root=ROOT, shared=None):
+def stage_shared_files(stage, root=ROOT, shared=None, *, support=None):
     """Copy host files and shared published files into a delivery stage (no binary)."""
-    shared = SHARED if shared is None else shared
+    shared = (SHARED if shared is None else shared).resolve(strict=True)
+    stage = stage.resolve(strict=True)
     sdk_version((shared / SDK_SOURCE).read_bytes())
+    support = load_delivery_support(root) if support is None else support
     shutil.copy2(root / "LICENSE", stage)
     shutil.copy2(root / "examples/surface_simulator/minimal_consumer.py", stage)
     shutil.copy2(root / "docs/SURFACE_SIMULATOR.md", stage / "README.md")
@@ -188,17 +196,16 @@ def stage_shared_files(stage, root=ROOT, shared=None):
     shutil.copy2(root / "configs/check_display_targets.py", stage / "check_display_targets.py")
     shutil.copy2(root / "configs/surface_sdk_metadata.py", stage / "surface_sdk_metadata.py")
     shutil.copy2(root / "configs/surface_plugins.lock.json", stage)
-    for name, source in SHARED_FILES.items():
-        shutil.copy2(shared / source, stage / name)
+    support["copy_files"](shared, stage, ((relative, name) for name, relative in SHARED_FILES.items()))
     shutil.copy2(root / "examples/surface_simulator/conformance-roles.json", stage)
     # Fixed timestamp, mode and full relative member order keep both hosts' zip bytes equal.
-    with zipfile.ZipFile(stage / SDK_ZIP, "w") as sdk:
-        for source in sdk_sources(shared):
-            entry = zipfile.ZipInfo(str(Path(source).relative_to("clients/python")), date_time=(1980, 1, 1, 0, 0, 0))
-            entry.compress_type = zipfile.ZIP_DEFLATED
-            entry.external_attr = 0o644 << 16
-            sdk.writestr(entry, (shared / source).read_bytes())
-    stage_test_support(stage, shared)
+    support["write_zip"](
+        shared,
+        stage,
+        SDK_ZIP,
+        ((relative, Path(relative).relative_to("clients/python")) for relative in sdk_sources(shared)),
+    )
+    stage_test_support(stage, shared, support=support)
     (stage / "examples").mkdir()
     shutil.copy2(root / "Clients/Python/examples/surface_roundtrip.py", stage / "examples" / "surface_roundtrip.py")
     shutil.copy2(root / "examples/surface_simulator/chassis.json", stage / "examples/chassis.json")
@@ -220,7 +227,7 @@ def source_provenance(root=ROOT):
     }
 
 
-def write_manifest(stage, source_commit, configuration, root=ROOT, shared=None):
+def write_manifest(stage, source_commit, configuration, root=ROOT, shared=None, *, support=None):
     """Hash every staged file and record exact host/shared revisions and shared source hashes.
 
     Profile identity and mapping revision are read from the staged `control-contract.json`,
@@ -231,16 +238,13 @@ def write_manifest(stage, source_commit, configuration, root=ROOT, shared=None):
     discovery = json.loads((stage / "control-contract.json").read_text())["discovery"]
     if discovery["contract_version"] != CONTRACT_VERSION:
         raise RuntimeError("Binary contract version differs from the packaged contract version")
-    files = {
-        str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted(stage.rglob("*"))
-        if path.is_file()
-    }
+    support = load_delivery_support(root) if support is None else support
+    stage, shared = stage.resolve(strict=True), shared.resolve(strict=True)
+    files = support["inventory"](stage)
     revision = json.loads((root / "configs/surface_plugins.lock.json").read_text())["revision"]
-    shared_sources = {
-        source: hashlib.sha256((shared / source).read_bytes()).hexdigest()
-        for source in [*SHARED_FILES.values(), *sdk_sources(shared), *test_support_sources(shared)]
-    }
+    shared_sources = support["hash_files"](
+        shared, [*SHARED_FILES.values(), *sdk_sources(shared), *test_support_sources(shared)]
+    )
     manifest = {
         "schema_version": 1,
         **source_provenance(root),
@@ -310,8 +314,9 @@ def package(output=None, configuration="release", output_root=None):
     parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".surface-simulator-", dir=parent))
     try:
+        support = load_delivery_support()
         shutil.copy2(binary_directory / "XTouchSurfaceSimulator", stage)
-        stage_shared_files(stage)
+        stage_shared_files(stage, support=support)
         (stage / "control-contract.json").write_text(
             subprocess.check_output([str(stage / "XTouchSurfaceSimulator"), "--describe"], text=True)
         )
@@ -326,7 +331,7 @@ def package(output=None, configuration="release", output_root=None):
             ],
             check=True,
         )
-        write_manifest(stage, command("git", "rev-parse", "HEAD"), configuration)
+        write_manifest(stage, command("git", "rev-parse", "HEAD"), configuration, support=support)
         if output_root is None:
             stage.rename(output)
         else:

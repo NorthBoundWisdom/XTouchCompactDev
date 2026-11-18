@@ -2,13 +2,11 @@
 """Package a clean hardware root and distinct simulation artifact; preserve all old deliveries."""
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
 import subprocess
 import tempfile
-import zipfile
 from pathlib import Path
 
 try:
@@ -19,6 +17,7 @@ try:
         TEST_SUPPORT_ZIP,
         command,
         kernel_provenance,
+        load_delivery_support,
         source_provenance,
         stage_shared_files,
         stage_test_support,
@@ -35,6 +34,7 @@ except ImportError:
         TEST_SUPPORT_ZIP,
         command,
         kernel_provenance,
+        load_delivery_support,
         source_provenance,
         stage_shared_files,
         stage_test_support,
@@ -93,11 +93,13 @@ def sdk_sources():
     )
 
 
-def stage_files(stage):
+def stage_files(stage, *, support=None):
+    support = load_delivery_support() if support is None else support
+    stage = stage.resolve(strict=True)
+    shared = SHARED.resolve(strict=True)
     shutil.copy2(ROOT / "configs/generate_owned_virtual_mapping.py", stage / "generate_owned_virtual_mapping.py")
     shutil.copy2(ROOT / "docs/OWNED_VIRTUAL_REHEARSAL.md", stage / "owned-virtual-rehearsal.md")
-    for name, source in SHARED_FILES.items():
-        shutil.copy2(SHARED / source, stage / name)
+    support["copy_files"](shared, stage, ((relative, name) for name, relative in SHARED_FILES.items()))
     for source, name in (
         ("LICENSE", "LICENSE"),
         ("docs/SURFACE_HARDWARE.md", "README.md"),
@@ -112,14 +114,14 @@ def stage_files(stage):
         ("configs/verify_simulation_delivery.py", "verify_simulation_delivery.py"),
     ):
         shutil.copy2(ROOT / source, stage / name)
-    with zipfile.ZipFile(stage / SDK_ZIP, "w") as sdk:
-        for source in sdk_sources():
-            entry = zipfile.ZipInfo(str(source.relative_to(SHARED / "clients/python")), date_time=(1980, 1, 1, 0, 0, 0))
-            entry.compress_type = zipfile.ZIP_DEFLATED
-            entry.external_attr = 0o644 << 16
-            sdk.writestr(entry, source.read_bytes())
+    support["write_zip"](
+        shared,
+        stage,
+        SDK_ZIP,
+        ((path.relative_to(SHARED), path.relative_to(SHARED / "clients/python")) for path in sdk_sources()),
+    )
 
-    stage_test_support(stage)
+    stage_test_support(stage, support=support)
 
 
 def package(output_root, configuration="release"):
@@ -149,12 +151,13 @@ def package(output_root, configuration="release"):
     output_root.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".surface-hardware-", dir=output_root))
     try:
+        support = load_delivery_support()
         shutil.copy2(binaries / "XTouchSurfaceHardware", stage)
-        stage_files(stage)
+        stage_files(stage, support=support)
         simulation = stage / "simulation"
         simulation.mkdir()
         shutil.copy2(binaries / "XTouchSurfaceSimulator", simulation)
-        stage_shared_files(simulation)
+        stage_shared_files(simulation, support=support)
         (simulation / "control-contract.json").write_bytes(
             subprocess.check_output([str(simulation / "XTouchSurfaceSimulator"), "--describe"])
         )
@@ -169,7 +172,7 @@ def package(output_root, configuration="release"):
             ],
             check=True,
         )
-        write_simulator_manifest(simulation, command("git", "rev-parse", "HEAD"), configuration)
+        write_simulator_manifest(simulation, command("git", "rev-parse", "HEAD"), configuration, support=support)
         described = subprocess.check_output(
             [
                 str(stage / "XTouchSurfaceHardware"),
@@ -213,19 +216,15 @@ def package(output_root, configuration="release"):
             "surface_plugins_revision": json.loads((ROOT / "configs/surface_plugins.lock.json").read_text())[
                 "revision"
             ],
-            "surface_plugins_files_sha256": {
-                str(path.relative_to(SHARED)): hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in [
-                    *(SHARED / source for source in SHARED_FILES.values()),
-                    *sdk_sources(),
-                    *(SHARED / source for source in test_support_sources()),
-                ]
-            },
-            "files_sha256": {
-                str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in sorted(stage.rglob("*"))
-                if path.is_file()
-            },
+            "surface_plugins_files_sha256": support["hash_files"](
+                SHARED.resolve(strict=True),
+                [
+                    *SHARED_FILES.values(),
+                    *(path.relative_to(SHARED) for path in sdk_sources()),
+                    *test_support_sources(),
+                ],
+            ),
+            "files_sha256": support["inventory"](stage),
             "test_artifacts": [
                 {
                     "artifact": "surface-control-test-only-hardware-double",
